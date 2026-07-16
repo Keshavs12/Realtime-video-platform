@@ -30,11 +30,13 @@
  */
 
 import { Router } from "express";
-import { signup } from "./auth.controller";
+import { signup, login } from "./auth.controller";
 
 const authRouter = Router();
 
 // POST /api/v1/auth/signup
 authRouter.post("/signup", signup);
+// login /api/v1/auth/login
+authRouter.post("/login", login)
 
 export default authRouter;

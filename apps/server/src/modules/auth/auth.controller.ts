@@ -14,7 +14,8 @@
  * - Handle request/response flow.
  *
  * Note:
- * Do NOT write business logic here.
+ * Do NOT write businesauthRouter.post("/login", login);
+s logic here.
  * Keep the controller lightweight.
  * --------------------------------------------------------------------------
  */
@@ -38,7 +39,7 @@ export const signup = async (
 ): Promise<void> => {
     try {
         const user = await authService.signup(req.body);
-
+        console.log(user, 'user')
         res.status(201).json({
             success: true,
             message: "User registered successfully.",
@@ -52,3 +53,22 @@ export const signup = async (
         });
     }
 };
+
+export const login = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email, password } = req.body;
+        const user = await authService.login(email, password);
+
+        res.status(200).json({
+            success: true,
+            message: "User logged in successfully.",
+            data: user,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message:
+                error instanceof Error ? error.message : "Something went wrong",
+        });
+    }
+};          
