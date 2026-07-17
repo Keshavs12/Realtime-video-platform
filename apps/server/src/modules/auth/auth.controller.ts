@@ -71,4 +71,51 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 error instanceof Error ? error.message : "Something went wrong",
         });
     }
-};          
+};        
+
+export const refreshToken = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const { refreshToken } = req.body;
+
+        const data = await authService.refreshToken(refreshToken);
+
+        res.status(200).json({
+            success: true,
+            message: "Access token refreshed successfully.",
+            data,
+        });
+    } catch (error) {
+        res.status(401).json({
+            success: false,
+            message:
+                error instanceof Error
+                    ? error.message
+                    : "Something went wrong",
+        });
+    }
+};
+
+export const logout = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        await authService.logout(req.user!.userId);
+
+        res.status(200).json({
+            success: true,
+            message: "Logged out successfully.",
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message:
+                error instanceof Error
+                    ? error.message
+                    : "Something went wrong",
+        });
+    }
+};

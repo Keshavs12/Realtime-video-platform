@@ -29,7 +29,7 @@
 import { prisma } from "../../config/prisma";
 import { hashPassword } from "../../utils/bcrypt";
 import * as bcrypt from "bcrypt";
-import { generateAccessToken } from "../../utils/jwt";
+import { generateAccessToken, generateRefreshToken ,verifyRefreshToken} from "../../utils/jwt";
 
 interface SignupPayload {
     name: string;
@@ -84,19 +84,76 @@ export const login = async (email: string, password: string) => {
         email: user.email,
     });
 
+    const refreshToken = generateRefreshToken({
+        userId: user.id,
+        email: user.email,
+    });
+
+    await prisma.user.update({
+        where: {
+            id: user.id,
+        },
+        data: {
+            refreshToken,
+        },
+    });
+
     return {
         user: {
             id: user.id,
             name: user.name,
             email: user.email,
-        }, accessToken
+        },
+        accessToken,
+        refreshToken,
     };
 
 }
+
+export const logout = async (userId: string) => {
+    await prisma.user.update({
+        where: {
+            id: userId,
+        },
+        data: {
+            refreshToken: null,
+        },
+    });
+
+    return;
+};
 
 export const comparePassword = async (
     plainPassword: string,
     hashedPassword: string
 ) => {
     return bcrypt.compare(plainPassword, hashedPassword);
+};
+
+export const refreshToken = async (refreshToken: string) => {
+
+    const payload = verifyRefreshToken(refreshToken);
+
+    const user = await prisma.user.findUnique({
+        where: {
+            id: payload.userId,
+        },
+    });
+
+    if (!user) {
+        throw new Error("User not found.");
+    }
+
+    if (user.refreshToken !== refreshToken) {
+        throw new Error("Invalid refresh token.");
+    }
+
+    const accessToken = generateAccessToken({
+        userId: user.id,
+        email: user.email,
+    });
+
+    return {
+        accessToken,
+    };
 };

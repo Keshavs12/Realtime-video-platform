@@ -30,7 +30,8 @@
  */
 
 import { Router } from "express";
-import { signup, login } from "./auth.controller";
+import { signup, login, refreshToken, logout } from "./auth.controller";
+import { authenticate } from "./auth.middleware";
 
 const authRouter = Router();
 
@@ -38,5 +39,17 @@ const authRouter = Router();
 authRouter.post("/signup", signup);
 // login /api/v1/auth/login
 authRouter.post("/login", login)
+authRouter.post("/refresh", refreshToken);
+authRouter.post("/logout", authenticate, logout);
 
+authRouter.get(
+    "/me",
+    authenticate,
+    (req, res) => {
+        res.json({
+            success: true,
+            user: req.user,
+        });
+    }
+);
 export default authRouter;
