@@ -5,16 +5,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import styles from "./Sidebar.module.scss";
+import { logout } from "@/services/auth.service";
 
 export const Sidebar = () => {
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout: logoutContext } = useAuth();
   const router = useRouter();
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
+const handleLogout = async ()=>{
+  try{
+    await logout();
+    logoutContext();
+    router.replace("/login");
+
+  }
+  catch(error){
+    console.error("Logout failed:", error);
+  }
+
+}
 
   return (
     <aside className={styles.sidebar}>

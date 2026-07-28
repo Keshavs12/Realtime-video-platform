@@ -51,7 +51,7 @@ const initializeAuth = async () => {
 
     setAccessToken(token);
 
-    const response = await getMe(token);
+    const response = await getMe();
 
     setUser(response.user);
   } catch (error) {

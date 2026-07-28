@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const fetchUser = async () => {
     const token = localStorage.getItem("accessToken");
     if (!token) return ;
-    const response = await getMe(token);
+    const response = await getMe();
     setUser(response);
   };
 

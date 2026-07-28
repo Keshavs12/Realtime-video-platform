@@ -119,3 +119,24 @@ export const logout = async (
         });
     }
 };
+
+export const getMe = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const userId = req.user!.userId;
+        const user = await authService.getUserById(userId);
+
+        res.status(200).json({
+            success: true,
+            user,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message:
+                error instanceof Error ? error.message : "Something went wrong",
+        });
+    }
+};

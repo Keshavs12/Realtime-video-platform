@@ -10,12 +10,13 @@ import * as jwt from "jsonwebtoken";
 
 export interface JwtPayload {
     userId: string;
+    name ?:string;
     email: string;
 }
 
 export const generateAccessToken = (payload: JwtPayload) => {
     return jwt.sign(payload, process.env.JWT_SECRET!, {
-        expiresIn: "15m",
+        expiresIn: "10s",
     });
 };
 

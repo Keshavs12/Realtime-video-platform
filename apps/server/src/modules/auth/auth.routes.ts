@@ -30,7 +30,7 @@
  */
 
 import { Router } from "express";
-import { signup, login, refreshToken, logout } from "./auth.controller";
+import { signup, login, refreshToken, logout, getMe } from "./auth.controller";
 import { authenticate } from "./auth.middleware";
 
 const authRouter = Router();
@@ -42,14 +42,5 @@ authRouter.post("/login", login)
 authRouter.post("/refresh", refreshToken);
 authRouter.post("/logout", authenticate, logout);
 
-authRouter.get(
-    "/me",
-    authenticate,
-    (req, res) => {
-        res.json({
-            success: true,
-            user: req.user,
-        });
-    }
-);
+authRouter.get("/me", authenticate, getMe);
 export default authRouter;
