@@ -1,0 +1,39 @@
+.barChart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 70px 1fr 40px;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.barLabel {
+  color: #94a3b8;
+  font-size: 0.8125rem;
+}
+
+.barTrack {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  transition: width 0.3s ease;
+}
+
+.barValue {
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: right;
+}

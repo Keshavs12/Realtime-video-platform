@@ -55,7 +55,7 @@ export default function LoginPage() {
 
         {error && <div className={styles.error} style={{ color: '#ef4444', marginBottom: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>{error}</div>}
 
-        <form className={styles.form} onSubmit={handleSubmit}>
+        <form className={styles.form} onSubmit={handleSubmit} suppressHydrationWarning>
           <div className={styles.formGroup}>
             <label htmlFor="email">Email Address</label>
             <input
@@ -65,6 +65,7 @@ export default function LoginPage() {
               value={formData.email}
               onChange={handleChange}
               required
+              suppressHydrationWarning
             />
           </div>
 
@@ -77,6 +78,7 @@ export default function LoginPage() {
               value={formData.password}
               onChange={handleChange}
               required
+              suppressHydrationWarning
             />
           </div>
 

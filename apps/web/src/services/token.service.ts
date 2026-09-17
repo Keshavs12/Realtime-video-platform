@@ -9,6 +9,10 @@ export const refreshAccessToken = async () => {
         throw new Error("No refresh token found");
     }
 
-    const response = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+    const response = await axios.post(
+        `${BASE_URL}/auth/refresh`,
+        { refreshToken },
+        { headers: { "ngrok-skip-browser-warning": "true" } }
+    );
     return response.data;
 };

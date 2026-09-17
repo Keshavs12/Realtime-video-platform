@@ -22,6 +22,7 @@ interface AuthContextType {
 
   login: (user: User, token: string) => void;
   logout: () => void;
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -75,6 +76,10 @@ const initializeAuth = async () => {
     setAccessToken(token);
   };
 
+  const updateUser = (updatedUser: User) => {
+    setUser(updatedUser);
+  };
+
   const logout = () => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
@@ -91,6 +96,7 @@ const initializeAuth = async () => {
         accessToken,
         login,
         logout,
+        updateUser,
         loading,
       }}
     >

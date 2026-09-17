@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SuperCall — Web
 
-## Getting Started
+Next.js (App Router) frontend: auth pages, dashboard, and the WebRTC room UI.
 
-First, run the development server:
+> **Note for AI coding agents:** see `AGENTS.md` — this project pins a Next.js version with breaking changes from what most training data assumes.
+
+## Scripts
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm dev      # next dev (Turbopack)
+pnpm build    # production build
+pnpm start    # run the production build
+pnpm lint     # eslint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env`. Both default to `localhost:5000`, which is correct for local development against the backend in `apps/server`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | Base URL for REST calls (`/auth/*`) |
+| `NEXT_PUBLIC_SOCKET_URL` | Base URL the Socket.IO client connects to for signaling |
 
-## Learn More
+For LAN or ngrok-based testing from a second device, point these at the backend's LAN IP or ngrok tunnel URL instead — see the root [`README.md`](../../README.md#testing-across-two-machines-lan-or-internet-via-ngrok).
 
-To learn more about Next.js, take a look at the following resources:
+## Pages
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Route | Purpose |
+|---|---|
+| `/signup`, `/login` | Auth forms, call the backend directly via `services/auth.service.ts` |
+| `/dashboard` | Create or join a room by ID |
+| `/dashboard/room/[roomId]` | The call itself — video grid, mute/camera toggle, camera/mic device selection, presence sidebar |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Auth
 
-## Deploy on Vercel
+`src/context/AuthContext.tsx` holds `user`/`accessToken` in memory and rehydrates on load by calling `/auth/me` with whatever's in `localStorage`. `src/lib/axios.ts` is the single shared HTTP client: it attaches the access token to every request and, on a `401`, transparently refreshes (rotating the refresh token) and retries the original request.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`ProtectedRoute` (`src/components/ProtectedRoute.tsx`) wraps the entire dashboard layout — anything under `/dashboard` requires a valid session, checked before any page content (including camera/mic prompts) mounts.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Realtime / WebRTC
+
+`src/hooks/useRoom.ts` owns the whole call lifecycle for a room: acquiring local media, connecting to Socket.IO, exchanging offers/answers/ICE candidates with each peer, and maintaining one `RTCPeerConnection` per participant (mesh topology — every participant connects directly to every other participant, not through an SFU). Camera/mic switching mid-call uses `RTCRtpSender.replaceTrack()` rather than renegotiating the connection.

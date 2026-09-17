@@ -30,6 +30,7 @@ import { prisma } from "../../config/prisma";
 import { hashPassword } from "../../utils/bcrypt";
 import * as bcrypt from "bcrypt";
 import { generateAccessToken, generateRefreshToken ,verifyRefreshToken} from "../../utils/jwt";
+import { AppError } from "../../utils/AppError";
 
 interface SignupPayload {
     name: string;
@@ -48,7 +49,7 @@ export const signup = async (data: SignupPayload) => {
     });
 
     if (existingUser) {
-        throw new Error("Email already registered.");
+        throw new AppError("Email already registered.", 409);
     }
 
     const user = await prisma.user.create({
@@ -56,6 +57,12 @@ export const signup = async (data: SignupPayload) => {
             name,
             email,
             password: hashedPassword,
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            createdAt: true,
         },
     });
 
@@ -70,13 +77,13 @@ export const login = async (email: string, password: string) => {
     });
 
     if (!user) {
-        throw new Error("Invalid email or password");
+        throw new AppError("Invalid email or password.", 401);
     }
 
     const isPasswordValid = await comparePassword(password, user.password);
 
     if (!isPasswordValid) {
-        throw new Error("Invalid  password or email");
+        throw new AppError("Invalid email or password.", 401);
     }
 
     const accessToken = generateAccessToken({
@@ -130,9 +137,14 @@ export const comparePassword = async (
     return bcrypt.compare(plainPassword, hashedPassword);
 };
 
-export const refreshToken = async (refreshToken: string) => {
+export const refreshToken = async (token: string) => {
 
-    const payload = verifyRefreshToken(refreshToken);
+    let payload;
+    try {
+        payload = verifyRefreshToken(token);
+    } catch {
+        throw new AppError("Invalid or expired refresh token.", 401);
+    }
 
     const user = await prisma.user.findUnique({
         where: {
@@ -141,11 +153,11 @@ export const refreshToken = async (refreshToken: string) => {
     });
 
     if (!user) {
-        throw new Error("User not found.");
+        throw new AppError("User not found.", 401);
     }
 
-    if (user.refreshToken !== refreshToken) {
-        throw new Error("Invalid refresh token.");
+    if (user.refreshToken !== token) {
+        throw new AppError("Invalid refresh token.", 401);
     }
 
     const accessToken = generateAccessToken({
@@ -153,9 +165,64 @@ export const refreshToken = async (refreshToken: string) => {
         email: user.email,
     });
 
+    const newRefreshToken = generateRefreshToken({
+        userId: user.id,
+        email: user.email,
+    });
+
+    await prisma.user.update({
+        where: {
+            id: user.id,
+        },
+        data: {
+            refreshToken: newRefreshToken,
+        },
+    });
+
     return {
         accessToken,
+        refreshToken: newRefreshToken,
     };
+};
+
+export const updateProfile = async (userId: string, name: string) => {
+    const user = await prisma.user.update({
+        where: { id: userId },
+        data: { name },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+        },
+    });
+
+    return user;
+};
+
+export const changePassword = async (
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+) => {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+        throw new AppError("User not found.", 404);
+    }
+
+    const isCurrentPasswordValid = await comparePassword(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+        throw new AppError("Current password is incorrect.", 401);
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+
+    await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword },
+    });
+
+    return;
 };
 
 export const getUserById = async (userId: string) => {
@@ -171,7 +238,7 @@ export const getUserById = async (userId: string) => {
     });
 
     if (!user) {
-        throw new Error("User not found.");
+        throw new AppError("User not found.", 404);
     }
 
     return user;

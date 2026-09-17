@@ -20,40 +20,35 @@
  */
 import { NextFunction, Request, Response } from "express";
 import { verifyAccessToken } from "../../utils/jwt";
+import { AppError } from "../../utils/AppError";
 
 export const authenticate = (
     req: Request,
-    res: Response,
+    _res: Response,
     next: NextFunction
 ) => {
     try {
         const authHeader = req.headers.authorization;
-        
+
         if (!authHeader) {
-            return res.status(401).json({
-                success: false,
-                message: "Access token is required.",
-            });
+            throw new AppError("Access token is required.", 401);
         }
 
         if (!authHeader.startsWith("Bearer ")) {
-            return res.status(401).json({
-                success: false,
-                message: "Invalid authorization header.",
-            });
+            throw new AppError("Invalid authorization header.", 401);
         }
-        
+
         const token = authHeader.split(" ")[1];
 
         const payload = verifyAccessToken(token);
-        
+
         req.user = payload;
 
         next();
     } catch (error) {
-        return res.status(401).json({
-            success: false,
-            message: "Invalid or expired access token.",
-        });
+        if (error instanceof AppError) {
+            return next(error);
+        }
+        return next(new AppError("Invalid or expired access token.", 401));
     }
 };
