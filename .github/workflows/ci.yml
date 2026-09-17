@@ -1,0 +1,67 @@
+name: CI & SonarQube Code Quality Analysis
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ci-pipeline:
+    name: Build, Typecheck, Lint & SonarQube Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout repository with full git history (required by SonarQube)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Step 2: Install pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      # Step 3: Setup Node.js 20 with pnpm cache
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      # Step 4: Install workspace dependencies
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Step 5: Generate Prisma Client (needed for server TypeScript types)
+      - name: Generate Prisma Client
+        run: pnpm --filter @realtime/server exec prisma generate
+
+      # Step 6: TypeScript Type Checking across all apps
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      # Step 7: Linting
+      - name: Lint
+        run: pnpm turbo run lint
+
+      # Step 8: SonarQube / SonarCloud Code Analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # Step 9: Verify Production Build
+      - name: Build applications
+        run: pnpm turbo run build
