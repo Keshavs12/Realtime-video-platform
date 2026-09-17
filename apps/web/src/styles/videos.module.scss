@@ -1,0 +1,57 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+}
+
+.roomCode {
+  font-weight: 600;
+  color: white;
+}
+
+.meta {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.hostBadge {
+  background: #1e1b4b;
+  color: #c7d2fe;
+}
+
+.joinedBadge {
+  background: #064e3b;
+  color: #a7f3d0;
+}
+
+.duration {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.empty {
+  color: #94a3b8;
+  padding: 2rem 0;
+  text-align: center;
+}
