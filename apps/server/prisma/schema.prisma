@@ -15,4 +15,40 @@ model User {
   refreshToken String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  hostedRooms    Room[]            @relation("HostedRooms")
+  participations RoomParticipant[] @relation("RoomParticipations")
+  chatMessages   ChatMessage[]
+}
+
+model Room {
+  id           String            @id @default(cuid())
+  code         String            @unique
+  hostId       String
+  host         User              @relation("HostedRooms", fields: [hostId], references: [id])
+  createdAt    DateTime          @default(now())
+  participants RoomParticipant[]
+  chatMessages ChatMessage[]
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([roomId, createdAt])
+}
+
+model RoomParticipant {
+  id       String    @id @default(cuid())
+  roomId   String
+  room     Room      @relation(fields: [roomId], references: [id])
+  userId   String
+  user     User      @relation("RoomParticipations", fields: [userId], references: [id])
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { use, useEffect, useRef } from "react";
+import React, { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useRoom } from "@/hooks/useRoom";
@@ -17,21 +17,98 @@ interface VideoFeedProps {
  */
 const VideoFeed = ({ stream, muted = false, className }: VideoFeedProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isAudioBlocked, setIsAudioBlocked] = useState(false);
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
+    const video = videoRef.current;
+    if (!video || !stream) return;
+
+    // Guards against acting on a play() call that a later srcObject/play()
+    // call has already superseded (e.g. React re-running this effect, or a
+    // fast peer reconnect). The browser aborts the stale call with
+    // AbortError — that's expected noise, not a real playback failure, and
+    // must not be treated as one or the video gets stuck showing the
+    // "blocked" fallback forever even though a newer play() call succeeded.
+    let cancelled = false;
+
+    video.srcObject = stream;
+
+    const playVideo = async () => {
+      try {
+        await video.play();
+      } catch (err) {
+        if (cancelled || (err as DOMException).name === "AbortError") return;
+
+        console.warn("Unmuted playback prevented by browser. Falling back to muted to show video:", err);
+        video.muted = true;
+        setIsAudioBlocked(true);
+        try {
+          await video.play();
+        } catch (e) {
+          if (!cancelled && (e as DOMException).name !== "AbortError") {
+            console.error("Muted video playback failed:", e);
+          }
+        }
+      }
+    };
+
+    playVideo();
+
+    const handleTrackEvent = () => playVideo();
+    stream.getTracks().forEach((track) => {
+      track.addEventListener("unmute", handleTrackEvent);
+    });
+    stream.addEventListener("addtrack", handleTrackEvent);
+
+    return () => {
+      cancelled = true;
+      stream.getTracks().forEach((track) => {
+        track.removeEventListener("unmute", handleTrackEvent);
+      });
+      stream.removeEventListener("addtrack", handleTrackEvent);
+    };
   }, [stream]);
 
+  const handleUnmute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (videoRef.current) {
+      videoRef.current.muted = false;
+      videoRef.current.play().then(() => setIsAudioBlocked(false)).catch(console.error);
+    }
+  };
+
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted={muted}
-      className={className}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={muted}
+        className={className}
+      />
+      {isAudioBlocked && !muted && (
+        <button
+          onClick={handleUnmute}
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            background: "rgba(239, 68, 68, 0.9)",
+            color: "white",
+            border: "none",
+            borderRadius: "20px",
+            padding: "4px 10px",
+            fontSize: "0.75rem",
+            cursor: "pointer",
+            fontWeight: "600",
+            zIndex: 10,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+          }}
+        >
+          🔇 Click to unmute
+        </button>
+      )}
+    </div>
   );
 };
 
@@ -48,11 +125,59 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     toggleVideo,
     isAudioMuted,
     isVideoMuted,
+    videoDevices,
+    audioDevices,
+    selectedVideoDeviceId,
+    selectedAudioDeviceId,
+    switchCamera,
+    switchMicrophone,
+    roomNotFound,
+    messages,
+    sendMessage,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare,
   } = useRoom(roomId, user);
+
+  const [chatInput, setChatInput] = useState("");
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null);
 
   const handleLeave = () => {
     router.push("/dashboard");
   };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    sendMessage(chatInput.trim());
+    setChatInput("");
+  };
+
+  const handleToggleScreenShare = () => {
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      startScreenShare().catch((err) => console.error("Failed to start screen share:", err));
+    }
+  };
+
+  useEffect(() => {
+    chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight });
+  }, [messages]);
+
+  useEffect(() => {
+    if (roomNotFound) {
+      router.replace("/dashboard");
+    }
+  }, [roomNotFound, router]);
+
+  if (roomNotFound) {
+    return (
+      <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: "#94a3b8" }}>This room doesn't exist. Redirecting…</p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.roomContainer}>
@@ -82,7 +207,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                 className={styles.video}
               />
               <div className={styles.peerName}>
-                <span>👤 {peer.name || `Peer (${peer.userId.slice(0, 4)})`}</span>
+                <span>
+                  👤 {peer.name || (peer.userId ? `Peer (${peer.userId.slice(0, 4)})` : "Participant")}
+                </span>
               </div>
             </div>
           ))}
@@ -111,12 +238,48 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
             {isVideoMuted ? "🚫" : "📹"}
           </button>
           <button
+            onClick={handleToggleScreenShare}
+            className={`${styles.controlButton} ${isScreenSharing ? styles.active : ""}`}
+            title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
+          >
+            🖥️
+          </button>
+          <button
             onClick={handleLeave}
             className={`${styles.controlButton} ${styles.leave}`}
             title="Leave Room"
           >
             📞
           </button>
+        </div>
+
+        {/* Device selection */}
+        <div className={styles.deviceSelectors}>
+          <select
+            className={styles.deviceSelect}
+            value={selectedVideoDeviceId}
+            onChange={(e) => switchCamera(e.target.value)}
+            title="Choose camera"
+          >
+            {videoDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className={styles.deviceSelect}
+            value={selectedAudioDeviceId}
+            onChange={(e) => switchMicrophone(e.target.value)}
+            title="Choose microphone"
+          >
+            {audioDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -143,13 +306,43 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               </div>
               <div className={styles.userInfo}>
                 <span className={styles.name}>
-                  {presenceUser.name || `Peer (${presenceUser.userId.slice(0, 4)})`}
+                  {presenceUser.name || (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant")}
                 </span>
                 <span className={styles.status}>🟢 Active</span>
               </div>
             </li>
           ))}
         </ul>
+
+        {/* In-call chat */}
+        <div className={styles.chatSection}>
+          <h3>Chat</h3>
+          <div className={styles.chatMessages} ref={chatMessagesRef}>
+            {messages.map((msg, i) => (
+              <div
+                key={`${msg.at}-${i}`}
+                className={`${styles.chatMessage} ${msg.isLocal ? styles.own : ""}`}
+              >
+                {!msg.isLocal && (
+                  <div className={styles.chatMessageAuthor}>{msg.name || "Participant"}</div>
+                )}
+                {msg.message}
+              </div>
+            ))}
+          </div>
+          <form className={styles.chatInputRow} onSubmit={handleSendMessage}>
+            <input
+              type="text"
+              className={styles.chatInput}
+              placeholder="Type a message…"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+            />
+            <button type="submit" className={styles.chatSendButton} disabled={!chatInput.trim()}>
+              Send
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

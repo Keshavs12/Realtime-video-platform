@@ -22,6 +22,7 @@ export default function SignupPage() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log("Form submitted with data:", formData);
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -49,7 +50,7 @@ export default function SignupPage() {
         {error && <div className={styles.error} style={{ color: '#ef4444', marginBottom: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>{error}</div>}
         {success && <div className={styles.success} style={{ color: '#10b981', marginBottom: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>{success}</div>}
         
-        <form className={styles.form} onSubmit={handleSubmit}>
+        <form className={styles.form} onSubmit={handleSubmit} suppressHydrationWarning>
           <div className={styles.formGroup}>
             <label htmlFor="fullName">Full Name</label>
             <input
@@ -59,6 +60,7 @@ export default function SignupPage() {
               value={formData.name}
               onChange={handleChange}
               required
+              suppressHydrationWarning
             />
           </div>
 
@@ -71,6 +73,7 @@ export default function SignupPage() {
               value={formData.email}
               onChange={handleChange}
               required
+              suppressHydrationWarning
             />
           </div>
 
@@ -83,6 +86,7 @@ export default function SignupPage() {
               value={formData.password}
               onChange={handleChange}
               required
+              suppressHydrationWarning
             />
           </div>
 

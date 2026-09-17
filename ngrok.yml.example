@@ -1,0 +1,14 @@
+version: "3"
+agent:
+  authtoken: <your-ngrok-authtoken>
+
+# Free ngrok accounts allow only one agent session — running `ngrok http 3000`
+# and `ngrok http 5000` in two separate terminals will fail with ERR_NGROK_108.
+# Defining both tunnels here and starting them together with one agent avoids that.
+tunnels:
+  web:
+    proto: http
+    addr: 3000
+  api:
+    proto: http
+    addr: 5000

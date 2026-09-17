@@ -26,3 +26,13 @@ export const refreshToken = async () => {
   return response.data;
 }
 
+export const updateProfile = async (name: string) => {
+  const response = await api.patch("/auth/me", { name });
+  return response.data;
+};
+
+export const changePassword = async (currentPassword: string, newPassword: string) => {
+  const response = await api.patch("/auth/me/password", { currentPassword, newPassword });
+  return response.data;
+};
+

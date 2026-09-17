@@ -70,6 +70,10 @@ web_modules/
 .env.*
 !.env.example
 
+# ngrok config (contains your personal authtoken)
+ngrok.yml
+!ngrok.yml.example
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

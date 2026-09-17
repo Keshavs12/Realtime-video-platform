@@ -2,11 +2,61 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 3rem;
+  flex-wrap: wrap;
 
   h1 {
     font-size: 2rem;
     font-weight: 700;
+  }
+
+  @media (max-width: 768px) {
+    margin-bottom: 1.5rem;
+
+    h1 {
+      font-size: 1.375rem;
+    }
+  }
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+
+  h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.menuButton {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  flex-shrink: 0;
+
+  span {
+    display: block;
+    height: 2px;
+    margin: 0 8px;
+    background: white;
+    border-radius: 2px;
+  }
+
+  @media (max-width: 768px) {
+    display: flex;
   }
 }
 
@@ -14,7 +64,7 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  
+
   .userName {
     font-weight: 500;
   }
@@ -28,5 +78,12 @@
     align-items: center;
     justify-content: center;
     font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 480px) {
+    .userName {
+      display: none;
+    }
   }
 }
