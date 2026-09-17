@@ -4,11 +4,6 @@
  * --------------------------------------------------------------------------
  *
  * Responsible for validating authentication requests.
- *
- * TODO:
- * - Signup validation
- * - Login validation
- * - Forgot password validation
  */
 import { z } from "zod";
 

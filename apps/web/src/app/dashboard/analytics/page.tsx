@@ -71,8 +71,8 @@ export default function AnalyticsPage() {
           <p style={{ color: "#94a3b8", marginTop: "1rem" }}>Loading…</p>
         ) : (
           <div className={styles.barChart}>
-            {days.map((day, i) => (
-              <div key={i} className={styles.barRow}>
+            {days.map((day) => (
+              <div key={day.label} className={styles.barRow}>
                 <span className={styles.barLabel}>{day.label}</span>
                 <div className={styles.barTrack}>
                   <div

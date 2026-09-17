@@ -8,10 +8,11 @@
  * recorded from the socket layer (see src/socket/index.ts), not here.
  * --------------------------------------------------------------------------
  */
+import crypto from "node:crypto";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 
-const generateRoomCode = () => Math.random().toString(36).substring(2, 10);
+const generateRoomCode = () => crypto.randomBytes(4).toString("hex");
 
 export const createRoom = async (hostId: string) => {
     // Extremely unlikely to collide, but retry on the off chance it does

@@ -6,7 +6,7 @@ import { Header } from "@/components/layout/Header/Header";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import styles from "../../styles/dashboard.module.scss";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (

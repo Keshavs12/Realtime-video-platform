@@ -5,6 +5,8 @@ import {
   useContext,
   useEffect,
   useState,
+  useMemo,
+  useCallback,
   ReactNode,
 } from "react";
 import { getMe } from "@/services/auth.service";
@@ -68,38 +70,37 @@ const initializeAuth = async () => {
   }
 };
 
-  const login = (user: User, token: string) => {
+  const memoizedLogin = useCallback((newUser: User, token: string) => {
     localStorage.setItem("accessToken", token);
-
-    setUser(user);
-
+    setUser(newUser);
     setAccessToken(token);
-  };
+  }, []);
 
-  const updateUser = (updatedUser: User) => {
+  const memoizedUpdateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser);
-  };
+  }, []);
 
-  const logout = () => {
+  const memoizedLogout = useCallback(() => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
-
     setUser(null);
-
     setAccessToken(null);
-  };
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({
+      user,
+      accessToken,
+      login: memoizedLogin,
+      logout: memoizedLogout,
+      updateUser: memoizedUpdateUser,
+      loading,
+    }),
+    [user, accessToken, memoizedLogin, memoizedLogout, memoizedUpdateUser, loading]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        accessToken,
-        login,
-        logout,
-        updateUser,
-        loading,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

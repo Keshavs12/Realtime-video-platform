@@ -21,7 +21,7 @@ export default function LoginPage() {
     setFormData({ ...formData, [e.target.id]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -88,7 +88,7 @@ export default function LoginPage() {
         </form>
 
         <div className={styles.footer}>
-          Don't have an account? <Link href="/signup">Create one</Link>
+          Don&apos;t have an account? <Link href="/signup">Create one</Link>
         </div>
       </div>
     </div>

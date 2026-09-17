@@ -27,34 +27,38 @@ export default function MyVideosPage() {
       });
   }, []);
 
+  let historyContent: React.ReactNode;
+  if (history === null) {
+    historyContent = <p className={styles.empty}>Loading…</p>;
+  } else if (history.length === 0) {
+    historyContent = <p className={styles.empty}>No past calls yet. Start or join a room to see it here.</p>;
+  } else {
+    historyContent = (
+      <div className={styles.list} style={{ marginTop: "1rem" }}>
+        {history.map((entry, i) => (
+          <div key={`${entry.roomCode}-${entry.joinedAt}-${i}`} className={styles.row}>
+            <div>
+              <div className={styles.roomCode}>{entry.roomCode}</div>
+              <div className={styles.meta}>
+                {formatDate(entry.joinedAt)}
+                {entry.otherParticipantsCount > 0 &&
+                  ` · ${entry.otherParticipantsCount} other${entry.otherParticipantsCount > 1 ? "s" : ""}`}
+              </div>
+            </div>
+            <span className={`${styles.badge} ${entry.isHost ? styles.hostBadge : styles.joinedBadge}`}>
+              {entry.isHost ? "Hosted" : "Joined"}
+            </span>
+            <span className={styles.duration}>{entry.durationMinutes} min</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className={dashboardStyles.card}>
       <h3>Call History</h3>
-
-      {history === null ? (
-        <p className={styles.empty}>Loading…</p>
-      ) : history.length === 0 ? (
-        <p className={styles.empty}>No past calls yet. Start or join a room to see it here.</p>
-      ) : (
-        <div className={styles.list} style={{ marginTop: "1rem" }}>
-          {history.map((entry, i) => (
-            <div key={`${entry.roomCode}-${entry.joinedAt}-${i}`} className={styles.row}>
-              <div>
-                <div className={styles.roomCode}>{entry.roomCode}</div>
-                <div className={styles.meta}>
-                  {formatDate(entry.joinedAt)}
-                  {entry.otherParticipantsCount > 0 &&
-                    ` · ${entry.otherParticipantsCount} other${entry.otherParticipantsCount > 1 ? "s" : ""}`}
-                </div>
-              </div>
-              <span className={`${styles.badge} ${entry.isHost ? styles.hostBadge : styles.joinedBadge}`}>
-                {entry.isHost ? "Hosted" : "Joined"}
-              </span>
-              <span className={styles.duration}>{entry.durationMinutes} min</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {historyContent}
     </div>
   );
 }

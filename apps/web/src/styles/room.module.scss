@@ -118,9 +118,9 @@
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1e293b;
+  color: #ffffff;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -167,9 +167,9 @@
 }
 
 .deviceSelect {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
   padding: 0.5rem 0.75rem;
   border-radius: 10px;
   font-size: 0.8125rem;
@@ -237,13 +237,13 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
+  background: linear-gradient(135deg, #4338ca, #7e22ce);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: white;
+  color: #ffffff;
 }
 
 .userInfo {
@@ -282,12 +282,12 @@
 }
 
 .chatMessage {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 6px 12px;
   font-size: 0.8125rem;
-  color: #e2e8f0;
+  color: #f8fafc;
   max-width: 90%;
 
   &.own {
@@ -313,9 +313,9 @@
 .chatInput {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
   padding: 0.5rem 0.75rem;
   border-radius: 10px;
   font-size: 0.8125rem;
@@ -327,8 +327,8 @@
 }
 
 .chatSendButton {
-  background: #6366f1;
-  color: white;
+  background: #4338ca;
+  color: #ffffff;
   border: none;
   padding: 0.5rem 1rem;
   border-radius: 10px;

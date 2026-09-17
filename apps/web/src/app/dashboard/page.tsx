@@ -3,12 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from "next/navigation";
 import styles from '../../styles/dashboard.module.scss';
-import { getMe } from "@/services/auth.service";
 import * as roomService from "@/services/room.service";
 import type { DashboardStats, RoomHistoryEntry } from "@/services/room.service";
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null);
   const [roomId, setRoomId] = useState("");
   const [joinError, setJoinError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
@@ -17,20 +15,8 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetchUser();
     fetchDashboardData();
   }, []);
-
-  const fetchUser = async () => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) return ;
-    try {
-      const response = await getMe();
-      setUser(response.user);
-    } catch (err) {
-      console.error("Failed to fetch user:", err);
-    }
-  };
 
   const fetchDashboardData = async () => {
     try {
@@ -45,7 +31,7 @@ export default function DashboardPage() {
     }
   };
 
-  const handleJoinRoom = async (e: React.FormEvent) => {
+  const handleJoinRoom = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!roomId.trim() || isJoining) return;
 
@@ -55,6 +41,7 @@ export default function DashboardPage() {
       await roomService.checkRoomExists(roomId.trim());
       router.push(`/dashboard/room/${roomId.trim()}`);
     } catch (err) {
+      console.warn("Room check failed:", err);
       setJoinError("Room not found. Check the ID and try again.");
     } finally {
       setIsJoining(false);
@@ -113,6 +100,8 @@ export default function DashboardPage() {
               }}
               onMouseOver={(e) => (e.currentTarget.style.opacity = '0.9')}
               onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
+              onFocus={(e) => (e.currentTarget.style.opacity = '0.9')}
+              onBlur={(e) => (e.currentTarget.style.opacity = '1')}
             >
               📹 Create New Room
             </button>
@@ -156,6 +145,12 @@ export default function DashboardPage() {
                 if (roomId.trim()) e.currentTarget.style.opacity = '0.9';
               }}
               onMouseOut={(e) => {
+                e.currentTarget.style.opacity = '1';
+              }}
+              onFocus={(e) => {
+                if (roomId.trim()) e.currentTarget.style.opacity = '0.9';
+              }}
+              onBlur={(e) => {
                 e.currentTarget.style.opacity = '1';
               }}
             >

@@ -85,7 +85,9 @@ const VideoFeed = ({ stream, muted = false, className }: VideoFeedProps) => {
         playsInline
         muted={muted}
         className={className}
-      />
+      >
+        <track kind="captions" />
+      </video>
       {isAudioBlocked && !muted && (
         <button
           onClick={handleUnmute}
@@ -112,7 +114,7 @@ const VideoFeed = ({ stream, muted = false, className }: VideoFeedProps) => {
   );
 };
 
-export default function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
+export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId: string }> }>) {
   const { roomId } = use(params);
   const router = useRouter();
   const { user } = useAuth();
@@ -146,7 +148,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     router.push("/dashboard");
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
     sendMessage(chatInput.trim());
@@ -174,7 +176,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   if (roomNotFound) {
     return (
       <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
-        <p style={{ color: "#94a3b8" }}>This room doesn't exist. Redirecting…</p>
+        <p style={{ color: "#94a3b8" }}>This room doesn&apos;t exist. Redirecting…</p>
       </div>
     );
   }

@@ -63,7 +63,9 @@ api.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${token}`;
             return api(originalRequest);
           })
-          .catch((err) => Promise.reject(err));
+          .catch((err) => {
+            throw err;
+          });
       }
 
       originalRequest._retry = true;
@@ -94,13 +96,13 @@ api.interceptors.response.use(
           window.location.href = "/login";
         }
 
-        return Promise.reject(refreshError);
+        throw refreshError;
       } finally {
         isRefreshing = false;
       }
     }
 
-    return Promise.reject(error);
+    throw error;
   }
 );
 

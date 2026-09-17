@@ -126,8 +126,6 @@ export const logout = async (userId: string) => {
             refreshToken: null,
         },
     });
-
-    return;
 };
 
 export const comparePassword = async (
@@ -221,8 +219,6 @@ export const changePassword = async (
         where: { id: userId },
         data: { password: hashedPassword },
     });
-
-    return;
 };
 
 export const getUserById = async (userId: string) => {

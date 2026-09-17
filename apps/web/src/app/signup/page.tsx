@@ -21,7 +21,7 @@ export default function SignupPage() {
     setFormData({ ...formData, [e.target.id]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     console.log("Form submitted with data:", formData);
     e.preventDefault();
     setLoading(true);

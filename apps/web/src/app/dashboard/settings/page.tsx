@@ -18,7 +18,7 @@ export default function SettingsPage() {
   const [passwordStatus, setPasswordStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!name.trim() || isSavingProfile) return;
 
@@ -35,7 +35,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || isSavingPassword) return;
 

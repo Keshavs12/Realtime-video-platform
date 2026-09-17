@@ -1,4 +1,4 @@
-import http from "http";
+import http from "node:http";
 import app from "./app";
 import { initSocketServer } from "./socket";
 import { logger } from "./utils/logger";

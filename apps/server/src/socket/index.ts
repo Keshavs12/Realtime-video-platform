@@ -1,4 +1,4 @@
-import { Server as HttpServer } from "http";
+import { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { allowedOrigins } from "../config/cors";
 import { prisma } from "../config/prisma";

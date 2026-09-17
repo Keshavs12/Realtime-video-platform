@@ -7,6 +7,6 @@ interface Props {
   children: ReactNode;
 }
 
-export default function Providers({ children }: Props) {
+export default function Providers({ children }: Readonly<Props>) {
   return <AuthProvider>{children}</AuthProvider>;
 }

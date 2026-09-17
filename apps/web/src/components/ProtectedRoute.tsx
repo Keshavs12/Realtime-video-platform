@@ -8,7 +8,7 @@ interface Props {
   children: ReactNode;
 }
 
-export default function ProtectedRoute({ children }: Props) {
+export default function ProtectedRoute({ children }: Readonly<Props>) {
   const router = useRouter();
 
   const { accessToken, loading } = useAuth();

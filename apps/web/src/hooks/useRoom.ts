@@ -69,6 +69,21 @@ export interface ChatMessage {
   isLocal: boolean;
 }
 
+const removePeerFromList = (list: PresenceUser[], socketId: string, userId?: string) =>
+  list.filter((p) => p.socketId !== socketId && (!userId || p.userId !== userId));
+
+const addPeerToList = (list: PresenceUser[], item: PresenceUser) => [
+  ...list.filter((p) => p.userId !== item.userId && p.socketId !== item.socketId),
+  item,
+];
+
+const updatePeerDetails = (list: Peer[], socketId: string, ansUserId?: string, ansName?: string) =>
+  list.map((p) =>
+    p.socketId === socketId
+      ? { ...p, userId: ansUserId || p.userId, name: ansName || p.name }
+      : p
+  );
+
 /**
  * Custom React hook for WebRTC multi-peer video rooms and signaling.
  * Handles local media stream, Socket.IO connections, WebRTC peer connections, and presence list.
@@ -111,7 +126,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     const queue = iceCandidatesQueueRef.current[socketId];
     if (peerConnection && queue && queue.length > 0) {
       for (const cand of queue) {
-        if (cand && cand.candidate) {
+        if (cand?.candidate) {
           try {
             await peerConnection.addIceCandidate(cand);
           } catch (e) {
@@ -245,21 +260,16 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           }
         });
 
-        socket.on("user-joined", ({ socketId, userId, name }: PresenceUser) => {
+        socket.on("user-joined", (joinedUser: PresenceUser) => {
           // Never add self to presence list
-          if (userId === user.id) return;
+          if (joinedUser.userId === user.id) return;
 
-          setPresenceList((prev) => {
-            const filtered = prev.filter((p) => p.userId !== userId && p.socketId !== socketId);
-            return [...filtered, { socketId, userId, name }];
-          });
+          setPresenceList((prev) => addPeerToList(prev, joinedUser));
         });
 
         socket.on("user-left", ({ socketId, userId }: { socketId: string; userId?: string }) => {
           // Remove from presence list
-          setPresenceList((prev) =>
-            prev.filter((p) => p.socketId !== socketId && (!userId || p.userId !== userId))
-          );
+          setPresenceList((prev) => removePeerFromList(prev, socketId, userId));
           // Remove peer connection and stream
           closePeerConnection(socketId);
         });
@@ -318,13 +328,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
               await processQueuedCandidates(from);
 
               if (ansUserId || ansName) {
-                setPeers((prev) =>
-                  prev.map((p) =>
-                    p.socketId === from
-                      ? { ...p, userId: ansUserId || p.userId, name: ansName || p.name }
-                      : p
-                  )
-                );
+                setPeers((prev) => updatePeerDetails(prev, from, ansUserId, ansName));
               }
             }
           }
@@ -334,12 +338,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           "ice-candidate",
           async ({ from, candidate }: { from: string; candidate: RTCIceCandidateInit }) => {
             const peerConnection = peerConnectionsRef.current[from];
-            if (
-              peerConnection &&
-              peerConnection.remoteDescription &&
-              peerConnection.remoteDescription.type
-            ) {
-              if (candidate && candidate.candidate) {
+            if (peerConnection?.remoteDescription?.type) {
+              if (candidate?.candidate) {
                 try {
                   await peerConnection.addIceCandidate(candidate);
                 } catch (e) {
@@ -514,9 +514,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     peerConnection.ontrack = (event) => {
       console.log(`🎥 [WebRTC] Remote track received (${event.track.kind}) from ${peerSocketId}`);
       const remoteStream =
-        event.streams && event.streams[0]
-          ? event.streams[0]
-          : new MediaStream([event.track]);
+        event.streams?.[0] ?? new MediaStream([event.track]);
 
       setPeers((prev) => {
         const existingPeerIndex = prev.findIndex(
