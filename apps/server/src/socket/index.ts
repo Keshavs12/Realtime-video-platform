@@ -2,11 +2,10 @@ import { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { allowedOrigins } from "../config/cors";
 import { prisma } from "../config/prisma";
+import { verifyAccessToken } from "../utils/jwt";
 
 interface JoinRoomPayload {
     roomId: string;
-    userId: string;
-    name?: string;
 }
 
 /**
@@ -23,6 +22,29 @@ export const initSocketServer = (server: HttpServer): Server => {
             methods: ["GET", "POST"],
             credentials: true,
         },
+    });
+
+    // Enforce JWT authentication on every incoming socket connection
+    io.use((socket, next) => {
+        try {
+            const token =
+                socket.handshake.auth?.token ||
+                socket.handshake.headers?.authorization?.replace("Bearer ", "");
+
+            if (!token) {
+                return next(new Error("Authentication error: Access token required"));
+            }
+
+            const payload = verifyAccessToken(token);
+            socket.data.userId = payload.userId;
+            socket.data.name = payload.name;
+            socket.data.email = payload.email;
+
+            next();
+        } catch (err) {
+            console.warn(`🔒 Unauthorized socket connection attempt rejected: ${socket.id}`);
+            return next(new Error("Authentication error: Invalid or expired token"));
+        }
     });
 
     // Closes out the caller's currently-open RoomParticipant row (if any) for
@@ -50,7 +72,15 @@ export const initSocketServer = (server: HttpServer): Server => {
 
         // 1. Join Room
         socket.on("join-room", async (payload: JoinRoomPayload) => {
-            const { roomId, userId, name } = payload;
+            const { roomId } = payload;
+            const userId = socket.data.userId as string;
+            const name = socket.data.name as string | undefined;
+
+            if (!userId) {
+                console.warn(`⚠️ Rejected join-room: unauthenticated socket ${socket.id}`);
+                socket.emit("error", { message: "Authentication required" });
+                return;
+            }
 
             // The room must already exist (created via POST /api/v1/rooms) —
             // this is a safety net in case the client somehow skips that check.
@@ -78,8 +108,6 @@ export const initSocketServer = (server: HttpServer): Server => {
             // Store information on socket.data for cleanup on disconnect
             socket.data.roomId = roomId;
             socket.data.roomDbId = room.id;
-            socket.data.userId = userId;
-            socket.data.name = name;
 
             socket.join(roomId);
             await prisma.roomParticipant.create({
@@ -144,7 +172,7 @@ export const initSocketServer = (server: HttpServer): Server => {
         const handleLeaveRoom = async () => {
             const { roomId, userId } = socket.data;
 
-            if (roomId) {
+            if (roomId && userId) {
                 console.log(`🚪 User ${userId} leaving room: ${roomId}`);
                 socket.leave(roomId);
 
@@ -156,11 +184,9 @@ export const initSocketServer = (server: HttpServer): Server => {
 
                 await closeOpenParticipation(roomId, userId);
 
-                // Clear room info from socket.data
+                // Clear room info from socket.data while preserving authenticated user identity
                 socket.data.roomId = undefined;
                 socket.data.roomDbId = undefined;
-                socket.data.userId = undefined;
-                socket.data.name = undefined;
             }
         };
 
@@ -174,8 +200,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             io.to(to).emit("offer", {
                 from: socket.id,
                 offer,
-                userId: payload.userId || socket.data.userId,
-                name: payload.name || socket.data.name,
+                userId: socket.data.userId,
+                name: socket.data.name,
             });
         });
 
@@ -184,8 +210,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             io.to(to).emit("answer", {
                 from: socket.id,
                 answer,
-                userId: payload.userId || socket.data.userId,
-                name: payload.name || socket.data.name,
+                userId: socket.data.userId,
+                name: socket.data.name,
             });
         });
 

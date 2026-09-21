@@ -26,11 +26,23 @@
  *
  * Contains authentication business logic.
  */
+import crypto from "node:crypto";
 import { prisma } from "../../config/prisma";
 import { hashPassword } from "../../utils/bcrypt";
 import * as bcrypt from "bcrypt";
-import { generateAccessToken, generateRefreshToken ,verifyRefreshToken} from "../../utils/jwt";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../../utils/jwt";
 import { AppError } from "../../utils/AppError";
+
+export const hashToken = (token: string): string => {
+    return crypto.createHash("sha256").update(token).digest("hex");
+};
+
+export const timingSafeMatch = (a: string, b: string): boolean => {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+};
 
 interface SignupPayload {
     name: string;
@@ -101,7 +113,7 @@ export const login = async (email: string, password: string) => {
             id: user.id,
         },
         data: {
-            refreshToken,
+            refreshToken: hashToken(refreshToken),
         },
     });
 
@@ -150,11 +162,16 @@ export const refreshToken = async (token: string) => {
         },
     });
 
-    if (!user) {
-        throw new AppError("User not found.", 401);
+    if (!user || !user.refreshToken) {
+        throw new AppError("Invalid refresh token.", 401);
     }
 
-    if (user.refreshToken !== token) {
+    const tokenHash = hashToken(token);
+    const isValid =
+        (user.refreshToken.length === 64 && timingSafeMatch(user.refreshToken, tokenHash)) ||
+        user.refreshToken === token; // graceful fallback for existing legacy unhashed sessions
+
+    if (!isValid) {
         throw new AppError("Invalid refresh token.", 401);
     }
 
@@ -173,7 +190,7 @@ export const refreshToken = async (token: string) => {
             id: user.id,
         },
         data: {
-            refreshToken: newRefreshToken,
+            refreshToken: hashToken(newRefreshToken),
         },
     });
 

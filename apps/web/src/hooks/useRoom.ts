@@ -213,8 +213,10 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
 
         // 2. Connect to Socket Server
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+        const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
         const socket = io(socketUrl, {
           transports: ["websocket", "polling"],
+          auth: { token },
           extraHeaders: { "ngrok-skip-browser-warning": "true" },
         });
         activeSocket = socket;
@@ -224,9 +226,11 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socket.on("connect", () => {
           socket.emit("join-room", {
             roomId,
-            userId: user.id,
-            name: user.name,
           });
+        });
+
+        socket.on("connect_error", (err) => {
+          console.error("[Socket] Handshake / authentication error:", err.message);
         });
 
         socket.on("room-not-found", () => {
