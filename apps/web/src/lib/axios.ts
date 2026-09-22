@@ -5,9 +5,10 @@ const api = axios.create({
   baseURL:
     process.env.NEXT_PUBLIC_API_URL ||
     "http://localhost:5000/api/v1",
-
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
     // Bypasses ngrok's free-tier HTML "visit this site" interstitial so API
     // responses come back as JSON instead of an HTML page. Harmless when not
     // running behind ngrok.
@@ -75,13 +76,8 @@ api.interceptors.response.use(
         const data = await refreshAccessToken();
 
         const newAccessToken = data.data.accessToken;
-        const newRefreshToken = data.data.refreshToken;
 
         localStorage.setItem("accessToken", newAccessToken);
-
-        if (newRefreshToken) {
-          localStorage.setItem("refreshToken", newRefreshToken);
-        }
 
         processQueue(null, newAccessToken);
 
@@ -90,7 +86,6 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
 
         if (typeof window !== "undefined" && window.location.pathname !== "/login") {
           window.location.href = "/login";

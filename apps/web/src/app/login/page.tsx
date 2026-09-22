@@ -31,12 +31,8 @@ export default function LoginPage() {
       // Assuming successful login returns a token set in cookies or local storage.
       // Redirecting to dashboard:
       console.log('Login successful:', response.data);
-      const { user, accessToken, refreshToken } = response.data.data;
-      console.log('s 1 ===============>userlogin:', user);
-      console.log('s 1 ===============>accessToken:', accessToken);
-      console.log('s 1 ===============>refreshToken:', refreshToken); 
+      const { user, accessToken } = response.data.data;
       loginUser(user, accessToken);
-      localStorage.setItem("refreshToken", refreshToken);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid email or password. Please try again.');

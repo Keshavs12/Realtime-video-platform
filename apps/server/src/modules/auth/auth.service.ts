@@ -100,11 +100,13 @@ export const login = async (email: string, password: string) => {
 
     const accessToken = generateAccessToken({
         userId: user.id,
+        name: user.name,
         email: user.email,
     });
 
     const refreshToken = generateRefreshToken({
         userId: user.id,
+        name: user.name,
         email: user.email,
     });
 
@@ -177,11 +179,13 @@ export const refreshToken = async (token: string) => {
 
     const accessToken = generateAccessToken({
         userId: user.id,
+        name: user.name,
         email: user.email,
     });
 
     const newRefreshToken = generateRefreshToken({
         userId: user.id,
+        name: user.name,
         email: user.email,
     });
 

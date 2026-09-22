@@ -6,6 +6,7 @@ import { verifyAccessToken } from "../utils/jwt";
 
 interface JoinRoomPayload {
     roomId: string;
+    name?: string;
 }
 
 /**
@@ -22,10 +23,11 @@ export const initSocketServer = (server: HttpServer): Server => {
             methods: ["GET", "POST"],
             credentials: true,
         },
+        maxHttpBufferSize: 256 * 1024, // 256 KB max payload to prevent buffer overflow attacks
     });
 
     // Enforce JWT authentication on every incoming socket connection
-    io.use((socket, next) => {
+    io.use(async (socket, next) => {
         try {
             const token =
                 socket.handshake.auth?.token ||
@@ -39,6 +41,21 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.userId = payload.userId;
             socket.data.name = payload.name;
             socket.data.email = payload.email;
+
+            // If name is missing from JWT payload (e.g. existing active session token), fetch from DB
+            if (!socket.data.name && socket.data.userId) {
+                try {
+                    const user = await prisma.user.findUnique({
+                        where: { id: socket.data.userId },
+                        select: { name: true },
+                    });
+                    if (user?.name) {
+                        socket.data.name = user.name;
+                    }
+                } catch (dbErr) {
+                    console.error("Failed to load user name for socket:", dbErr);
+                }
+            }
 
             next();
         } catch (err) {
@@ -74,7 +91,26 @@ export const initSocketServer = (server: HttpServer): Server => {
         socket.on("join-room", async (payload: JoinRoomPayload) => {
             const { roomId } = payload;
             const userId = socket.data.userId as string;
-            const name = socket.data.name as string | undefined;
+
+            if (!socket.data.name && payload?.name) {
+                socket.data.name = payload.name;
+            }
+
+            let name = socket.data.name as string | undefined;
+            if (!name && userId) {
+                try {
+                    const dbUser = await prisma.user.findUnique({
+                        where: { id: userId },
+                        select: { name: true },
+                    });
+                    if (dbUser?.name) {
+                        name = dbUser.name;
+                        socket.data.name = dbUser.name;
+                    }
+                } catch (dbErr) {
+                    console.error("Failed to load user name on join-room:", dbErr);
+                }
+            }
 
             if (!userId) {
                 console.warn(`⚠️ Rejected join-room: unauthenticated socket ${socket.id}`);
@@ -105,14 +141,33 @@ export const initSocketServer = (server: HttpServer): Server => {
                 }
             }
 
+            // Enforce room capacity limit (Full Mesh WebRTC cannot exceed 8 peers)
+            const MAX_ROOM_CAPACITY = 8;
+            const activeSockets = await io.in(roomId).fetchSockets();
+            const activeUsers = new Set(activeSockets.map((s) => s.data.userId).filter(Boolean));
+            if (!activeUsers.has(userId) && activeUsers.size >= MAX_ROOM_CAPACITY) {
+                console.warn(`⚠️ Rejected join-room: room ${roomId} is full (${activeUsers.size}/${MAX_ROOM_CAPACITY})`);
+                socket.emit("room-full", {
+                    roomId,
+                    maxCapacity: MAX_ROOM_CAPACITY,
+                    message: "Room is full. Maximum participant limit reached.",
+                });
+                return;
+            }
+
             // Store information on socket.data for cleanup on disconnect
             socket.data.roomId = roomId;
             socket.data.roomDbId = room.id;
+            socket.data.isHost = room.hostId === userId;
 
             socket.join(roomId);
-            await prisma.roomParticipant.create({
-                data: { roomId: room.id, userId },
-            });
+            try {
+                await prisma.roomParticipant.create({
+                    data: { roomId: room.id, userId },
+                });
+            } catch (dbErr) {
+                console.error("Failed to record room participant in DB:", dbErr);
+            }
             console.log(`🚪 User ${userId} (${name || "Guest"}) joined room: ${roomId}`);
 
             // Broadcast to other users in the room
@@ -194,40 +249,91 @@ export const initSocketServer = (server: HttpServer): Server => {
             handleLeaveRoom().catch((err) => console.error("Error handling leave-room:", err));
         });
 
-        // 3. WebRTC Signaling Relays
+        // Rate limiting helper using sliding window per socket
+        const isRateLimited = (action: string, limit: number, windowMs: number): boolean => {
+            if (!socket.data.rateLimits) {
+                socket.data.rateLimits = new Map<string, number[]>();
+            }
+
+            const now = Date.now();
+            const map = socket.data.rateLimits as Map<string, number[]>;
+            const timestamps = (map.get(action) || []).filter((t) => now - t < windowMs);
+
+            if (timestamps.length >= limit) {
+                map.set(action, timestamps);
+                return true;
+            }
+
+            timestamps.push(now);
+            map.set(action, timestamps);
+            return false;
+        };
+
+        // 3. WebRTC Signaling Relays (Enforce that sender is in an active room)
         socket.on("offer", (payload: { to: string; offer: any; userId?: string; name?: string }) => {
+            if (!socket.data.roomId) return;
+            if (isRateLimited("signaling", 60, 3000)) {
+                socket.emit("rate-limit", { action: "offer", message: "Signaling rate limit exceeded. Please wait." });
+                return;
+            }
             const { to, offer } = payload;
+            if (!to || !offer) return;
             io.to(to).emit("offer", {
                 from: socket.id,
                 offer,
-                userId: socket.data.userId,
-                name: socket.data.name,
+                userId: socket.data.userId || payload.userId,
+                name: socket.data.name || payload.name,
             });
         });
 
         socket.on("answer", (payload: { to: string; answer: any; userId?: string; name?: string }) => {
+            if (!socket.data.roomId) return;
+            if (isRateLimited("signaling", 60, 3000)) {
+                socket.emit("rate-limit", { action: "answer", message: "Signaling rate limit exceeded. Please wait." });
+                return;
+            }
             const { to, answer } = payload;
+            if (!to || !answer) return;
             io.to(to).emit("answer", {
                 from: socket.id,
                 answer,
-                userId: socket.data.userId,
-                name: socket.data.name,
+                userId: socket.data.userId || payload.userId,
+                name: socket.data.name || payload.name,
             });
         });
 
         socket.on("ice-candidate", (payload: { to: string; candidate: any }) => {
+            if (!socket.data.roomId) return;
+            if (isRateLimited("signaling", 60, 3000)) {
+                socket.emit("rate-limit", { action: "ice-candidate", message: "Signaling rate limit exceeded. Please wait." });
+                return;
+            }
             const { to, candidate } = payload;
+            if (!to || !candidate) return;
             io.to(to).emit("ice-candidate", {
                 from: socket.id,
                 candidate,
             });
         });
 
-        // 3b. In-call text chat — persisted so it survives a page refresh.
+        // 3b. In-call text chat — persisted with rate limiting and payload length limits.
         socket.on("chat-message", (payload: { message: string }) => {
+            if (isRateLimited("chat", 5, 3000)) {
+                socket.emit("rate-limit", {
+                    action: "chat-message",
+                    message: "You are sending messages too fast. Please slow down.",
+                });
+                return;
+            }
+
             const { roomId, roomDbId, userId, name } = socket.data;
-            const message = String(payload?.message || "").trim();
+            let message = String(payload?.message || "").trim();
             if (!roomId || !message) return;
+
+            // Enforce maximum length of 1000 characters to prevent memory/bandwidth exhaustion
+            if (message.length > 1000) {
+                message = message.substring(0, 1000);
+            }
 
             const at = Date.now();
 
