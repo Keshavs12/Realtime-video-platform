@@ -1,6 +1,6 @@
 import http from "node:http";
 import app from "./app";
-import { initSocketServer } from "./socket";
+import { initSocketServer, closeRedisClients } from "./socket";
 import { logger } from "./utils/logger";
 import { prisma } from "./config/prisma";
 
@@ -46,6 +46,10 @@ const gracefulShutdown = async (signal: string) => {
         // 3. Drain and disconnect database connection pool
         await prisma.$disconnect();
         logger.info("[Shutdown] Prisma database connection pool closed.");
+
+        // 4. Disconnect Redis pub/sub clients if active
+        await closeRedisClients();
+        logger.info("[Shutdown] Redis connections closed.");
 
         logger.info("[Shutdown] Graceful shutdown completed cleanly. Exiting.");
         process.exit(0);

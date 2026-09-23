@@ -9,6 +9,8 @@ import { prisma } from "./config/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { allowedOrigins } from "./config/cors";
 
+import crypto from "node:crypto";
+
 const app = express();
 
 app.use(helmet());
@@ -20,7 +22,21 @@ app.use(
   })
 );
 
-app.use(pinoHttp({ logger }));
+// Distributed Request Tracing: Assign or pass-through correlation ID for logs and client tracing
+app.use((req, res, next) => {
+  const incomingId = req.headers["x-request-id"] as string | undefined;
+  const requestId = incomingId || crypto.randomUUID();
+  (req as any).id = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  next();
+});
+
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => (req as any).id || crypto.randomUUID(),
+  })
+);
 
 app.use(express.json());
 app.use(cookieParser());

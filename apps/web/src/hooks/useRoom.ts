@@ -144,6 +144,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [speakingMap, setSpeakingMap] = useState<{ [id: string]: boolean }>({});
   const [networkQuality, setNetworkQuality] = useState<{ [socketId: string]: NetworkQualityStats }>({});
+  const [isLowBandwidthMode, setIsLowBandwidthMode] = useState(false);
+  const isLowBandwidthModeRef = useRef(false);
 
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
@@ -809,6 +811,10 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
       const effectiveUserId = peerUserId || details?.userId || "";
       const effectiveName = peerName || details?.name;
 
+      if (event.track.kind === "video" && isLowBandwidthModeRef.current) {
+        event.track.enabled = false;
+      }
+
       setPeers((prev) => {
         const existingPeerIndex = prev.findIndex(
           (p) => p.socketId === peerSocketId || (effectiveUserId && p.userId === effectiveUserId)
@@ -1027,6 +1033,34 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     }
   };
 
+  // Low-Bandwidth Mode: Pauses all video tracks to prioritize audio traffic during network congestion
+  const toggleLowBandwidthMode = () => {
+    setIsLowBandwidthMode((prev) => {
+      const nextMode = !prev;
+      isLowBandwidthModeRef.current = nextMode;
+
+      // Disable outgoing video track
+      if (localStreamRef.current) {
+        const videoTrack = localStreamRef.current.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.enabled = !nextMode;
+          setIsVideoMuted(nextMode);
+        }
+      }
+
+      // Disable incoming video tracks from all remote peers to save bandwidth and CPU
+      Object.values(peerConnectionsRef.current).forEach((pc) => {
+        pc.getReceivers().forEach((receiver) => {
+          if (receiver.track && receiver.track.kind === "video") {
+            receiver.track.enabled = !nextMode;
+          }
+        });
+      });
+
+      return nextMode;
+    });
+  };
+
   return {
     localStream,
     peers,
@@ -1050,5 +1084,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     stopScreenShare,
     speakingMap,
     networkQuality,
+    isLowBandwidthMode,
+    toggleLowBandwidthMode,
   };
 };

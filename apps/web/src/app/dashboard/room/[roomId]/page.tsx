@@ -142,6 +142,8 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     stopScreenShare,
     speakingMap,
     networkQuality,
+    isLowBandwidthMode,
+    toggleLowBandwidthMode,
   } = useRoom(roomId, user);
 
   const [chatInput, setChatInput] = useState("");
@@ -351,6 +353,12 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     <div className={styles.roomContainer}>
       {/* Video feeds and floating controllers */}
       <div className={styles.videoSection}>
+        {isLowBandwidthMode && (
+          <div className={styles.lowBandwidthBanner}>
+            <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
+          </div>
+        )}
+
         {activeSpotlightId ? (
           <div className={styles.spotlightStage}>
             <button
@@ -437,6 +445,14 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
           >
             🖥️
+          </button>
+          <button
+            type="button"
+            onClick={toggleLowBandwidthMode}
+            className={`${styles.controlButton} ${isLowBandwidthMode ? styles.active : ""}`}
+            title={isLowBandwidthMode ? "Disable Low Data Mode" : "Enable Low Data Mode (Audio Only)"}
+          >
+            📶
           </button>
           <button
             onClick={handleLeave}

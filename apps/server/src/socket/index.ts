@@ -1,8 +1,27 @@
 import { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import Redis from "ioredis";
 import { allowedOrigins } from "../config/cors";
 import { prisma } from "../config/prisma";
 import { verifyAccessToken } from "../utils/jwt";
+
+let redisPubClient: Redis | null = null;
+let redisSubClient: Redis | null = null;
+
+/**
+ * Cleanly closes active Redis pub/sub connections during graceful shutdown.
+ */
+export const closeRedisClients = async () => {
+    if (redisPubClient) {
+        await redisPubClient.quit();
+        redisPubClient = null;
+    }
+    if (redisSubClient) {
+        await redisSubClient.quit();
+        redisSubClient = null;
+    }
+};
 
 interface JoinRoomPayload {
     roomId: string;
@@ -25,6 +44,35 @@ export const initSocketServer = (server: HttpServer): Server => {
         },
         maxHttpBufferSize: 256 * 1024, // 256 KB max payload to prevent buffer overflow attacks
     });
+
+    // Horizontal Scaling: Attach Redis Pub/Sub adapter if REDIS_URL is provided in environment.
+    // Falls back gracefully to default in-memory adapter for local dev without errors.
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+        try {
+            redisPubClient = new Redis(redisUrl, {
+                maxRetriesPerRequest: null,
+                enableReadyCheck: false,
+                lazyConnect: true,
+            });
+            redisSubClient = redisPubClient.duplicate();
+
+            Promise.all([redisPubClient.connect(), redisSubClient.connect()])
+                .then(() => {
+                    io.adapter(createAdapter(redisPubClient!, redisSubClient!));
+                    console.log("📡 Socket.IO Redis adapter connected for multi-instance horizontal scaling");
+                })
+                .catch((err) => {
+                    console.warn(
+                        `⚠️ Failed to connect to Redis for Socket.IO scaling, running on default in-memory adapter: ${err.message}`
+                    );
+                });
+        } catch (err: any) {
+            console.warn(`⚠️ Could not initialize Redis adapter, running in-memory: ${err.message}`);
+        }
+    } else {
+        console.log("ℹ️ No REDIS_URL provided — running Socket.IO with default in-memory adapter");
+    }
 
     // Enforce JWT authentication on every incoming socket connection
     io.use(async (socket, next) => {
