@@ -9,8 +9,17 @@
  * --------------------------------------------------------------------------
  */
 
+import { CookieOptions } from "express";
 import * as authService from "./auth.service";
 import { asyncHandler } from "../../utils/asyncHandler";
+
+const REFRESH_COOKIE_OPTIONS: CookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: "/api/v1/auth",
+};
 
 export const signup = asyncHandler(async (req, res) => {
     const user = await authService.signup(req.body);
@@ -23,29 +32,56 @@ export const signup = asyncHandler(async (req, res) => {
 
 export const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
-    const user = await authService.login(email, password);
+    const result = await authService.login(email, password);
+
+    res.cookie("refreshToken", result.refreshToken, REFRESH_COOKIE_OPTIONS);
 
     res.status(200).json({
         success: true,
         message: "User logged in successfully.",
-        data: user,
+        data: {
+            user: result.user,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+        },
     });
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {
-    const { refreshToken } = req.body;
+    const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
-    const data = await authService.refreshToken(refreshToken);
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: "Refresh token required.",
+        });
+    }
+
+    const data = await authService.refreshToken(token);
+
+    res.cookie("refreshToken", data.refreshToken, REFRESH_COOKIE_OPTIONS);
 
     res.status(200).json({
         success: true,
         message: "Access token refreshed successfully.",
-        data,
+        data: {
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken,
+        },
     });
 });
 
 export const logout = asyncHandler(async (req, res) => {
-    await authService.logout(req.user!.userId);
+    if (req.user?.userId) {
+        await authService.logout(req.user.userId);
+    }
+
+    res.clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/api/v1/auth",
+    });
 
     res.status(200).json({
         success: true,

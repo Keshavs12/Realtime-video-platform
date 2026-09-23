@@ -36,14 +36,16 @@ import { validate } from "../../middleware/validate";
 import { authRateLimiter } from "../../middleware/rateLimit";
 import { signupSchema, loginSchema, updateProfileSchema, changePasswordSchema } from "./auth.validator";
 
+import { csrfProtection } from "../../middleware/csrf";
+
 const authRouter = Router();
 
 // POST /api/v1/auth/signup
 authRouter.post("/signup", authRateLimiter, validate(signupSchema), signup);
 // login /api/v1/auth/login
 authRouter.post("/login", authRateLimiter, validate(loginSchema), login)
-authRouter.post("/refresh", refreshToken);
-authRouter.post("/logout", authenticate, logout);
+authRouter.post("/refresh", csrfProtection, refreshToken);
+authRouter.post("/logout", csrfProtection, authenticate, logout);
 
 authRouter.get("/me", authenticate, getMe);
 authRouter.patch("/me", authenticate, validate(updateProfileSchema), updateProfile);

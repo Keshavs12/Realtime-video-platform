@@ -69,6 +69,46 @@ export interface ChatMessage {
   isLocal: boolean;
 }
 
+export interface NetworkQualityStats {
+  quality: "good" | "fair" | "poor";
+  rttMs: number;
+  packetLossPercent: number;
+  connectionState: string;
+  isReconnecting: boolean;
+}
+
+// Gentle synthetic chime played using Web Audio API when a remote chat message arrives
+const playChatChime = () => {
+  try {
+    const AudioCtx =
+      typeof window !== "undefined"
+        ? window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        : null;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08); // A5
+
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 400);
+  } catch {
+    // Audio autoplay restrictions on un-interacted windows
+  }
+};
+
 const removePeerFromList = (list: PresenceUser[], socketId: string, userId?: string) =>
   list.filter((p) => p.socketId !== socketId && (!userId || p.userId !== userId));
 
@@ -79,7 +119,7 @@ const addPeerToList = (list: PresenceUser[], item: PresenceUser) => [
 
 const updatePeerDetails = (list: Peer[], socketId: string, ansUserId?: string, ansName?: string) =>
   list.map((p) =>
-    p.socketId === socketId
+    p.socketId === socketId || (ansUserId && p.userId === ansUserId)
       ? { ...p, userId: ansUserId || p.userId, name: ansName || p.name }
       : p
   );
@@ -99,8 +139,13 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const [selectedVideoDeviceId, setSelectedVideoDeviceId] = useState<string>("");
   const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState<string>("");
   const [roomNotFound, setRoomNotFound] = useState(false);
+  const [roomFull, setRoomFull] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [speakingMap, setSpeakingMap] = useState<{ [id: string]: boolean }>({});
+  const [networkQuality, setNetworkQuality] = useState<{ [socketId: string]: NetworkQualityStats }>({});
+  const [isLowBandwidthMode, setIsLowBandwidthMode] = useState(false);
+  const isLowBandwidthModeRef = useRef(false);
 
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
@@ -119,6 +164,56 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   // burning TURN quota instead of surfacing that the connection is unrecoverable.
   const iceRestartAttemptsRef = useRef<{ [socketId: string]: number }>({});
   const iceRestartTimeoutRef = useRef<{ [socketId: string]: ReturnType<typeof setTimeout> }>({});
+  const peerDetailsRef = useRef<{ [socketId: string]: { userId?: string; name?: string } }>({});
+  const isAudioMutedRef = useRef(false);
+  const audioAnalysersRef = useRef<{
+    [key: string]: {
+      context: AudioContext;
+      analyser: AnalyserNode;
+      source: MediaStreamAudioSourceNode;
+    };
+  }>({});
+
+  // Helper to attach Web Audio Analyser to monitor microphone volume for Active Speaker Detection
+  const attachAudioAnalyser = (key: string, stream: MediaStream) => {
+    try {
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) return;
+
+      detachAudioAnalyser(key);
+
+      const AudioCtx =
+        typeof window !== "undefined"
+          ? window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+          : null;
+      if (!AudioCtx) return;
+
+      const context = new AudioCtx();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.3;
+      const source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      audioAnalysersRef.current[key] = { context, analyser, source };
+    } catch (err) {
+      console.warn(`[WebAudio] Could not attach analyser for ${key}:`, err);
+    }
+  };
+
+  const detachAudioAnalyser = (key: string) => {
+    const item = audioAnalysersRef.current[key];
+    if (item) {
+      try {
+        item.source.disconnect();
+        item.analyser.disconnect();
+        item.context.close().catch(() => {});
+      } catch {
+        // ignore
+      }
+      delete audioAnalysersRef.current[key];
+    }
+  };
 
   // Helper to process queued ICE candidates once remoteDescription is set
   const processQueuedCandidates = async (socketId: string) => {
@@ -213,8 +308,10 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
 
         // 2. Connect to Socket Server
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+        const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
         const socket = io(socketUrl, {
           transports: ["websocket", "polling"],
+          auth: { token },
           extraHeaders: { "ngrok-skip-browser-warning": "true" },
         });
         activeSocket = socket;
@@ -224,13 +321,24 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socket.on("connect", () => {
           socket.emit("join-room", {
             roomId,
-            userId: user.id,
             name: user.name,
           });
         });
 
+        socket.on("connect_error", (err) => {
+          console.error("[Socket] Handshake / authentication error:", err.message);
+        });
+
+        socket.on("rate-limit", ({ action, message }: { action: string; message: string }) => {
+          console.warn(`[Socket Rate Limit] ${action}: ${message}`);
+        });
+
         socket.on("room-not-found", () => {
           setRoomNotFound(true);
+        });
+
+        socket.on("room-full", () => {
+          setRoomFull(true);
         });
 
         // Server replays persisted chat history right after join, so a
@@ -247,6 +355,9 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           const filteredUsers: PresenceUser[] = [];
           const seen = new Set<string>();
           for (const u of users) {
+            if (u.socketId) {
+              peerDetailsRef.current[u.socketId] = { userId: u.userId, name: u.name };
+            }
             if (u.userId !== user.id && !seen.has(u.userId)) {
               seen.add(u.userId);
               filteredUsers.push(u);
@@ -264,7 +375,16 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           // Never add self to presence list
           if (joinedUser.userId === user.id) return;
 
+          if (joinedUser.socketId) {
+            peerDetailsRef.current[joinedUser.socketId] = {
+              userId: joinedUser.userId,
+              name: joinedUser.name,
+            };
+          }
           setPresenceList((prev) => addPeerToList(prev, joinedUser));
+          if (joinedUser.name) {
+            setPeers((prev) => updatePeerDetails(prev, joinedUser.socketId, joinedUser.userId, joinedUser.name));
+          }
         });
 
         socket.on("user-left", ({ socketId, userId }: { socketId: string; userId?: string }) => {
@@ -290,6 +410,22 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           }) => {
             if (!peerRolesRef.current[from]) {
               peerRolesRef.current[from] = "answerer";
+            }
+            if (from) {
+              peerDetailsRef.current[from] = {
+                userId: offerUserId || peerDetailsRef.current[from]?.userId,
+                name: offerName || peerDetailsRef.current[from]?.name,
+              };
+            }
+            if (offerUserId || offerName) {
+              setPeers((prev) => updatePeerDetails(prev, from, offerUserId, offerName));
+              setPresenceList((prev) =>
+                prev.map((p) =>
+                  p.socketId === from || (offerUserId && p.userId === offerUserId)
+                    ? { ...p, name: offerName || p.name, userId: offerUserId || p.userId }
+                    : p
+                )
+              );
             }
             const peerConnection = createPeerConnection(from, stream, offerUserId, offerName);
             await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -327,8 +463,22 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
               await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
               await processQueuedCandidates(from);
 
+              if (from) {
+                peerDetailsRef.current[from] = {
+                  userId: ansUserId || peerDetailsRef.current[from]?.userId,
+                  name: ansName || peerDetailsRef.current[from]?.name,
+                };
+              }
+
               if (ansUserId || ansName) {
                 setPeers((prev) => updatePeerDetails(prev, from, ansUserId, ansName));
+                setPresenceList((prev) =>
+                  prev.map((p) =>
+                    p.socketId === from || (ansUserId && p.userId === ansUserId)
+                      ? { ...p, name: ansName || p.name, userId: ansUserId || p.userId }
+                      : p
+                  )
+                );
               }
             }
           }
@@ -358,6 +508,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socket.on(
           "chat-message",
           ({ userId: fromUserId, name, message, at }: { userId?: string; name?: string; message: string; at: number }) => {
+            playChatChime();
             setMessages((prev) => [
               ...prev,
               { userId: fromUserId, name, message, at, isLocal: false },
@@ -394,8 +545,141 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socketRef.current.disconnect();
       }
       iceCandidatesQueueRef.current = {};
+      peerDetailsRef.current = {};
+      Object.keys(audioAnalysersRef.current).forEach((key) => {
+        detachAudioAnalyser(key);
+      });
     };
   }, [roomId, user]);
+
+  // Hook audio analyser to localStream
+  useEffect(() => {
+    if (localStream) {
+      attachAudioAnalyser("local", localStream);
+    }
+    return () => {
+      detachAudioAnalyser("local");
+    };
+  }, [localStream]);
+
+  // Hook audio analysers to remote peer streams
+  useEffect(() => {
+    peers.forEach((peer) => {
+      if (peer.stream && !audioAnalysersRef.current[peer.socketId]) {
+        attachAudioAnalyser(peer.socketId, peer.stream);
+      }
+    });
+
+    const currentSockets = new Set(peers.map((p) => p.socketId));
+    Object.keys(audioAnalysersRef.current).forEach((key) => {
+      if (key !== "local" && !currentSockets.has(key)) {
+        detachAudioAnalyser(key);
+      }
+    });
+  }, [peers]);
+
+  // Periodic active speaker volume detection (every 120ms)
+  useEffect(() => {
+    const buffer = new Uint8Array(128);
+    const interval = setInterval(() => {
+      const activeAnalysers = audioAnalysersRef.current;
+      const updates: { [id: string]: boolean } = {};
+
+      for (const [key, item] of Object.entries(activeAnalysers)) {
+        if (key === "local" && isAudioMutedRef.current) {
+          updates[key] = false;
+          continue;
+        }
+        try {
+          if (item.context.state === "suspended") {
+            item.context.resume().catch(() => {});
+          }
+          item.analyser.getByteFrequencyData(buffer);
+          let sum = 0;
+          for (let i = 0; i < buffer.length; i++) {
+            sum += buffer[i];
+          }
+          const avg = sum / buffer.length;
+          // Voice threshold
+          updates[key] = avg > 14;
+        } catch {
+          updates[key] = false;
+        }
+      }
+
+      setSpeakingMap((prev) => {
+        let changed = false;
+        for (const [k, v] of Object.entries(updates)) {
+          if (prev[k] !== v) {
+            changed = true;
+            break;
+          }
+        }
+        return changed ? { ...prev, ...updates } : prev;
+      });
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Periodic WebRTC Network Quality stats poll (every 2.5s)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const pcs = peerConnectionsRef.current;
+      const statsMap: { [socketId: string]: NetworkQualityStats } = {};
+
+      for (const [socketId, pc] of Object.entries(pcs)) {
+        if (!pc) continue;
+        try {
+          const stats = await pc.getStats();
+          let rttMs = 0;
+          let packetsLost = 0;
+          let packetsReceived = 0;
+
+          stats.forEach((report) => {
+            if (report.type === "candidate-pair" && (report.nominated || report.state === "succeeded")) {
+              if (typeof report.currentRoundTripTime === "number") {
+                rttMs = Math.round(report.currentRoundTripTime * 1000);
+              }
+            }
+            if (report.type === "inbound-rtp") {
+              if (typeof report.packetsLost === "number") packetsLost += report.packetsLost;
+              if (typeof report.packetsReceived === "number") packetsReceived += report.packetsReceived;
+            }
+          });
+
+          const total = packetsLost + packetsReceived;
+          const packetLossPercent = total > 0 ? Math.round((packetsLost / total) * 100) : 0;
+          const connState = pc.connectionState || pc.iceConnectionState || "connected";
+          const isReconnecting =
+            connState === "connecting" ||
+            pc.iceConnectionState === "checking" ||
+            pc.iceConnectionState === "disconnected";
+
+          let quality: "good" | "fair" | "poor" = "good";
+          if (rttMs > 300 || packetLossPercent > 5) {
+            quality = "poor";
+          } else if (rttMs > 150 || packetLossPercent > 2) {
+            quality = "fair";
+          }
+
+          statsMap[socketId] = {
+            quality,
+            rttMs,
+            packetLossPercent,
+            connectionState: connState,
+            isReconnecting,
+          };
+        } catch {
+          // ignore closed connection
+        }
+      }
+
+      setNetworkQuality(statsMap);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Initiate an RTC connection with an existing peer (from the room-users list)
   const initiateCall = async (
@@ -472,6 +756,13 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     peerUserId?: string,
     peerName?: string
   ): RTCPeerConnection => {
+    if (peerUserId || peerName) {
+      peerDetailsRef.current[peerSocketId] = {
+        userId: peerUserId || peerDetailsRef.current[peerSocketId]?.userId,
+        name: peerName || peerDetailsRef.current[peerSocketId]?.name,
+      };
+    }
+
     // If connection already exists, return it
     if (peerConnectionsRef.current[peerSocketId]) {
       return peerConnectionsRef.current[peerSocketId];
@@ -516,9 +807,17 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
       const remoteStream =
         event.streams?.[0] ?? new MediaStream([event.track]);
 
+      const details = peerDetailsRef.current[peerSocketId];
+      const effectiveUserId = peerUserId || details?.userId || "";
+      const effectiveName = peerName || details?.name;
+
+      if (event.track.kind === "video" && isLowBandwidthModeRef.current) {
+        event.track.enabled = false;
+      }
+
       setPeers((prev) => {
         const existingPeerIndex = prev.findIndex(
-          (p) => p.socketId === peerSocketId || (peerUserId && p.userId === peerUserId)
+          (p) => p.socketId === peerSocketId || (effectiveUserId && p.userId === effectiveUserId)
         );
 
         if (existingPeerIndex !== -1) {
@@ -530,8 +829,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           updatedPeers[existingPeerIndex] = {
             ...existingPeer,
             socketId: peerSocketId,
-            userId: peerUserId || existingPeer.userId,
-            name: peerName || existingPeer.name,
+            userId: effectiveUserId || existingPeer.userId,
+            name: effectiveName || existingPeer.name,
             stream: existingPeer.stream,
           };
           return updatedPeers;
@@ -541,8 +840,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           ...prev,
           {
             socketId: peerSocketId,
-            userId: peerUserId || "",
-            name: peerName,
+            userId: effectiveUserId,
+            name: effectiveName,
             stream: remoteStream,
           },
         ];
@@ -563,7 +862,19 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     delete iceRestartAttemptsRef.current[socketId];
     clearTimeout(iceRestartTimeoutRef.current[socketId]);
     delete iceRestartTimeoutRef.current[socketId];
+    delete peerDetailsRef.current[socketId];
+    detachAudioAnalyser(socketId);
     setPeers((prev) => prev.filter((p) => p.socketId !== socketId));
+    setSpeakingMap((prev) => {
+      const next = { ...prev };
+      delete next[socketId];
+      return next;
+    });
+    setNetworkQuality((prev) => {
+      const next = { ...prev };
+      delete next[socketId];
+      return next;
+    });
   };
 
   // List available cameras/microphones (labels only populate after permission is granted)
@@ -702,7 +1013,12 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioMuted(!audioTrack.enabled);
+        const nextMuted = !audioTrack.enabled;
+        setIsAudioMuted(nextMuted);
+        isAudioMutedRef.current = nextMuted;
+        if (nextMuted) {
+          setSpeakingMap((prev) => ({ ...prev, local: false }));
+        }
       }
     }
   };
@@ -715,6 +1031,34 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         setIsVideoMuted(!videoTrack.enabled);
       }
     }
+  };
+
+  // Low-Bandwidth Mode: Pauses all video tracks to prioritize audio traffic during network congestion
+  const toggleLowBandwidthMode = () => {
+    setIsLowBandwidthMode((prev) => {
+      const nextMode = !prev;
+      isLowBandwidthModeRef.current = nextMode;
+
+      // Disable outgoing video track
+      if (localStreamRef.current) {
+        const videoTrack = localStreamRef.current.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.enabled = !nextMode;
+          setIsVideoMuted(nextMode);
+        }
+      }
+
+      // Disable incoming video tracks from all remote peers to save bandwidth and CPU
+      Object.values(peerConnectionsRef.current).forEach((pc) => {
+        pc.getReceivers().forEach((receiver) => {
+          if (receiver.track && receiver.track.kind === "video") {
+            receiver.track.enabled = !nextMode;
+          }
+        });
+      });
+
+      return nextMode;
+    });
   };
 
   return {
@@ -732,10 +1076,15 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     switchCamera,
     switchMicrophone,
     roomNotFound,
+    roomFull,
     messages,
     sendMessage,
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
+    speakingMap,
+    networkQuality,
+    isLowBandwidthMode,
+    toggleLowBandwidthMode,
   };
 };

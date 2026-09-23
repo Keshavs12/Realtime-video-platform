@@ -29,6 +29,8 @@ model Room {
   createdAt    DateTime          @default(now())
   participants RoomParticipant[]
   chatMessages ChatMessage[]
+
+  @@index([hostId])
 }
 
 model ChatMessage {
@@ -51,4 +53,7 @@ model RoomParticipant {
   user     User      @relation("RoomParticipations", fields: [userId], references: [id])
   joinedAt DateTime  @default(now())
   leftAt   DateTime?
+
+  @@index([roomId, userId, leftAt])
+  @@index([userId, joinedAt])
 }

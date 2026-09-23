@@ -134,14 +134,22 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     switchCamera,
     switchMicrophone,
     roomNotFound,
+    roomFull,
     messages,
     sendMessage,
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
+    speakingMap,
+    networkQuality,
+    isLowBandwidthMode,
+    toggleLowBandwidthMode,
   } = useRoom(roomId, user);
 
   const [chatInput, setChatInput] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const isChatAtBottomRef = useRef(true);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
 
   const handleLeave = () => {
@@ -163,8 +171,31 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     }
   };
 
+  // Derive valid spotlight ID: if spotlighted peer leaves, activeSpotlightId cleanly falls back to null without cascading renders
+  const isSpotlightValid = spotlightId === "local" || peers.some((p) => p.socketId === spotlightId);
+  const activeSpotlightId = isSpotlightValid ? spotlightId : null;
+
+  // Track chat scroll position to know if user is reading previous messages
+  const handleChatScroll = () => {
+    if (!chatMessagesRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 60;
+    isChatAtBottomRef.current = atBottom;
+    if (atBottom) {
+      setUnreadCount(0);
+    }
+  };
+
   useEffect(() => {
-    chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight });
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+
+    if (isChatAtBottomRef.current || lastMsg.isLocal) {
+      chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight, behavior: "smooth" });
+      setUnreadCount(0);
+    } else {
+      setUnreadCount((prev) => prev + 1);
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -172,6 +203,15 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
       router.replace("/dashboard");
     }
   }, [roomNotFound, router]);
+
+  useEffect(() => {
+    if (roomFull) {
+      const timer = setTimeout(() => {
+        router.replace("/dashboard");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [roomFull, router]);
 
   if (roomNotFound) {
     return (
@@ -181,47 +221,207 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     );
   }
 
+  if (roomFull) {
+    return (
+      <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: "#f87171", fontSize: "1.1rem", fontWeight: 500 }}>
+          This room has reached maximum capacity (8 participants). Redirecting to dashboard…
+        </p>
+      </div>
+    );
+  }
+
+  const totalParticipants = peers.length + 1;
+  const gridClass =
+    totalParticipants === 1
+      ? styles.count1
+      : totalParticipants === 2
+      ? styles.count2
+      : totalParticipants <= 4
+      ? styles.count3
+      : styles.countMany;
+
+  const renderLocalFeed = (isSpotlight = false, isFilmstrip = false) => {
+    const isSpeaking = Boolean(speakingMap["local"]);
+    const wrapperClass = isSpotlight
+      ? `${styles.spotlightMain} ${isSpeaking ? styles.activeSpeaker : ""}`
+      : isFilmstrip
+      ? `${styles.filmstripItem} ${isSpeaking ? styles.activeSpeaker : ""}`
+      : `${styles.videoWrapper} ${isSpeaking ? styles.activeSpeaker : ""}`;
+
+    return (
+      <div className={wrapperClass} key="local-feed">
+        {!isSpotlight && !isFilmstrip && (
+          <button
+            type="button"
+            className={styles.pinButton}
+            onClick={() => setSpotlightId("local")}
+            title="Spotlight You"
+          >
+            📌 Pin
+          </button>
+        )}
+        {isVideoMuted ? (
+          <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
+            <div className={styles.avatarInitial}>{(user?.name || "Y")[0].toUpperCase()}</div>
+            <span className={styles.avatarName}>{user?.name || "You"}</span>
+          </div>
+        ) : (
+          <VideoFeed
+            stream={localStream}
+            muted={true}
+            className={`${styles.video} ${styles.mirror}`}
+          />
+        )}
+        <div className={styles.peerName}>
+          <span>👤 {user?.name || "You"} (You)</span>
+          {isSpeaking && <span className={styles.speakingWave}>🎙️ ılı</span>}
+          {isAudioMuted && <span>🔇</span>}
+          {isVideoMuted && <span>🚫 Video Off</span>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPeerFeed = (peer: (typeof peers)[0], isSpotlight = false, isFilmstrip = false) => {
+    const peerName =
+      peer.name ||
+      presenceList.find(
+        (p) => p.socketId === peer.socketId || (peer.userId && p.userId === peer.userId)
+      )?.name;
+    const displayName =
+      peerName || (peer.userId ? `Peer (${peer.userId.slice(0, 4)})` : "Participant");
+    const isSpeaking = Boolean(speakingMap[peer.socketId]);
+    const stats = networkQuality[peer.socketId];
+    const hasVideoTrack =
+      peer.stream &&
+      peer.stream.getVideoTracks().some((t) => t.enabled && t.readyState === "live");
+
+    const wrapperClass = isSpotlight
+      ? `${styles.spotlightMain} ${isSpeaking ? styles.activeSpeaker : ""}`
+      : isFilmstrip
+      ? `${styles.filmstripItem} ${isSpeaking ? styles.activeSpeaker : ""}`
+      : `${styles.videoWrapper} ${isSpeaking ? styles.activeSpeaker : ""}`;
+
+    return (
+      <div className={wrapperClass} key={peer.socketId}>
+        {!isSpotlight && !isFilmstrip && (
+          <button
+            type="button"
+            className={styles.pinButton}
+            onClick={() => setSpotlightId(peer.socketId)}
+            title={`Spotlight ${displayName}`}
+          >
+            📌 Pin
+          </button>
+        )}
+
+        {stats?.isReconnecting && (
+          <div className={styles.reconnectingBadge}>
+            <span>🔄 Reconnecting...</span>
+          </div>
+        )}
+
+        {stats && !isFilmstrip && (
+          <div
+            className={`${styles.networkBadge} ${styles[stats.quality]}`}
+            title={`Latency: ${stats.rttMs}ms | Packet Loss: ${stats.packetLossPercent}% | Quality: ${stats.quality}`}
+          >
+            <span className={styles.signalDot}></span>
+            <span>{stats.rttMs > 0 ? `${stats.rttMs}ms` : stats.quality}</span>
+          </div>
+        )}
+
+        {!hasVideoTrack ? (
+          <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
+            <div className={styles.avatarInitial}>{(displayName || "P")[0].toUpperCase()}</div>
+            <span className={styles.avatarName}>{displayName}</span>
+          </div>
+        ) : (
+          <VideoFeed stream={peer.stream} muted={false} className={styles.video} />
+        )}
+
+        <div className={styles.peerName}>
+          <span>👤 {displayName}</span>
+          {isSpeaking && <span className={styles.speakingWave}>🎙️ ılı</span>}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={styles.roomContainer}>
       {/* Video feeds and floating controllers */}
       <div className={styles.videoSection}>
-        <div className={styles.videoGrid}>
-          {/* Local Feed */}
-          <div className={styles.videoWrapper}>
-            <VideoFeed
-              stream={localStream}
-              muted={true} // local feed should always be muted to prevent feedback loop
-              className={`${styles.video} ${styles.mirror}`}
-            />
-            <div className={styles.peerName}>
-              <span>👤 {user?.name || "You"} (You)</span>
-              {isAudioMuted && <span>🔇</span>}
-              {isVideoMuted && <span>🚫 Video Off</span>}
+        {isLowBandwidthMode && (
+          <div className={styles.lowBandwidthBanner}>
+            <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
+          </div>
+        )}
+
+        {activeSpotlightId ? (
+          <div className={styles.spotlightStage}>
+            <button
+              type="button"
+              className={styles.unpinButton}
+              onClick={() => setSpotlightId(null)}
+              title="Return to Grid View"
+            >
+              ✖ Exit Spotlight
+            </button>
+
+            {/* Main Stage */}
+            {activeSpotlightId === "local"
+              ? renderLocalFeed(true)
+              : (() => {
+                  const target = peers.find((p) => p.socketId === activeSpotlightId);
+                  return target ? renderPeerFeed(target, true) : renderLocalFeed(true);
+                })()}
+
+            {/* Filmstrip */}
+            <div className={styles.filmstrip}>
+              {activeSpotlightId !== "local" && (
+                <div
+                  tabIndex={0}
+                  role="button"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") setSpotlightId("local");
+                  }}
+                  onClick={() => setSpotlightId("local")}
+                  title="Switch Spotlight to You"
+                >
+                  {renderLocalFeed(false, true)}
+                </div>
+              )}
+              {peers
+                .filter((p) => p.socketId !== activeSpotlightId)
+                .map((p) => (
+                  <div
+                    key={p.socketId}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") setSpotlightId(p.socketId);
+                    }}
+                    onClick={() => setSpotlightId(p.socketId)}
+                    title="Switch Spotlight"
+                  >
+                    {renderPeerFeed(p, false, true)}
+                  </div>
+                ))}
             </div>
           </div>
-
-          {/* Remote Feeds */}
-          {peers.map((peer) => (
-            <div key={peer.socketId} className={styles.videoWrapper}>
-              <VideoFeed
-                stream={peer.stream}
-                muted={false}
-                className={styles.video}
-              />
-              <div className={styles.peerName}>
-                <span>
-                  👤 {peer.name || (peer.userId ? `Peer (${peer.userId.slice(0, 4)})` : "Participant")}
-                </span>
+        ) : (
+          <div className={`${styles.videoGrid} ${gridClass}`}>
+            {renderLocalFeed()}
+            {peers.map((peer) => renderPeerFeed(peer))}
+            {peers.length === 0 && (
+              <div className="flex items-center justify-center col-span-full h-full text-zinc-400 p-8 text-center bg-zinc-950/20 rounded-2xl border border-dashed border-zinc-800">
+                <p>⌛ Waiting for other participants to join...</p>
               </div>
-            </div>
-          ))}
-
-          {peers.length === 0 && (
-            <div className="flex items-center justify-center col-span-full h-full text-zinc-400 p-8 text-center bg-zinc-950/20 rounded-2xl border border-dashed border-zinc-800">
-              <p>⌛ Waiting for other participants to join...</p>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Controllers */}
         <div className={styles.controls}>
@@ -245,6 +445,14 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
           >
             🖥️
+          </button>
+          <button
+            type="button"
+            onClick={toggleLowBandwidthMode}
+            className={`${styles.controlButton} ${isLowBandwidthMode ? styles.active : ""}`}
+            title={isLowBandwidthMode ? "Disable Low Data Mode" : "Enable Low Data Mode (Audio Only)"}
+          >
+            📶
           </button>
           <button
             onClick={handleLeave}
@@ -301,36 +509,61 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </li>
 
           {/* Connected Peers */}
-          {presenceList.map((presenceUser) => (
-            <li key={presenceUser.socketId} className={styles.userItem}>
-              <div className={styles.userAvatar}>
-                {(presenceUser.name || "P")[0].toUpperCase()}
-              </div>
-              <div className={styles.userInfo}>
-                <span className={styles.name}>
-                  {presenceUser.name || (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant")}
-                </span>
-                <span className={styles.status}>🟢 Active</span>
-              </div>
-            </li>
-          ))}
+          {presenceList.map((presenceUser) => {
+            const matchedPeer = peers.find(
+              (p) => p.socketId === presenceUser.socketId || (presenceUser.userId && p.userId === presenceUser.userId)
+            );
+            const displayName =
+              presenceUser.name ||
+              matchedPeer?.name ||
+              (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant");
+
+            return (
+              <li key={presenceUser.socketId} className={styles.userItem}>
+                <div className={styles.userAvatar}>
+                  {(displayName || "P")[0].toUpperCase()}
+                </div>
+                <div className={styles.userInfo}>
+                  <span className={styles.name}>{displayName}</span>
+                  <span className={styles.status}>🟢 Active</span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
 
         {/* In-call chat */}
         <div className={styles.chatSection}>
-          <h3>Chat</h3>
-          <div className={styles.chatMessages} ref={chatMessagesRef}>
-            {messages.map((msg, i) => (
-              <div
-                key={`${msg.at}-${i}`}
-                className={`${styles.chatMessage} ${msg.isLocal ? styles.own : ""}`}
-              >
-                {!msg.isLocal && (
-                  <div className={styles.chatMessageAuthor}>{msg.name || "Participant"}</div>
-                )}
-                {msg.message}
-              </div>
-            ))}
+          <div className={styles.chatHeader}>
+            <h3>Chat</h3>
+            {unreadCount > 0 && (
+              <span className={styles.unreadBadge}>{unreadCount} new</span>
+            )}
+          </div>
+          <div
+            className={styles.chatMessages}
+            ref={chatMessagesRef}
+            onScroll={handleChatScroll}
+          >
+            {messages.map((msg, i) => {
+              const authorName =
+                msg.name ||
+                presenceList.find((p) => msg.userId && p.userId === msg.userId)?.name ||
+                peers.find((p) => msg.userId && p.userId === msg.userId)?.name ||
+                "Participant";
+
+              return (
+                <div
+                  key={`${msg.at}-${i}`}
+                  className={`${styles.chatMessage} ${msg.isLocal ? styles.own : ""}`}
+                >
+                  {!msg.isLocal && (
+                    <div className={styles.chatMessageAuthor}>{authorName}</div>
+                  )}
+                  {msg.message}
+                </div>
+              );
+            })}
           </div>
           <form className={styles.chatInputRow} onSubmit={handleSendMessage}>
             <input
