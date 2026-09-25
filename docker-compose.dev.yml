@@ -1,0 +1,26 @@
+version: "3.8"
+
+# Lightweight Docker Compose for local development: runs only Postgres & Redis
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: realtime_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supercall
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: realtime_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_dev_data:

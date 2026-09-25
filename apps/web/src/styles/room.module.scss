@@ -716,3 +716,305 @@
   }
 }
 
+// Host & Collaboration Badges
+.hostBadge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.9), rgba(202, 138, 4, 0.95));
+  color: #0f172a;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  z-index: 6;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.4);
+}
+
+.handBadge {
+  position: absolute;
+  top: 10px;
+  left: 80px;
+  background: rgba(245, 158, 11, 0.9);
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  z-index: 6;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+  animation: handPulse 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes handPulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.08); }
+}
+
+.screenShareBadge {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: rgba(59, 130, 246, 0.9);
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  z-index: 6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+// Hand raised state on control buttons
+.controlButton.handRaised {
+  background: #f59e0b;
+  border-color: #fbbf24;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+
+  &:hover {
+    background: #d97706;
+  }
+}
+
+// Floating Emoji Reactions Overlay
+.reactionsOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 30;
+}
+
+.floatingReaction {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 12px;
+  border-radius: 20px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+  animation: floatUpAndFade 3.2s forwards cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.reactionEmoji {
+  font-size: 1.6rem;
+}
+
+.reactionSender {
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+@keyframes floatUpAndFade {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--drift, 0px)), 20px) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--drift, 0px)), -40px) scale(1.15);
+  }
+  30% {
+    transform: translate(calc(-50% + var(--drift, 0px)), -90px) scale(1);
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--drift, 0px)), -260px) scale(0.9);
+  }
+}
+
+// Reactions Picker Bar
+.reactionsPickerBar {
+  position: absolute;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 30px;
+  padding: 6px 14px;
+  display: flex;
+  gap: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 25;
+  animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 15px) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.reactionPickerBtn {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+
+  &:hover {
+    transform: scale(1.3);
+  }
+}
+
+// Host Governance Panel in Sidebar
+.hostControlsPanel {
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hostHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fef08a;
+
+  .hostBadge {
+    position: static;
+    box-shadow: none;
+  }
+}
+
+.hostActionsRow {
+  display: flex;
+  gap: 8px;
+}
+
+.hostActionButton {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  &.locked {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fca5a5;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.35);
+    }
+  }
+}
+
+// User List Actions & Small Badges
+.userActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.hostBadgeSmall {
+  background: rgba(234, 179, 8, 0.2);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  color: #fde047;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.handBadgeSmall {
+  font-size: 0.9rem;
+  animation: handPulse 1s infinite alternate ease-in-out;
+}
+
+.hostPeerButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.hostMuteBtn, .hostKickBtn {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: scale(1.1);
+  }
+}
+
+.hostKickBtn:hover {
+  border-color: #ef4444;
+}
+
+// Notification Banner (e.g. Muted by Host)
+.hostNotificationBanner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(239, 68, 68, 0.95);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 40;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+  animation: slideDown 0.3s ease;
+}
+
+.returnButton {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+  }
+}
+

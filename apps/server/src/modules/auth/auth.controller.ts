@@ -13,10 +13,13 @@ import { CookieOptions } from "express";
 import * as authService from "./auth.service";
 import { asyncHandler } from "../../utils/asyncHandler";
 
+const isProduction = process.env.NODE_ENV === "production";
+const sameSiteSetting: "none" | "lax" = (process.env.COOKIE_SAME_SITE as "none" | "lax") || (isProduction ? "none" : "lax");
+
 const REFRESH_COOKIE_OPTIONS: CookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProduction || sameSiteSetting === "none",
+    sameSite: sameSiteSetting,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/api/v1/auth",
 };
@@ -78,8 +81,8 @@ export const logout = asyncHandler(async (req, res) => {
 
     res.clearCookie("refreshToken", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        secure: isProduction || sameSiteSetting === "none",
+        sameSite: sameSiteSetting,
         path: "/api/v1/auth",
     });
 
