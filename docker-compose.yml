@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  # 1. PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: realtime_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-supercall}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-supercall}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 2. Redis Pub/Sub Backplane (Socket.IO horizontal scaling adapter)
+  redis:
+    image: redis:7-alpine
+    container_name: realtime_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 3. Realtime Video Server (Node.js Express + Socket.IO + Prisma)
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: realtime_server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@postgres:5432/${POSTGRES_DB:-supercall}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-supercall-production-secret-key-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-supercall-refresh-production-secret-change-me}
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost,http://localhost:3000,http://localhost:80}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 4. Web Frontend (Next.js 16 App Router standalone container)
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: realtime_web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost}
+    ports:
+      - "3000:3000"
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # 5. Nginx Reverse Proxy (Unified Port 80 Entrypoint with WebSocket Upgrade)
+  nginx:
+    image: nginx:alpine
+    container_name: realtime_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      server:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
