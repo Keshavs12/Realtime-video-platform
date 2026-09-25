@@ -131,6 +131,9 @@ export const initSocketServer = (server: HttpServer): Server => {
         }
     };
 
+    // Set of currently locked rooms (in-memory, synchronized across sockets)
+    const lockedRooms = new Set<string>();
+
     // Register event handlers
     io.on("connection", (socket) => {
         console.log(`🔌 Client connected: ${socket.id}`);
@@ -166,12 +169,23 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            // The room must already exist (created via POST /api/v1/rooms) —
-            // this is a safety net in case the client somehow skips that check.
+            // The room must already exist (created via POST /api/v1/rooms)
             const room = await prisma.room.findUnique({ where: { code: roomId } });
             if (!room) {
                 console.warn(`⚠️ Rejected join-room for unknown room code: ${roomId}`);
                 socket.emit("room-not-found", { roomId });
+                return;
+            }
+
+            const isHost = room.hostId === userId;
+
+            // Check if room is locked by the host (non-host participants cannot join a locked room)
+            if (lockedRooms.has(roomId) && !isHost) {
+                console.warn(`🔒 Rejected join-room: room ${roomId} is locked by host`);
+                socket.emit("room-locked", {
+                    roomId,
+                    message: "This room is currently locked by the host. Please ask the host to unlock.",
+                });
                 return;
             }
 
@@ -206,7 +220,7 @@ export const initSocketServer = (server: HttpServer): Server => {
             // Store information on socket.data for cleanup on disconnect
             socket.data.roomId = roomId;
             socket.data.roomDbId = room.id;
-            socket.data.isHost = room.hostId === userId;
+            socket.data.isHost = isHost;
 
             socket.join(roomId);
             try {
@@ -216,19 +230,28 @@ export const initSocketServer = (server: HttpServer): Server => {
             } catch (dbErr) {
                 console.error("Failed to record room participant in DB:", dbErr);
             }
-            console.log(`🚪 User ${userId} (${name || "Guest"}) joined room: ${roomId}`);
+            console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${roomId}`);
+
+            // Send room metadata (host status and lock status) to the joiner
+            socket.emit("room-info", {
+                roomId,
+                isHost,
+                isLocked: lockedRooms.has(roomId),
+                hostId: room.hostId,
+            });
 
             // Broadcast to other users in the room
             socket.to(roomId).emit("user-joined", {
                 socketId: socket.id,
                 userId,
                 name,
+                isHost,
             });
 
             // Fetch other sockets in the room for presence tracking
             const sockets = await io.in(roomId).fetchSockets();
             const seenUsers = new Set<string>();
-            const usersInRoom: { socketId: string; userId: string; name?: string }[] = [];
+            const usersInRoom: { socketId: string; userId: string; name?: string; isHost?: boolean }[] = [];
 
             for (const s of sockets) {
                 const peerUserId = s.data.userId as string;
@@ -238,6 +261,7 @@ export const initSocketServer = (server: HttpServer): Server => {
                         socketId: s.id,
                         userId: peerUserId,
                         name: s.data.name as string | undefined,
+                        isHost: s.data.isHost as boolean | undefined,
                     });
                 }
             }
@@ -398,6 +422,131 @@ export const initSocketServer = (server: HttpServer): Server => {
                     .create({ data: { roomId: roomDbId, userId, message } })
                     .catch((err) => console.error("Failed to persist chat message:", err));
             }
+        });
+
+        // 3c. Host Controls (Lock Room, Mute Participant, Mute All, Kick Participant)
+        socket.on("toggle-room-lock", () => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the room host can lock or unlock the room" });
+                return;
+            }
+
+            const currentlyLocked = lockedRooms.has(roomId);
+            if (currentlyLocked) {
+                lockedRooms.delete(roomId);
+            } else {
+                lockedRooms.add(roomId);
+            }
+            const isLocked = !currentlyLocked;
+
+            console.log(`🔒 Room ${roomId} lock toggled by host: isLocked = ${isLocked}`);
+            io.to(roomId).emit("room-lock-changed", { roomId, isLocked });
+        });
+
+        socket.on("host-mute-peer", (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the room host can mute participants" });
+                return;
+            }
+            const { targetSocketId } = payload;
+            if (!targetSocketId) return;
+
+            console.log(`🔇 Host ${socket.id} muted participant ${targetSocketId} in room ${roomId}`);
+            io.to(targetSocketId).emit("muted-by-host", {
+                roomId,
+                message: "You were muted by the meeting host.",
+            });
+        });
+
+        socket.on("host-mute-all", () => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the room host can mute all participants" });
+                return;
+            }
+
+            console.log(`🔇 Host ${socket.id} muted all participants in room ${roomId}`);
+            socket.to(roomId).emit("muted-by-host", {
+                roomId,
+                message: "All participants were muted by the meeting host.",
+            });
+        });
+
+        socket.on("host-kick-peer", async (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the room host can remove participants" });
+                return;
+            }
+            const { targetSocketId } = payload;
+            if (!targetSocketId || targetSocketId === socket.id) return;
+
+            const targetSockets = await io.in(roomId).fetchSockets();
+            const target = targetSockets.find((s) => s.id === targetSocketId);
+
+            if (target) {
+                console.log(`🚫 Host ${socket.id} kicked participant ${targetSocketId} (${target.data.userId}) from room ${roomId}`);
+                target.emit("kicked-by-host", {
+                    roomId,
+                    message: "You have been removed from the meeting by the host.",
+                });
+
+                // Evict target socket from room and close DB participation
+                target.leave(roomId);
+                socket.to(roomId).emit("user-left", {
+                    socketId: target.id,
+                    userId: target.data.userId,
+                });
+                if (target.data.userId) {
+                    await closeOpenParticipation(roomId, target.data.userId);
+                }
+                target.data.roomId = undefined;
+            }
+        });
+
+        // 3d. Raise Hand Interaction
+        socket.on("toggle-raise-hand", (payload: { isRaised: boolean }) => {
+            const { roomId, userId, name } = socket.data;
+            if (!roomId || !userId) return;
+
+            io.to(roomId).emit("peer-hand-toggled", {
+                socketId: socket.id,
+                userId,
+                name: name || "Guest",
+                isRaised: Boolean(payload?.isRaised),
+            });
+        });
+
+        // 3e. Floating Emoji Reactions
+        socket.on("send-reaction", (payload: { emoji: string }) => {
+            if (isRateLimited("reaction", 5, 2000)) {
+                return; // Silently drop excess rapid reactions
+            }
+            const { roomId, name } = socket.data;
+            const emoji = String(payload?.emoji || "").trim();
+            if (!roomId || !emoji) return;
+
+            io.to(roomId).emit("reaction-received", {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                emoji,
+                fromSocketId: socket.id,
+                fromName: name || "Guest",
+            });
+        });
+
+        // 3f. Screen Share Status Notification
+        socket.on("screen-share-status", (payload: { isSharing: boolean }) => {
+            const { roomId, userId, name } = socket.data;
+            if (!roomId) return;
+
+            socket.to(roomId).emit("peer-screen-share", {
+                socketId: socket.id,
+                userId,
+                name: name || "Guest",
+                isSharing: Boolean(payload?.isSharing),
+            });
         });
 
         // 4. Disconnect

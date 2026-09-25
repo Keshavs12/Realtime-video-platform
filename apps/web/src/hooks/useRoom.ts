@@ -43,17 +43,32 @@ const fetchIceServers = async (): Promise<RTCIceServer[]> => {
   }
 };
 
-interface Peer {
+export interface Peer {
   socketId: string;
   userId: string;
   name?: string;
   stream: MediaStream;
+  isHost?: boolean;
 }
 
-interface PresenceUser {
+export interface PresenceUser {
   socketId: string;
   userId: string;
   name?: string;
+  isHost?: boolean;
+}
+
+export interface HandRaisedUser {
+  socketId: string;
+  userId: string;
+  name: string;
+}
+
+export interface FloatingReaction {
+  id: string;
+  emoji: string;
+  fromName: string;
+  fromSocketId: string;
 }
 
 export interface MediaDeviceOption {
@@ -109,6 +124,38 @@ const playChatChime = () => {
   }
 };
 
+// Playful pop sound when a reaction arrives
+const playReactionPop = () => {
+  try {
+    const AudioCtx =
+      typeof window !== "undefined"
+        ? window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        : null;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+
+    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+
+    setTimeout(() => {
+      ctx.close().catch(() => {});
+    }, 250);
+  } catch {
+    // ignore
+  }
+};
+
 const removePeerFromList = (list: PresenceUser[], socketId: string, userId?: string) =>
   list.filter((p) => p.socketId !== socketId && (!userId || p.userId !== userId));
 
@@ -117,10 +164,21 @@ const addPeerToList = (list: PresenceUser[], item: PresenceUser) => [
   item,
 ];
 
-const updatePeerDetails = (list: Peer[], socketId: string, ansUserId?: string, ansName?: string) =>
+const updatePeerDetails = (
+  list: Peer[],
+  socketId: string,
+  ansUserId?: string,
+  ansName?: string,
+  isHost?: boolean
+) =>
   list.map((p) =>
     p.socketId === socketId || (ansUserId && p.userId === ansUserId)
-      ? { ...p, userId: ansUserId || p.userId, name: ansName || p.name }
+      ? {
+          ...p,
+          userId: ansUserId || p.userId,
+          name: ansName || p.name,
+          isHost: isHost !== undefined ? isHost : p.isHost,
+        }
       : p
   );
 
@@ -147,6 +205,17 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const [isLowBandwidthMode, setIsLowBandwidthMode] = useState(false);
   const isLowBandwidthModeRef = useRef(false);
 
+  // Pillar 2 (Option 2) Collaboration states: Host controls, Hand raise, Reactions, Screen share
+  const [isHost, setIsHost] = useState(false);
+  const [isRoomLocked, setIsRoomLocked] = useState(false);
+  const [roomLockedError, setRoomLockedError] = useState(false);
+  const [kickedFromRoom, setKickedFromRoom] = useState(false);
+  const [hostNotification, setHostNotification] = useState<string | null>(null);
+  const [raisedHands, setRaisedHands] = useState<HandRaisedUser[]>([]);
+  const [isLocalHandRaised, setIsLocalHandRaised] = useState(false);
+  const [screenSharingPeers, setScreenSharingPeers] = useState<Set<string>>(new Set());
+  const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -164,7 +233,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   // burning TURN quota instead of surfacing that the connection is unrecoverable.
   const iceRestartAttemptsRef = useRef<{ [socketId: string]: number }>({});
   const iceRestartTimeoutRef = useRef<{ [socketId: string]: ReturnType<typeof setTimeout> }>({});
-  const peerDetailsRef = useRef<{ [socketId: string]: { userId?: string; name?: string } }>({});
+  const peerDetailsRef = useRef<{ [socketId: string]: { userId?: string; name?: string; isHost?: boolean } }>({});
   const isAudioMutedRef = useRef(false);
   const audioAnalysersRef = useRef<{
     [key: string]: {
@@ -341,6 +410,76 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           setRoomFull(true);
         });
 
+        socket.on("room-info", ({ isHost: hostFlag, isLocked }: { isHost: boolean; isLocked: boolean }) => {
+          setIsHost(hostFlag);
+          setIsRoomLocked(isLocked);
+        });
+
+        socket.on("room-locked", () => {
+          setRoomLockedError(true);
+        });
+
+        socket.on("room-lock-changed", ({ isLocked }: { isLocked: boolean }) => {
+          setIsRoomLocked(isLocked);
+        });
+
+        socket.on("muted-by-host", ({ message }: { message: string }) => {
+          if (localStreamRef.current) {
+            const audioTrack = localStreamRef.current.getAudioTracks()[0];
+            if (audioTrack) {
+              audioTrack.enabled = false;
+            }
+          }
+          setIsAudioMuted(true);
+          isAudioMutedRef.current = true;
+          setSpeakingMap((prev) => ({ ...prev, local: false }));
+          setHostNotification(message || "You were muted by the meeting host");
+          setTimeout(() => setHostNotification(null), 5000);
+        });
+
+        socket.on("kicked-by-host", ({ message }: { message: string }) => {
+          setKickedFromRoom(true);
+          setHostNotification(message || "You were removed from the meeting by the host");
+          if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((t) => t.stop());
+          }
+          socket.disconnect();
+        });
+
+        socket.on(
+          "peer-hand-toggled",
+          ({ socketId, userId: uId, name: uName, isRaised }: { socketId: string; userId: string; name: string; isRaised: boolean }) => {
+            setRaisedHands((prev) => {
+              if (isRaised) {
+                if (prev.some((h) => h.socketId === socketId)) return prev;
+                return [...prev, { socketId, userId: uId, name: uName }];
+              } else {
+                return prev.filter((h) => h.socketId !== socketId);
+              }
+            });
+          }
+        );
+
+        socket.on("reaction-received", (reaction: FloatingReaction) => {
+          playReactionPop();
+          setReactions((prev) => [...prev, reaction]);
+          setTimeout(() => {
+            setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+          }, 3500);
+        });
+
+        socket.on("peer-screen-share", ({ socketId, isSharing }: { socketId: string; isSharing: boolean }) => {
+          setScreenSharingPeers((prev) => {
+            const next = new Set(prev);
+            if (isSharing) {
+              next.add(socketId);
+            } else {
+              next.delete(socketId);
+            }
+            return next;
+          });
+        });
+
         // Server replays persisted chat history right after join, so a
         // page refresh doesn't lose prior messages in this room.
         socket.on("chat-history", ({ messages: history }: { messages: { userId?: string; name?: string; message: string; at: number }[] }) => {
@@ -356,7 +495,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           const seen = new Set<string>();
           for (const u of users) {
             if (u.socketId) {
-              peerDetailsRef.current[u.socketId] = { userId: u.userId, name: u.name };
+              peerDetailsRef.current[u.socketId] = { userId: u.userId, name: u.name, isHost: u.isHost };
             }
             if (u.userId !== user.id && !seen.has(u.userId)) {
               seen.add(u.userId);
@@ -379,17 +518,25 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
             peerDetailsRef.current[joinedUser.socketId] = {
               userId: joinedUser.userId,
               name: joinedUser.name,
+              isHost: joinedUser.isHost,
             };
           }
           setPresenceList((prev) => addPeerToList(prev, joinedUser));
           if (joinedUser.name) {
-            setPeers((prev) => updatePeerDetails(prev, joinedUser.socketId, joinedUser.userId, joinedUser.name));
+            setPeers((prev) => updatePeerDetails(prev, joinedUser.socketId, joinedUser.userId, joinedUser.name, joinedUser.isHost));
           }
         });
 
         socket.on("user-left", ({ socketId, userId }: { socketId: string; userId?: string }) => {
           // Remove from presence list
           setPresenceList((prev) => removePeerFromList(prev, socketId, userId));
+          // Remove from hand raise queue and screen sharing set if present
+          setRaisedHands((prev) => prev.filter((h) => h.socketId !== socketId));
+          setScreenSharingPeers((prev) => {
+            const next = new Set(prev);
+            next.delete(socketId);
+            return next;
+          });
           // Remove peer connection and stream
           closePeerConnection(socketId);
         });
@@ -947,28 +1094,38 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const startScreenShare = async () => {
     if (!localStreamRef.current || isScreenSharing) return;
 
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-    const screenTrack = screenStream.getVideoTracks()[0];
-    if (!screenTrack) return;
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      if (!screenTrack) return;
 
-    const cameraTrack = localStreamRef.current.getVideoTracks()[0];
-    cameraTrackRef.current = cameraTrack ?? null;
+      const cameraTrack = localStreamRef.current.getVideoTracks()[0];
+      cameraTrackRef.current = cameraTrack ?? null;
 
-    if (cameraTrack) {
-      localStreamRef.current.removeTrack(cameraTrack);
+      if (cameraTrack) {
+        localStreamRef.current.removeTrack(cameraTrack);
+      }
+      localStreamRef.current.addTrack(screenTrack);
+
+      Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
+        const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
+        sender?.replaceTrack(screenTrack);
+      });
+
+      // Broadcast presenting state to all peers in the room
+      socketRef.current?.emit("screen-share-status", { isSharing: true });
+
+      // Revert automatically if the user stops sharing via the browser's own
+      // "Stop sharing" control instead of our in-app button.
+      screenTrack.onended = () => stopScreenShare();
+
+      setIsScreenSharing(true);
+    } catch (err) {
+      console.warn("Screen share cancelled or failed:", err);
     }
-    localStreamRef.current.addTrack(screenTrack);
-
-    Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
-      const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
-      sender?.replaceTrack(screenTrack);
-    });
-
-    // Revert automatically if the user stops sharing via the browser's own
-    // "Stop sharing" control instead of our in-app button.
-    screenTrack.onended = () => stopScreenShare();
-
-    setIsScreenSharing(true);
   };
 
   const stopScreenShare = () => {
@@ -990,13 +1147,57 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     }
     cameraTrackRef.current = null;
 
+    // Broadcast screen share stopped
+    socketRef.current?.emit("screen-share-status", { isSharing: false });
     setIsScreenSharing(false);
   };
 
-  // Sends a chat message to everyone else in the room. Ephemeral (not
-  // persisted) — the server just relays it. Added locally immediately
-  // rather than round-tripped, since the sender doesn't need to wait for
-  // their own message to echo back.
+  // Hand Raise Toggle
+  const toggleRaiseHand = () => {
+    setIsLocalHandRaised((prev) => {
+      const next = !prev;
+      socketRef.current?.emit("toggle-raise-hand", { isRaised: next });
+      return next;
+    });
+  };
+
+  // Emoji Reactions Broadcast
+  const sendReaction = (emoji: string) => {
+    if (!emoji || !socketRef.current) return;
+    playReactionPop();
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setReactions((prev) => [
+      ...prev,
+      { id, emoji, fromName: user?.name || "You", fromSocketId: socketRef.current?.id || "local" },
+    ]);
+    setTimeout(() => {
+      setReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 3500);
+    socketRef.current.emit("send-reaction", { emoji });
+  };
+
+  // Host Controls
+  const hostToggleLock = () => {
+    if (!isHost || !socketRef.current) return;
+    socketRef.current.emit("toggle-room-lock");
+  };
+
+  const hostMutePeer = (targetSocketId: string) => {
+    if (!isHost || !socketRef.current || !targetSocketId) return;
+    socketRef.current.emit("host-mute-peer", { targetSocketId });
+  };
+
+  const hostMuteAll = () => {
+    if (!isHost || !socketRef.current) return;
+    socketRef.current.emit("host-mute-all");
+  };
+
+  const hostKickPeer = (targetSocketId: string) => {
+    if (!isHost || !socketRef.current || !targetSocketId) return;
+    socketRef.current.emit("host-kick-peer", { targetSocketId });
+  };
+
+  // Sends a chat message to everyone else in the room
   const sendMessage = (message: string) => {
     if (!message.trim() || !socketRef.current || !user) return;
 
@@ -1086,5 +1287,21 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     networkQuality,
     isLowBandwidthMode,
     toggleLowBandwidthMode,
+    // Pillar 2 (Option 2) Collaboration features
+    isHost,
+    isRoomLocked,
+    roomLockedError,
+    kickedFromRoom,
+    hostNotification,
+    raisedHands,
+    isLocalHandRaised,
+    toggleRaiseHand,
+    reactions,
+    sendReaction,
+    screenSharingPeers,
+    hostToggleLock,
+    hostMutePeer,
+    hostMuteAll,
+    hostKickPeer,
   };
 };

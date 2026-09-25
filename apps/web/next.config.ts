@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   allowedDevOrigins: ["172.20.10.5", "backlash-marshland-vocalize.ngrok-free.dev"],
   skipTrailingSlashRedirect: true,
   async rewrites() {

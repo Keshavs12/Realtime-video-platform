@@ -144,11 +144,28 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     networkQuality,
     isLowBandwidthMode,
     toggleLowBandwidthMode,
+    // Collaboration features
+    isHost,
+    isRoomLocked,
+    roomLockedError,
+    kickedFromRoom,
+    hostNotification,
+    raisedHands,
+    isLocalHandRaised,
+    toggleRaiseHand,
+    reactions,
+    sendReaction,
+    screenSharingPeers,
+    hostToggleLock,
+    hostMutePeer,
+    hostMuteAll,
+    hostKickPeer,
   } = useRoom(roomId, user);
 
   const [chatInput, setChatInput] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const [showReactionsPicker, setShowReactionsPicker] = useState(false);
   const isChatAtBottomRef = useRef(true);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
 
@@ -231,6 +248,38 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     );
   }
 
+  if (roomLockedError) {
+    return (
+      <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", background: "rgba(15, 23, 42, 0.8)", padding: "2.5rem", borderRadius: "16px", border: "1px solid #3b82f6" }}>
+          <h2 style={{ color: "#ffffff", marginBottom: "0.75rem", fontSize: "1.4rem" }}>🔒 Room is Locked</h2>
+          <p style={{ color: "#94a3b8", marginBottom: "1.5rem" }}>
+            The meeting host has locked this room. No new participants can join.
+          </p>
+          <button onClick={() => router.replace("/dashboard")} className={styles.returnButton}>
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (kickedFromRoom) {
+    return (
+      <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", background: "rgba(15, 23, 42, 0.8)", padding: "2.5rem", borderRadius: "16px", border: "1px solid #ef4444" }}>
+          <h2 style={{ color: "#ef4444", marginBottom: "0.75rem", fontSize: "1.4rem" }}>🚫 Removed from Meeting</h2>
+          <p style={{ color: "#94a3b8", marginBottom: "1.5rem" }}>
+            You have been removed from the meeting by the room host.
+          </p>
+          <button onClick={() => router.replace("/dashboard")} className={styles.returnButton}>
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const totalParticipants = peers.length + 1;
   const gridClass =
     totalParticipants === 1
@@ -261,6 +310,10 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             📌 Pin
           </button>
         )}
+        {isHost && <span className={styles.hostBadge}>👑 Host</span>}
+        {isLocalHandRaised && <span className={styles.handBadge}>✋ Hand Raised</span>}
+        {isScreenSharing && <span className={styles.screenShareBadge}>🖥️ Presenting</span>}
+
         {isVideoMuted ? (
           <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
             <div className={styles.avatarInitial}>{(user?.name || "Y")[0].toUpperCase()}</div>
@@ -316,6 +369,14 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </button>
         )}
 
+        {peer.isHost && <span className={styles.hostBadge}>👑 Host</span>}
+        {raisedHands.some((h) => h.socketId === peer.socketId) && (
+          <span className={styles.handBadge}>✋ Hand Raised</span>
+        )}
+        {screenSharingPeers.has(peer.socketId) && (
+          <span className={styles.screenShareBadge}>🖥️ Presenting</span>
+        )}
+
         {stats?.isReconnecting && (
           <div className={styles.reconnectingBadge}>
             <span>🔄 Reconnecting...</span>
@@ -353,6 +414,26 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     <div className={styles.roomContainer}>
       {/* Video feeds and floating controllers */}
       <div className={styles.videoSection}>
+        {hostNotification && (
+          <div className={styles.hostNotificationBanner}>
+            <span>{hostNotification}</span>
+          </div>
+        )}
+
+        {/* Floating Emoji Reactions Overlay */}
+        <div className={styles.reactionsOverlay}>
+          {reactions.map((r, i) => (
+            <div
+              key={r.id}
+              className={styles.floatingReaction}
+              style={{ "--drift": `${((i % 7) - 3) * 45}px` } as React.CSSProperties}
+            >
+              <span className={styles.reactionEmoji}>{r.emoji}</span>
+              <span className={styles.reactionSender}>{r.fromName}</span>
+            </div>
+          ))}
+        </div>
+
         {isLowBandwidthMode && (
           <div className={styles.lowBandwidthBanner}>
             <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
@@ -423,6 +504,25 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </div>
         )}
 
+        {/* Reaction Emoji Picker Popup */}
+        {showReactionsPicker && (
+          <div className={styles.reactionsPickerBar}>
+            {["❤️", "👍", "👏", "🎉", "😂", "🚀"].map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                className={styles.reactionPickerBtn}
+                onClick={() => {
+                  sendReaction(emoji);
+                  setShowReactionsPicker(false);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Controllers */}
         <div className={styles.controls}>
           <button
@@ -445,6 +545,22 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
           >
             🖥️
+          </button>
+          <button
+            type="button"
+            onClick={toggleRaiseHand}
+            className={`${styles.controlButton} ${isLocalHandRaised ? styles.handRaised : ""}`}
+            title={isLocalHandRaised ? "Lower Hand" : "Raise Hand"}
+          >
+            ✋
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowReactionsPicker((prev) => !prev)}
+            className={`${styles.controlButton} ${showReactionsPicker ? styles.active : ""}`}
+            title="Send Reaction"
+          >
+            😊
           </button>
           <button
             type="button"
@@ -496,6 +612,35 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
       {/* Right Sidebar: Presence List */}
       <div className={styles.sidebar}>
         <h3>Room Participants ({presenceList.length + 1})</h3>
+
+        {/* Host Governance Panel */}
+        {isHost && (
+          <div className={styles.hostControlsPanel}>
+            <div className={styles.hostHeader}>
+              <span>👑 Host Governance</span>
+              <span className={styles.hostBadge}>{isRoomLocked ? "🔒 Locked" : "🔓 Open"}</span>
+            </div>
+            <div className={styles.hostActionsRow}>
+              <button
+                type="button"
+                onClick={hostToggleLock}
+                className={`${styles.hostActionButton} ${isRoomLocked ? styles.locked : ""}`}
+                title={isRoomLocked ? "Unlock Meeting for New Participants" : "Lock Meeting to Current Participants"}
+              >
+                {isRoomLocked ? "🔓 Unlock Room" : "🔒 Lock Room"}
+              </button>
+              <button
+                type="button"
+                onClick={hostMuteAll}
+                className={styles.hostActionButton}
+                title="Mute all other participants' microphones"
+              >
+                🔇 Mute All
+              </button>
+            </div>
+          </div>
+        )}
+
         <ul className={styles.userList}>
           {/* Current Local User */}
           <li className={styles.userItem}>
@@ -505,6 +650,10 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             <div className={styles.userInfo}>
               <span className={styles.name}>{user?.name || "You"}</span>
               <span className={styles.status}>🟢 Active</span>
+            </div>
+            <div className={styles.userActions}>
+              {isHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
+              {isLocalHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
             </div>
           </li>
 
@@ -517,6 +666,8 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
               presenceUser.name ||
               matchedPeer?.name ||
               (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant");
+            const isPeerHost = Boolean(presenceUser.isHost || matchedPeer?.isHost);
+            const isHandRaised = raisedHands.some((h) => h.socketId === presenceUser.socketId);
 
             return (
               <li key={presenceUser.socketId} className={styles.userItem}>
@@ -526,6 +677,34 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
                 <div className={styles.userInfo}>
                   <span className={styles.name}>{displayName}</span>
                   <span className={styles.status}>🟢 Active</span>
+                </div>
+                <div className={styles.userActions}>
+                  {isPeerHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
+                  {isHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
+                  {isHost && (
+                    <div className={styles.hostPeerButtons}>
+                      <button
+                        type="button"
+                        onClick={() => hostMutePeer(presenceUser.socketId)}
+                        className={styles.hostMuteBtn}
+                        title={`Mute ${displayName}`}
+                      >
+                        🔇
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Remove ${displayName} from the meeting?`)) {
+                            hostKickPeer(presenceUser.socketId);
+                          }
+                        }}
+                        className={styles.hostKickBtn}
+                        title={`Remove ${displayName} from meeting`}
+                      >
+                        ❌
+                      </button>
+                    </div>
+                  )}
                 </div>
               </li>
             );

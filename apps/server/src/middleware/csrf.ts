@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { AppError } from "../utils/AppError";
+import { allowedOrigins } from "../config/cors";
 
 /**
  * CSRF Protection Middleware
@@ -31,18 +32,24 @@ export const csrfProtection = (req: Request, _res: Response, next: NextFunction)
     }
 
     // 2. Validate Origin if provided
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
     if (origin) {
         try {
             const originHost = new URL(origin).host;
-            const clientHost = new URL(clientUrl).host;
 
             const isAllowed =
-                originHost === clientHost ||
+                allowedOrigins.includes(origin) ||
+                allowedOrigins.some((allowed) => {
+                    try {
+                        return new URL(allowed).host === originHost;
+                    } catch {
+                        return false;
+                    }
+                }) ||
                 originHost.startsWith("localhost:") ||
                 originHost === "localhost" ||
                 originHost.endsWith(".ngrok-free.app") ||
-                originHost.endsWith(".ngrok.io");
+                originHost.endsWith(".ngrok.io") ||
+                originHost.endsWith(".vercel.app");
 
             if (!isAllowed) {
                 return next(
