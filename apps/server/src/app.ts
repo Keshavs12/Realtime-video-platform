@@ -7,7 +7,7 @@ import { logger } from "./utils/logger";
 import cookieParser from "cookie-parser";
 import { prisma } from "./config/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { allowedOrigins } from "./config/cors";
+import { allowedOrigins, corsOriginDelegate } from "./config/cors";
 
 import crypto from "node:crypto";
 
@@ -17,7 +17,7 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: corsOriginDelegate,
     credentials: true,
   })
 );
