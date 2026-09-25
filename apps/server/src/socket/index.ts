@@ -2,7 +2,7 @@ import { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import Redis from "ioredis";
-import { allowedOrigins } from "../config/cors";
+import { allowedOrigins, isOriginAllowed } from "../config/cors";
 import { prisma } from "../config/prisma";
 import { verifyAccessToken } from "../utils/jwt";
 
@@ -38,7 +38,13 @@ interface JoinRoomPayload {
 export const initSocketServer = (server: HttpServer): Server => {
     const io = new Server(server, {
         cors: {
-            origin: allowedOrigins,
+            origin: (origin, callback) => {
+                if (isOriginAllowed(origin)) {
+                    callback(null, true);
+                } else {
+                    callback(new Error(`Origin ${origin} not allowed by CORS`));
+                }
+            },
             methods: ["GET", "POST"],
             credentials: true,
         },
