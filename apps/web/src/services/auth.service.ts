@@ -5,6 +5,18 @@ export const signup = async (data: SignupPayload) => {
   return api.post("/auth/signup", data);
 };
 
+export const sendSignupOtp = async (data: SignupPayload) => {
+  return api.post("/auth/send-otp", data);
+};
+
+export const resendSignupOtp = async (email: string) => {
+  return api.post("/auth/resend-otp", { email });
+};
+
+export const verifySignupOtp = async (email: string, otp: string) => {
+  return api.post("/auth/verify-otp", { email, otp });
+};
+
 export const login = async (data: LoginPayload) => {
   return api.post("/auth/login", data);
 };

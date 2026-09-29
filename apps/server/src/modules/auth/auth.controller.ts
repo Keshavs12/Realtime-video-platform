@@ -33,6 +33,42 @@ export const signup = asyncHandler(async (req, res) => {
     });
 });
 
+export const initiateSignupOtp = asyncHandler(async (req, res) => {
+    const result = await authService.initiateSignupOtp(req.body);
+    res.status(200).json({
+        success: true,
+        message: "Verification OTP sent to your email.",
+        data: result,
+    });
+});
+
+export const resendSignupOtp = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    const result = await authService.resendSignupOtp(email);
+    res.status(200).json({
+        success: true,
+        message: "A new OTP has been sent to your email.",
+        data: result,
+    });
+});
+
+export const verifySignupOtp = asyncHandler(async (req, res) => {
+    const { email, otp } = req.body;
+    const result = await authService.verifySignupOtp(email, otp);
+
+    res.cookie("refreshToken", result.refreshToken, REFRESH_COOKIE_OPTIONS);
+
+    res.status(201).json({
+        success: true,
+        message: "Account verified and registered successfully.",
+        data: {
+            user: result.user,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+        },
+    });
+});
+
 export const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     const result = await authService.login(email, password);

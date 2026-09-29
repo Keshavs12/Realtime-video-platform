@@ -181,6 +181,194 @@
   }
 }
 
+// -------------------------------------------------------------
+// Phase 2: OTP Verification Screen Styles
+// -------------------------------------------------------------
+.otpPhase {
+  animation: slideFadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.emailBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 9999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  color: #c7d2fe;
+  margin: 0 auto 1.5rem auto;
+
+  strong {
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  button {
+    background: none;
+    border: none;
+    color: #818cf8;
+    cursor: pointer;
+    font-size: 0.75rem;
+    text-decoration: underline;
+    padding: 0;
+    margin-left: 0.25rem;
+
+    &:hover {
+      color: #a5b4fc;
+    }
+  }
+}
+
+.otpGrid {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 1.5rem 0;
+
+  @media (max-width: 480px) {
+    gap: 0.4rem;
+  }
+}
+
+.otpDigit {
+  width: 50px;
+  height: 58px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: 'Courier New', Courier, monospace;
+  color: #38bdf8;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+
+  &:focus {
+    outline: none;
+    border-color: #6366f1;
+    background: rgba(30, 41, 59, 0.9);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  &.filled {
+    border-color: rgba(99, 102, 241, 0.6);
+    background: rgba(15, 23, 42, 0.9);
+  }
+
+  @media (max-width: 480px) {
+    width: 42px;
+    height: 50px;
+    font-size: 1.35rem;
+  }
+}
+
+.timerContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #94a3b8;
+
+  .clockIcon {
+    font-size: 1rem;
+  }
+
+  .countdownText {
+    color: #e2e8f0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.resendBtn {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    color: #c7d2fe;
+    text-decoration: underline;
+  }
+
+  &:disabled {
+    color: #64748b;
+    cursor: not-allowed;
+  }
+}
+
+.secondaryBtn {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 0.75rem;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
+.devBanner {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  color: #fbbf24;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+
+  &:hover {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: #f59e0b;
+    transform: translateY(-1px);
+  }
+
+  code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    letter-spacing: 2px;
+    margin-left: 0.35rem;
+  }
+
+  .autofillHint {
+    font-size: 0.78rem;
+    color: #fde68a;
+    text-decoration: underline;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -191,3 +379,16 @@
     transform: translateY(0) scale(1);
   }
 }
+
+@keyframes slideFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+
