@@ -57,3 +57,17 @@ model RoomParticipant {
   @@index([roomId, userId, leftAt])
   @@index([userId, joinedAt])
 }
+
+model EmailOtp {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  otpHash    String
+  name       String
+  password   String
+  attempts   Int      @default(0)
+  lastSentAt DateTime @default(now())
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([email])
+}

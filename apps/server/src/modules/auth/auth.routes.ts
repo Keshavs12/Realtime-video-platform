@@ -30,20 +30,45 @@
  */
 
 import { Router } from "express";
-import { signup, login, refreshToken, logout, getMe, updateProfile, changePassword } from "./auth.controller";
+import {
+    signup,
+    initiateSignupOtp,
+    resendSignupOtp,
+    verifySignupOtp,
+    login,
+    refreshToken,
+    logout,
+    getMe,
+    updateProfile,
+    changePassword,
+} from "./auth.controller";
 import { authenticate } from "./auth.middleware";
 import { validate } from "../../middleware/validate";
 import { authRateLimiter } from "../../middleware/rateLimit";
-import { signupSchema, loginSchema, updateProfileSchema, changePasswordSchema } from "./auth.validator";
+import {
+    signupSchema,
+    loginSchema,
+    updateProfileSchema,
+    changePasswordSchema,
+    sendOtpSchema,
+    verifyOtpSchema,
+    resendOtpSchema,
+} from "./auth.validator";
 
 import { csrfProtection } from "../../middleware/csrf";
 
 const authRouter = Router();
 
-// POST /api/v1/auth/signup
+// POST /api/v1/auth/signup (Direct signup fallback)
 authRouter.post("/signup", authRateLimiter, validate(signupSchema), signup);
+
+// OTP-Based Registration Flow
+authRouter.post("/send-otp", authRateLimiter, validate(sendOtpSchema), initiateSignupOtp);
+authRouter.post("/resend-otp", authRateLimiter, validate(resendOtpSchema), resendSignupOtp);
+authRouter.post("/verify-otp", authRateLimiter, validate(verifyOtpSchema), verifySignupOtp);
+
 // login /api/v1/auth/login
-authRouter.post("/login", authRateLimiter, validate(loginSchema), login)
+authRouter.post("/login", authRateLimiter, validate(loginSchema), login);
 authRouter.post("/refresh", csrfProtection, refreshToken);
 authRouter.post("/logout", csrfProtection, authenticate, logout);
 
