@@ -45,3 +45,17 @@ export const changePasswordSchema = z.object({
 });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const sendOtpSchema = signupSchema;
+export type SendOtpInput = z.infer<typeof sendOtpSchema>;
+
+export const verifyOtpSchema = z.object({
+    email: z.string().email("Invalid email address"),
+    otp: z.string().length(6, "OTP must be exactly 6 digits"),
+});
+export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
+
+export const resendOtpSchema = z.object({
+    email: z.string().email("Invalid email address"),
+});
+export type ResendOtpInput = z.infer<typeof resendOtpSchema>;

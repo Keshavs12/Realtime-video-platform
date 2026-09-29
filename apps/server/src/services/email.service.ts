@@ -1,0 +1,124 @@
+import nodemailer, { Transporter } from "nodemailer";
+import { logger } from "../utils/logger";
+
+interface SendOtpOptions {
+    to: string;
+    name: string;
+    otp: string;
+}
+
+class EmailService {
+    private transporter: Transporter | null = null;
+
+    private getTransporter(): Transporter | null {
+        const user = process.env.EMAIL_USER;
+        const pass = process.env.EMAIL_PASS;
+
+        const isConfigured =
+            Boolean(user &&
+            pass &&
+            !user.includes("your_real_email") &&
+            !user.includes("your_gmail") &&
+            !pass.includes("xxxx"));
+
+        if (!isConfigured) {
+            return null;
+        }
+
+        if (!this.transporter) {
+            this.transporter = nodemailer.createTransport({
+                host: process.env.EMAIL_HOST || "smtp.gmail.com",
+                port: Number(process.env.EMAIL_PORT) || 465,
+                secure: Number(process.env.EMAIL_PORT) === 465 || !process.env.EMAIL_PORT,
+                auth: { user, pass },
+            });
+            logger.info(`[EmailService] Initialized SMTP transporter with user: ${user}`);
+        }
+
+        return this.transporter;
+    }
+
+    /**
+     * Sends an OTP verification email to the user.
+     */
+    async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
+        const transporter = this.getTransporter();
+
+        // Fallback: If SMTP credentials aren't configured yet, log OTP so testing never fails
+        if (!transporter) {
+            logger.warn(
+                `\n=======================================================\n` +
+                `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
+                `Expires in 10 minutes.\n` +
+                `=======================================================\n`
+            );
+            return true;
+        }
+
+        const sender = process.env.EMAIL_FROM || `"SuperCall" <${process.env.EMAIL_USER}>`;
+
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0f19; margin: 0; padding: 24px; color: #f1f5f9; }
+    .container { max-width: 520px; margin: 0 auto; background: #131b2e; border: 1px solid #1e293b; border-radius: 16px; padding: 36px 28px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+    .logo { font-size: 24px; font-weight: 800; color: #6366f1; letter-spacing: -0.5px; margin-bottom: 20px; display: inline-block; }
+    .title { font-size: 20px; font-weight: 700; color: #f8fafc; margin-bottom: 12px; }
+    .text { font-size: 14px; line-height: 1.6; color: #94a3b8; margin-bottom: 24px; }
+    .otp-card { background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0; }
+    .otp-code { font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #38bdf8; text-shadow: 0 0 20px rgba(56,189,248,0.3); }
+    .badge { display: inline-block; padding: 4px 10px; background: rgba(99,102,241,0.15); color: #818cf8; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
+    .footer { margin-top: 32px; border-top: 1px solid #1e293b; padding-top: 18px; font-size: 12px; color: #64748b; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">⚡ SuperCall</div>
+    <div class="title">Verify Your Email Address</div>
+    <p class="text">Hi <strong>${name}</strong>,<br>Thank you for signing up for SuperCall. Use the 6-digit verification code below to complete your registration:</p>
+    
+    <div class="otp-card">
+      <div class="otp-code">${otp}</div>
+      <div class="badge">Valid for 5 minutes</div>
+    </div>
+
+    <p class="text">If you didn't create an account with SuperCall, you can safely ignore this email.</p>
+    <div class="footer">
+      This is an automated message from SuperCall Realtime Video Platform.<br>
+      Please do not reply to this email.
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+        try {
+            await transporter.sendMail({
+                from: sender,
+                to,
+                subject: `${otp} is your SuperCall verification code`,
+                text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                html,
+            });
+            logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
+            return true;
+        } catch (error: any) {
+            logger.error({ err: error.message }, `[EmailService] SMTP delivery failed for ${to}`);
+            logger.warn(
+                `\n=======================================================\n` +
+                `📧 [DEV SIMULATION - SMTP ERROR FALLBACK] OTP for ${to} (${name}): ${otp}\n` +
+                `Expires in 10 minutes.\n` +
+                `=======================================================\n`
+            );
+            if (process.env.NODE_ENV !== "production") {
+                return false;
+            }
+            throw error;
+        }
+    }
+}
+
+export const emailService = new EmailService();

@@ -32,6 +32,7 @@ import { hashPassword } from "../../utils/bcrypt";
 import * as bcrypt from "bcrypt";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../../utils/jwt";
 import { AppError } from "../../utils/AppError";
+import { emailService } from "../../services/email.service";
 
 export const hashToken = (token: string): string => {
     return crypto.createHash("sha256").update(token).digest("hex");
@@ -260,3 +261,220 @@ export const getUserById = async (userId: string) => {
 
     return user;
 };
+
+const cleanupExpiredOtps = async () => {
+    try {
+        await prisma.emailOtp.deleteMany({
+            where: {
+                expiresAt: { lt: new Date() },
+            },
+        });
+    } catch {
+        // silent background cleanup
+    }
+};
+
+export const initiateSignupOtp = async (data: SignupPayload) => {
+    const { name, email, password } = data;
+
+    // Prune stale expired records in the background
+    cleanupExpiredOtps();
+
+    const existingUser = await prisma.user.findUnique({
+        where: { email },
+    });
+
+    if (existingUser) {
+        throw new AppError("Email already registered. Please log in.", 409);
+    }
+
+    // Server-side Cooldown Check: Minimum 60 seconds between OTP requests per email
+    const existingOtp = await prisma.emailOtp.findUnique({
+        where: { email },
+    });
+
+    if (existingOtp) {
+        const timeSinceLastSent = (Date.now() - existingOtp.lastSentAt.getTime()) / 1000;
+        if (timeSinceLastSent < 60) {
+            const waitSeconds = Math.ceil(60 - timeSinceLastSent);
+            throw new AppError(
+                `Please wait ${waitSeconds} seconds before requesting a new verification code.`,
+                429
+            );
+        }
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = hashToken(otp); // Store SHA-256 hash instead of plaintext
+    const expiresInSeconds = 15 * 60; // 15 minutes
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
+    await prisma.emailOtp.upsert({
+        where: { email },
+        update: {
+            otpHash,
+            name,
+            password: hashedPassword,
+            attempts: 0, // Reset attempt counter
+            lastSentAt: new Date(),
+            expiresAt,
+        },
+        create: {
+            email,
+            otpHash,
+            name,
+            password: hashedPassword,
+            attempts: 0,
+            lastSentAt: new Date(),
+            expiresAt,
+        },
+    });
+
+    await emailService.sendSignupOtp({ to: email, name, otp });
+
+    return {
+        email,
+        expiresInSeconds,
+    };
+};
+
+export const resendSignupOtp = async (email: string) => {
+    cleanupExpiredOtps();
+
+    const existingOtp = await prisma.emailOtp.findUnique({
+        where: { email },
+    });
+
+    if (!existingOtp) {
+        throw new AppError("No pending registration found for this email. Please sign up again.", 404);
+    }
+
+    // Server-side Cooldown Check: Minimum 60 seconds
+    const timeSinceLastSent = (Date.now() - existingOtp.lastSentAt.getTime()) / 1000;
+    if (timeSinceLastSent < 60) {
+        const waitSeconds = Math.ceil(60 - timeSinceLastSent);
+        throw new AppError(
+            `Please wait ${waitSeconds} seconds before requesting a new verification code.`,
+            429
+        );
+    }
+
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = hashToken(otp);
+    const expiresInSeconds = 15 * 60; // 15 minutes
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
+    await prisma.emailOtp.update({
+        where: { email },
+        data: {
+            otpHash,
+            attempts: 0, // Reset attempts on fresh OTP
+            lastSentAt: new Date(),
+            expiresAt,
+        },
+    });
+
+    await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
+
+    return {
+        email,
+        expiresInSeconds,
+    };
+};
+
+export const verifySignupOtp = async (email: string, otp: string) => {
+    cleanupExpiredOtps();
+
+    const record = await prisma.emailOtp.findUnique({
+        where: { email },
+    });
+
+    if (!record) {
+        throw new AppError("No pending registration found or verification code has expired. Please sign up again.", 400);
+    }
+
+    // Check expiry
+    if (new Date() > record.expiresAt) {
+        await prisma.emailOtp.delete({ where: { email } }).catch(() => {});
+        throw new AppError("Verification code has expired. Please request a new code.", 400);
+    }
+
+    // Check brute-force attempts limit (Max 5 attempts)
+    const MAX_ATTEMPTS = 5;
+    if (record.attempts >= MAX_ATTEMPTS) {
+        await prisma.emailOtp.delete({ where: { email } }).catch(() => {});
+        throw new AppError("Too many failed attempts. For security, this verification code has been revoked. Please request a new one.", 429);
+    }
+
+    // Timing-safe cryptographic comparison using SHA-256 hashes
+    const inputHash = hashToken(otp.trim());
+    const isMatch = timingSafeMatch(inputHash, record.otpHash);
+
+    if (!isMatch) {
+        const currentAttempts = record.attempts + 1;
+        const remainingAttempts = MAX_ATTEMPTS - currentAttempts;
+
+        if (remainingAttempts <= 0) {
+            await prisma.emailOtp.delete({ where: { email } }).catch(() => {});
+            throw new AppError("Too many failed attempts. For security, this verification code has been revoked. Please request a new one.", 429);
+        }
+
+        // Increment attempts counter in database
+        await prisma.emailOtp.update({
+            where: { email },
+            data: { attempts: currentAttempts },
+        });
+
+        throw new AppError(
+            `Invalid verification code. ${remainingAttempts} attempt${remainingAttempts === 1 ? "" : "s"} remaining before code is locked.`,
+            400
+        );
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+        await prisma.emailOtp.delete({ where: { email } }).catch(() => {});
+        throw new AppError("Email already registered. Please log in.", 409);
+    }
+
+    const user = await prisma.user.create({
+        data: {
+            name: record.name,
+            email: record.email,
+            password: record.password,
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            createdAt: true,
+        },
+    });
+
+    await prisma.emailOtp.delete({ where: { email } }).catch(() => {});
+
+    const accessToken = generateAccessToken({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+    });
+
+    const refreshToken = generateRefreshToken({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+    });
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: hashToken(refreshToken) },
+    });
+
+    return {
+        user,
+        accessToken,
+        refreshToken,
+    };
+};
+
