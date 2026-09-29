@@ -17,6 +17,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   hostedRooms    Room[]            @relation("HostedRooms")
+  scheduledMeetings ScheduledMeeting[] @relation("HostedSchedules")
   participations RoomParticipant[] @relation("RoomParticipations")
   chatMessages   ChatMessage[]
 }
@@ -70,4 +71,21 @@ model EmailOtp {
   createdAt  DateTime @default(now())
 
   @@index([email])
+}
+
+model ScheduledMeeting {
+  id              String   @id @default(cuid())
+  roomCode        String
+  title           String
+  description     String?
+  scheduledAt     DateTime
+  durationMinutes Int      @default(30)
+  hostId          String
+  host            User     @relation("HostedSchedules", fields: [hostId], references: [id])
+  invitees        String   // comma-separated list of invited email addresses
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([hostId, scheduledAt])
+  @@index([roomCode])
 }

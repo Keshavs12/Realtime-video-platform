@@ -215,6 +215,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const [isLocalHandRaised, setIsLocalHandRaised] = useState(false);
   const [screenSharingPeers, setScreenSharingPeers] = useState<Set<string>>(new Set());
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
@@ -385,6 +386,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         });
         activeSocket = socket;
         socketRef.current = socket;
+        setSocketInstance(socket);
 
         // Join room once connected
         socket.on("connect", () => {
@@ -691,6 +693,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socketRef.current.emit("leave-room");
         socketRef.current.disconnect();
       }
+      socketRef.current = null;
+      setSocketInstance(null);
       iceCandidatesQueueRef.current = {};
       peerDetailsRef.current = {};
       Object.keys(audioAnalysersRef.current).forEach((key) => {
@@ -1263,6 +1267,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   };
 
   return {
+    socket: socketInstance,
     localStream,
     peers,
     presenceList,

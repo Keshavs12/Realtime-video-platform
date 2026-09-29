@@ -4,6 +4,10 @@ import React, { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useRoom } from "@/hooks/useRoom";
+import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
+import { formatDuration, formatBytes } from "@/lib/videoStorage";
+import { GreenRoomLobby } from "@/components/GreenRoomLobby";
+import { WhiteboardModal } from "@/components/WhiteboardModal";
 import styles from "@/styles/room.module.scss";
 
 interface VideoFeedProps {
@@ -120,6 +124,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const { user } = useAuth();
   
   const {
+    socket,
     localStream,
     peers,
     presenceList,
@@ -168,6 +173,46 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const [showReactionsPicker, setShowReactionsPicker] = useState(false);
   const isChatAtBottomRef = useRef(true);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+
+  // In-Call Meeting Recording & Studio hook
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordVideoUrl, setRecordVideoUrl] = useState<string | null>(null);
+
+  // Pre-Join "Green Room" Lobby state
+  const [hasJoinedLobby, setHasJoinedLobby] = useState(false);
+
+  // Real-Time Collaborative Whiteboard state
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
+
+  const {
+    isRecording,
+    isPaused,
+    recordingSeconds,
+    lastSavedRecording,
+    startRecording,
+    stopRecording,
+    pauseRecording,
+    resumeRecording,
+    downloadRecording,
+  } = useMeetingRecorder({
+    roomCode: roomId,
+    localStream,
+    onRecordingComplete: () => {
+      setShowRecordModal(true);
+    },
+  });
+
+  useEffect(() => {
+    if (lastSavedRecording?.blob) {
+      const url = URL.createObjectURL(lastSavedRecording.blob);
+      setRecordVideoUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setRecordVideoUrl(null);
+    }
+  }, [lastSavedRecording]);
 
   const handleLeave = () => {
     router.push("/dashboard");
@@ -277,6 +322,30 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Pre-Join "Green Room" Lobby Screen
+  if (!hasJoinedLobby) {
+    return (
+      <GreenRoomLobby
+        roomId={roomId}
+        userName={user?.name || "You"}
+        localStream={localStream}
+        isAudioMuted={isAudioMuted}
+        isVideoMuted={isVideoMuted}
+        toggleAudio={toggleAudio}
+        toggleVideo={toggleVideo}
+        videoDevices={videoDevices}
+        audioDevices={audioDevices}
+        selectedVideoDeviceId={selectedVideoDeviceId}
+        selectedAudioDeviceId={selectedAudioDeviceId}
+        switchCamera={switchCamera}
+        switchMicrophone={switchMicrophone}
+        participantCount={presenceList.length}
+        onJoinMeeting={() => setHasJoinedLobby(true)}
+        onCancel={() => router.push("/dashboard")}
+      />
     );
   }
 
@@ -414,6 +483,32 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     <div className={styles.roomContainer}>
       {/* Video feeds and floating controllers */}
       <div className={styles.videoSection}>
+        {/* Active Meeting Recording Indicator */}
+        {isRecording && (
+          <div className={styles.recordingBadge}>
+            <span className={`${styles.recDot} ${isPaused ? styles.pausedDot : ""}`}></span>
+            <span className={styles.recText}>
+              {isPaused ? "PAUSED" : "REC"} {formatDuration(recordingSeconds)}
+            </span>
+            <button
+              type="button"
+              className={styles.recMiniButton}
+              onClick={isPaused ? resumeRecording : pauseRecording}
+              title={isPaused ? "Resume Recording" : "Pause Recording"}
+            >
+              {isPaused ? "▶️" : "⏸️"}
+            </button>
+            <button
+              type="button"
+              className={styles.recStopButton}
+              onClick={stopRecording}
+              title="Stop and Save Recording"
+            >
+              ⏹️ Stop
+            </button>
+          </div>
+        )}
+
         {hostNotification && (
           <div className={styles.hostNotificationBanner}>
             <span>{hostNotification}</span>
@@ -545,6 +640,22 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
             title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
           >
             🖥️
+          </button>
+          <button
+            type="button"
+            onClick={isRecording ? stopRecording : startRecording}
+            className={`${styles.controlButton} ${isRecording ? styles.recordingActive : ""}`}
+            title={isRecording ? "Stop Recording" : "Record Meeting (Screen + Mic)"}
+          >
+            {isRecording ? "⏹️" : "⏺️"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWhiteboard((prev) => !prev)}
+            className={`${styles.controlButton} ${showWhiteboard ? styles.active : ""}`}
+            title={showWhiteboard ? "Hide Whiteboard" : "Open Collaborative Whiteboard"}
+          >
+            🎨
           </button>
           <button
             type="button"
@@ -758,6 +869,96 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </form>
         </div>
       </div>
+
+      {/* Post-Recording Completion Modal */}
+      {showRecordModal && lastSavedRecording && (
+        <div className={styles.recordingModalOverlay} onClick={() => setShowRecordModal(false)}>
+          <div className={styles.recordingModal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.recordingModalHeader}>
+              <div className={styles.modalTitleBox}>
+                <span className={styles.modalTitleIcon}>🎉</span>
+                <div>
+                  <h3>Meeting Recording Saved!</h3>
+                  <p>Saved locally in your browser studio (Zero cloud cost, instant access)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setShowRecordModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {recordVideoUrl && (
+              <div className={styles.recordingVideoContainer}>
+                <video
+                  src={recordVideoUrl}
+                  controls
+                  playsInline
+                  className={styles.recordingVideoPlayer}
+                />
+              </div>
+            )}
+
+            <div className={styles.recordingMetaGrid}>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Duration</span>
+                <span className={styles.metaValue}>{formatDuration(lastSavedRecording.durationSeconds)}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>File Size</span>
+                <span className={styles.metaValue}>{formatBytes(lastSavedRecording.sizeBytes)}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Room</span>
+                <span className={styles.metaValue}>{lastSavedRecording.roomCode}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Storage</span>
+                <span className={styles.metaValue}>IndexedDB (Local)</span>
+              </div>
+            </div>
+
+            <div className={styles.recordingModalActions}>
+              <button
+                type="button"
+                className={styles.downloadRecBtn}
+                onClick={() => downloadRecording(lastSavedRecording)}
+              >
+                ⬇️ Download .webm Video
+              </button>
+              <button
+                type="button"
+                className={styles.viewStudioBtn}
+                onClick={() => {
+                  setShowRecordModal(false);
+                  router.push("/dashboard/videos");
+                }}
+              >
+                🎬 View in My Videos Studio
+              </button>
+              <button
+                type="button"
+                className={styles.dismissRecBtn}
+                onClick={() => setShowRecordModal(false)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time Collaborative Whiteboard Modal */}
+      <WhiteboardModal
+        isOpen={showWhiteboard}
+        onClose={() => setShowWhiteboard(false)}
+        socket={socket}
+        roomId={roomId}
+        isHost={isHost}
+      />
     </div>
   );
 }
