@@ -482,7 +482,10 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
       prevCtx.clearRect(0, 0, width, height);
     }
 
-    const elemId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const randomSuffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().slice(0, 8)
+      : Date.now().toString(36);
+    const elemId = `${Date.now()}-${randomSuffix}`;
 
     if (selectedTool === "pen" || selectedTool === "highlighter" || selectedTool === "eraser") {
       const points = currentPathPointsRef.current;

@@ -47,7 +47,10 @@ export async function saveRecording(
   data: Omit<SavedRecording, "id">
 ): Promise<SavedRecording> {
   const db = await openDB();
-  const id = `rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().slice(0, 8)
+    : Date.now().toString(36);
+  const id = `rec_${Date.now()}_${suffix}`;
   const item: SavedRecording = {
     ...data,
     id,

@@ -2,6 +2,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { emailService } from "../../services/email.service";
 import os from "os";
+import crypto from "node:crypto";
 
 export const getLanIpAddress = (): string | null => {
     try {
@@ -75,7 +76,7 @@ export const createScheduledMeeting = async (
     }
 
     // Generate clean room code
-    const roomCode = `room-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+    const roomCode = `room-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
 
     // Parse and sanitize invitee emails
     let inviteeList: string[] = [];

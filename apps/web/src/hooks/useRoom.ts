@@ -192,14 +192,20 @@ export const useRoom = (
   guestName?: string
 ) => {
   const [guestId] = useState(() => {
+    const getSecureRandomId = () => {
+      const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID().slice(0, 8)
+        : Date.now().toString(36);
+      return `guest-${suffix}`;
+    };
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("supercall_guest_id");
       if (stored) return stored;
-      const created = `guest-${Math.random().toString(36).substring(2, 9)}`;
+      const created = getSecureRandomId();
       sessionStorage.setItem("supercall_guest_id", created);
       return created;
     }
-    return `guest-${Math.random().toString(36).substring(2, 9)}`;
+    return getSecureRandomId();
   });
 
   const effectiveUserId = user?.id || guestId;
@@ -1232,7 +1238,10 @@ export const useRoom = (
   const sendReaction = (emoji: string) => {
     if (!emoji || !socketRef.current) return;
     playReactionPop();
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const suffix = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().slice(0, 8)
+      : Date.now().toString(36);
+    const id = `${Date.now()}-${suffix}`;
     setReactions((prev) => [
       ...prev,
       { id, emoji, fromName: user?.name || "You", fromSocketId: socketRef.current?.id || "local" },

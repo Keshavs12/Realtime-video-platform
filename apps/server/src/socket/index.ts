@@ -1,4 +1,5 @@
 import { Server as HttpServer } from "node:http";
+import crypto from "node:crypto";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import Redis from "ioredis";
@@ -600,7 +601,7 @@ export const initSocketServer = (server: HttpServer): Server => {
             if (!roomId || !emoji) return;
 
             io.to(roomId).emit("reaction-received", {
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                id: `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
                 emoji,
                 fromSocketId: socket.id,
                 fromName: name || "Guest",
