@@ -8,6 +8,9 @@ import type { MediaDeviceOption } from "@/hooks/useRoom";
 interface GreenRoomLobbyProps {
   roomId: string;
   userName: string;
+  isGuest?: boolean;
+  guestName?: string;
+  onGuestNameChange?: (name: string) => void;
   localStream: MediaStream | null;
   isAudioMuted: boolean;
   isVideoMuted: boolean;
@@ -27,6 +30,9 @@ interface GreenRoomLobbyProps {
 export function GreenRoomLobby({
   roomId,
   userName,
+  isGuest = false,
+  guestName = "",
+  onGuestNameChange,
   localStream,
   isAudioMuted,
   isVideoMuted,
@@ -44,11 +50,20 @@ export function GreenRoomLobby({
 }: GreenRoomLobbyProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [copied, setCopied] = useState(false);
+  const [nameError, setNameError] = useState("");
+  const [enteredName, setEnteredName] = useState(guestName || "");
   const micVolume = useMicMeter(localStream, isAudioMuted);
+
+  useEffect(() => {
+    if (guestName && !enteredName) {
+      setEnteredName(guestName);
+    }
+  }, [guestName, enteredName]);
 
   useEffect(() => {
     if (videoRef.current && localStream) {
       videoRef.current.srcObject = localStream;
+      videoRef.current.play().catch(() => {});
     }
   }, [localStream, isVideoMuted]);
 
@@ -57,6 +72,23 @@ export function GreenRoomLobby({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const displayName = isGuest ? (enteredName.trim() || guestName.trim() || "Guest") : (userName || "You");
+
+  const handleJoinClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    const finalName = isGuest ? enteredName.trim() : (userName || "").trim();
+    if (isGuest && !finalName) {
+      setNameError("Please enter your name to join the meeting.");
+      return;
+    }
+    setNameError("");
+    onGuestNameChange?.(finalName);
+    onJoinMeeting();
+  };
+
+  const isMediaUnavailable = videoDevices.length === 0 && audioDevices.length === 0;
 
   return (
     <div className={styles.lobbyContainer}>
@@ -67,9 +99,9 @@ export function GreenRoomLobby({
             {isVideoMuted ? (
               <div className={styles.avatarFallback}>
                 <div className={styles.avatarInitial}>
-                  {(userName || "Y")[0].toUpperCase()}
+                  {(displayName || "G")[0].toUpperCase()}
                 </div>
-                <span className={styles.avatarLabel}>Camera is turned off</span>
+                <span className={styles.avatarLabel}>{displayName} (Camera is off)</span>
               </div>
             ) : (
               <video
@@ -136,7 +168,11 @@ export function GreenRoomLobby({
         <div className={styles.configColumn}>
           <div className={styles.headerArea}>
             <h2>Ready to Join?</h2>
-            <p>Check your audio, video, and device setup before entering the call.</p>
+            <p>
+              {isGuest
+                ? "Enter your name and check your setup before joining the meeting."
+                : `Joining as ${userName}. Check your audio and video setup.`}
+            </p>
           </div>
 
           {/* Meeting Information */}
@@ -168,6 +204,46 @@ export function GreenRoomLobby({
             </div>
           </div>
 
+          {/* Google Meet style: Guest Name Field */}
+          {isGuest && (
+            <div className={styles.deviceField} style={{ marginTop: "0.25rem" }}>
+              <label htmlFor="guest-name-input" style={{ color: "#60a5fa", fontWeight: 700 }}>
+                What&apos;s your name?
+              </label>
+              <input
+                id="guest-name-input"
+                type="text"
+                className={styles.selectDropdown}
+                style={{
+                  background: "rgba(15, 23, 42, 0.9)",
+                  border: nameError ? "1px solid #ef4444" : "1px solid #3b82f6",
+                  color: "#f8fafc",
+                  fontSize: "0.95rem",
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                }}
+                placeholder="Enter your name to join (e.g. Aman Kumar)"
+                value={enteredName}
+                onChange={(e) => {
+                  setNameError("");
+                  setEnteredName(e.target.value);
+                  onGuestNameChange?.(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleJoinClick();
+                  }
+                }}
+                autoFocus
+              />
+              {nameError && (
+                <span style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "2px" }}>
+                  {nameError}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Hardware Device Selection */}
           <div className={styles.deviceSelectGroup}>
             <div className={styles.deviceField}>
@@ -177,12 +253,17 @@ export function GreenRoomLobby({
                 className={styles.selectDropdown}
                 value={selectedVideoDeviceId}
                 onChange={(e) => switchCamera(e.target.value)}
+                disabled={videoDevices.length === 0}
               >
-                {videoDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || "Camera"}
-                  </option>
-                ))}
+                {videoDevices.length === 0 ? (
+                  <option value="">No camera available</option>
+                ) : (
+                  videoDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || "Camera"}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -193,32 +274,54 @@ export function GreenRoomLobby({
                 className={styles.selectDropdown}
                 value={selectedAudioDeviceId}
                 onChange={(e) => switchMicrophone(e.target.value)}
+                disabled={audioDevices.length === 0}
               >
-                {audioDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || "Microphone"}
-                  </option>
-                ))}
+                {audioDevices.length === 0 ? (
+                  <option value="">No microphone available</option>
+                ) : (
+                  audioDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || "Microphone"}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
 
+          {isMediaUnavailable && (
+            <div
+              style={{
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid rgba(245, 158, 11, 0.3)",
+                borderRadius: "10px",
+                padding: "8px 12px",
+                fontSize: "0.8rem",
+                color: "#fcd34d",
+                lineHeight: "1.35",
+              }}
+            >
+              💡 <strong>Camera/mic note:</strong> Modern browsers require HTTPS (or localhost) to grant camera/mic permissions. You can join with avatar and chat!
+            </div>
+          )}
+
           {/* Primary Action Buttons */}
           <div className={styles.actionGroup}>
             <button
+              id="lobby-join-button"
               type="button"
               className={styles.joinNowButton}
-              onClick={onJoinMeeting}
+              onClick={handleJoinClick}
             >
               <span>🚀</span>
-              <span>Join Meeting Now</span>
+              <span>{isGuest ? "Ask to Join" : "Join Meeting Now"}</span>
             </button>
             <button
               type="button"
               className={styles.cancelButton}
               onClick={onCancel}
             >
-              Cancel &amp; Return to Dashboard
+              {isGuest ? "Leave / Cancel" : "Cancel & Return to Dashboard"}
             </button>
           </div>
         </div>

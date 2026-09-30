@@ -103,7 +103,7 @@ export const initSocketServer = (server: HttpServer): Server => {
         console.log("ℹ️ No REDIS_URL provided — running Socket.IO with default in-memory adapter");
     }
 
-    // Enforce JWT authentication on every incoming socket connection
+    // Enforce JWT authentication on registered users, or support Guest users (Google Meet style)
     io.use(async (socket, next) => {
         try {
             const token =
@@ -111,13 +111,19 @@ export const initSocketServer = (server: HttpServer): Server => {
                 socket.handshake.headers?.authorization?.replace("Bearer ", "");
 
             if (!token) {
-                return next(new Error("Authentication error: Access token required"));
+                const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
+                socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
+                socket.data.name = guestName.trim() || "Guest";
+                socket.data.email = "";
+                socket.data.isGuest = true;
+                return next();
             }
 
             const payload = verifyAccessToken(token);
             socket.data.userId = payload.userId;
             socket.data.name = payload.name;
             socket.data.email = payload.email;
+            socket.data.isGuest = false;
 
             // If name is missing from JWT payload (e.g. existing active session token), fetch from DB
             if (!socket.data.name && socket.data.userId) {
@@ -136,14 +142,20 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             next();
         } catch (err) {
-            console.warn(`🔒 Unauthorized socket connection attempt rejected: ${socket.id}`);
-            return next(new Error("Authentication error: Invalid or expired token"));
+            // If token is invalid or expired, allow as Guest instead of rejecting
+            const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
+            socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
+            socket.data.name = guestName.trim() || "Guest";
+            socket.data.email = "";
+            socket.data.isGuest = true;
+            next();
         }
     });
 
     // Closes out the caller's currently-open RoomParticipant row (if any) for
     // a given room code, so history/stats reflect that they actually left.
     const closeOpenParticipation = async (roomCode: string, userId: string) => {
+        if (!userId || userId.startsWith("guest-")) return;
         const room = await prisma.room.findUnique({ where: { code: roomCode } });
         if (!room) return;
 
@@ -252,12 +264,14 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.isHost = isHost;
 
             socket.join(roomId);
-            try {
-                await prisma.roomParticipant.create({
-                    data: { roomId: room.id, userId },
-                });
-            } catch (dbErr) {
-                console.error("Failed to record room participant in DB:", dbErr);
+            if (!socket.data.isGuest) {
+                try {
+                    await prisma.roomParticipant.create({
+                        data: { roomId: room.id, userId },
+                    });
+                } catch (dbErr) {
+                    console.error("Failed to record room participant in DB:", dbErr);
+                }
             }
             console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${roomId}`);
 
@@ -321,6 +335,23 @@ export const initSocketServer = (server: HttpServer): Server => {
                 });
             } catch (err) {
                 console.error("Failed to load chat history:", err);
+            }
+        });
+
+        // 1b. Update participant display name (e.g. guest sets name in Green Room lobby)
+        socket.on("update-name", ({ name }: { name: string }) => {
+            if (name && typeof name === "string" && name.trim()) {
+                const cleanName = name.trim();
+                socket.data.name = cleanName;
+                const roomId = socket.data.roomId;
+                if (roomId) {
+                    console.log(`👤 User ${socket.data.userId} updated name to: ${cleanName} in room ${roomId}`);
+                    io.in(roomId).emit("user-name-updated", {
+                        socketId: socket.id,
+                        userId: socket.data.userId,
+                        name: cleanName,
+                    });
+                }
             }
         });
 

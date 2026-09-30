@@ -1,6 +1,52 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { emailService } from "../../services/email.service";
+import os from "os";
+
+export const getLanIpAddress = (): string | null => {
+    try {
+        const interfaces = os.networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+            const netList = interfaces[name];
+            if (!netList) continue;
+            for (const net of netList) {
+                if (
+                    net.family === "IPv4" &&
+                    !net.internal &&
+                    !net.address.startsWith("172.17.") &&
+                    !net.address.startsWith("172.18.")
+                ) {
+                    return net.address;
+                }
+            }
+        }
+    } catch {
+        // Fallback if network interfaces cannot be read
+    }
+    return null;
+};
+
+export const resolveAppUrl = (clientOrigin?: string): string => {
+    const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
+
+    // 1. If an explicit clientOrigin was sent that is NOT localhost (e.g. domain, tunnel, public IP)
+    if (clientOrigin && !clientOrigin.includes("localhost") && !clientOrigin.includes("127.0.0.1")) {
+        return clientOrigin.replace(/\/+$/, "");
+    }
+
+    // 2. If FRONTEND_URL or APP_URL is configured in server .env
+    if (envUrl) {
+        return envUrl.replace(/\/+$/, "");
+    }
+
+    // 3. If clientOrigin was localhost or missing, resolve to host machine's LAN IP so recipients can access
+    const lanIp = getLanIpAddress();
+    if (lanIp) {
+        return `http://${lanIp}:3000`;
+    }
+
+    return clientOrigin ? clientOrigin.replace(/\/+$/, "") : "http://localhost:3000";
+};
 
 export interface CreateScheduledMeetingInput {
     title: string;
@@ -14,7 +60,8 @@ export const createScheduledMeeting = async (
     userId: string,
     userEmail: string,
     userName: string,
-    input: CreateScheduledMeetingInput
+    input: CreateScheduledMeetingInput,
+    clientOrigin?: string
 ) => {
     const { title, description, scheduledAt, durationMinutes = 30, invitees = [] } = input;
 
@@ -72,8 +119,8 @@ export const createScheduledMeeting = async (
         },
     });
 
-    // Send email invitations via Nodemailer
-    const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+    // Send email invitations via Nodemailer (using reachable URL)
+    const appUrl = resolveAppUrl(clientOrigin);
     const meetingUrl = `${appUrl}/dashboard/room/${roomCode}`;
 
     let emailsSent = 0;
@@ -121,7 +168,7 @@ export const getScheduledMeetings = async (userId: string, userEmail: string) =>
         },
     });
 
-    const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+    const appUrl = resolveAppUrl();
 
     return meetings.map((m) => {
         const inviteeList = m.invitees ? m.invitees.split(",").map((e) => e.trim()).filter(Boolean) : [];
@@ -154,7 +201,12 @@ export const deleteScheduledMeeting = async (meetingId: string, userId: string) 
     return true;
 };
 
-export const sendMeetingReminders = async (meetingId: string, userId: string, userName: string) => {
+export const sendMeetingReminders = async (
+    meetingId: string,
+    userId: string,
+    userName: string,
+    clientOrigin?: string
+) => {
     const meeting = await prisma.scheduledMeeting.findUnique({
         where: { id: meetingId },
     });
@@ -172,7 +224,7 @@ export const sendMeetingReminders = async (meetingId: string, userId: string, us
         return { sent: 0, failed: 0 };
     }
 
-    const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+    const appUrl = resolveAppUrl(clientOrigin);
     const meetingUrl = `${appUrl}/dashboard/room/${meeting.roomCode}`;
 
     return await emailService.sendMeetingInvite({

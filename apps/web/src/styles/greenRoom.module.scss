@@ -1,36 +1,65 @@
-// Pre-Join "Green Room" Lobby Styles
+// Pre-Join "Green Room" Lobby - Premium Modern Cinematic UI
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
 
 .lobbyContainer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100dvh - 130px);
+  background: #080c14;
+  background-image:
+    radial-gradient(ellipse at 50% -20%, rgba(59, 130, 246, 0.16) 0%, transparent 65%),
+    radial-gradient(circle at 10% 90%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 90% 85%, rgba(168, 85, 247, 0.08) 0%, transparent 45%);
   padding: 1.5rem;
+  overflow-y: auto;
+  z-index: 100;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #f8fafc;
 
   @media (max-width: 640px) {
-    padding: 0.75rem;
+    padding: 1rem;
+    align-items: flex-start;
   }
 }
 
 .lobbyCard {
   width: 100%;
-  max-width: 1060px;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
+  max-width: 1080px;
+  background: rgba(15, 23, 42, 0.76);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px rgba(59, 130, 246, 0.1);
-  padding: 2.25rem;
+  border-radius: 28px;
+  box-shadow:
+    0 25px 60px -15px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 40px rgba(59, 130, 246, 0.08);
+  padding: 2.5rem;
   display: grid;
   grid-template-columns: 1.25fr 1fr;
-  gap: 2.5rem;
+  gap: 2.75rem;
   align-items: center;
+  animation: cardFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 
-  @media (max-width: 900px) {
+  @media (max-width: 960px) {
     grid-template-columns: 1fr;
     gap: 1.75rem;
-    padding: 1.5rem;
-    border-radius: 20px;
+    padding: 1.75rem;
+    border-radius: 22px;
   }
 }
 
@@ -45,11 +74,11 @@
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
-  background: #090d16;
+  background: #020617;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), inset 0 0 40px rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -59,48 +88,51 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scaleX(-1); // Mirror preview
+  transform: scaleX(-1); // Mirror preview for natural selfie feel
 }
 
 .avatarFallback {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .avatarInitial {
-  width: 80px;
-  height: 80px;
+  width: 86px;
+  height: 86px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  background: linear-gradient(135deg, #6366f1 0%, #3b82f6 50%, #06b6d4 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.25rem;
+  font-size: 2.4rem;
   font-weight: 700;
-  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
 }
 
 .avatarLabel {
   color: #94a3b8;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 // Floating controls on preview
 .floatingControls {
   position: absolute;
-  bottom: 14px;
+  bottom: 16px;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(10px);
+  gap: 0.85rem;
+  background: rgba(11, 16, 27, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 6px 12px;
   border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   z-index: 10;
 }
 
@@ -108,38 +140,41 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
   color: #ffffff;
-  font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 1.15rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
-    transform: scale(1.05);
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.08);
   }
 
   &.muted {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.5);
-    color: #fca5a5;
+    background: #ef4444;
+    border-color: #f87171;
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.45);
 
     &:hover {
-      background: rgba(239, 68, 68, 0.35);
+      background: #dc2626;
     }
   }
 }
 
 // Live Mic VU Meter
 .vuMeterBox {
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  padding: 0.85rem 1.25rem;
+  padding: 0.9rem 1.15rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -155,14 +190,15 @@
 .vuTitle {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   color: #cbd5e1;
   font-weight: 600;
 }
 
 .vuStatus {
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 
   &.active {
     color: #34d399;
@@ -193,21 +229,23 @@
 .configColumn {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.4rem;
 }
 
 .headerArea {
   h2 {
-    font-size: 1.75rem;
-    font-weight: 700;
+    font-size: 1.85rem;
+    font-weight: 800;
     color: #ffffff;
-    margin: 0 0 0.4rem 0;
+    margin: 0 0 0.35rem 0;
+    letter-spacing: -0.02em;
   }
 
   p {
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     color: #94a3b8;
     margin: 0;
+    line-height: 1.4;
   }
 }
 
@@ -215,7 +253,7 @@
 .meetingInfoBox {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -229,11 +267,11 @@
 }
 
 .roomLabel {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: #64748b;
   text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .roomCodePill {
@@ -241,20 +279,28 @@
   align-items: center;
   gap: 0.5rem;
   background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(59, 130, 246, 0.35);
   color: #93c5fd;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  padding: 3px 10px;
+  padding: 4px 10px;
   border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+    transform: translateY(-1px);
+  }
 }
 
 .presenceRow {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.82rem;
+  gap: 0.55rem;
+  font-size: 0.84rem;
   color: #94a3b8;
 
   strong {
@@ -275,32 +321,33 @@
   gap: 0.35rem;
 
   label {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     color: #94a3b8;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
   }
 }
 
 .selectDropdown {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: #f8fafc;
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 0.88rem;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.9rem;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(15, 23, 42, 0.95);
   }
 
   &:focus {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
   }
 
   option {
@@ -313,29 +360,32 @@
 .actionGroup {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
   margin-top: 0.5rem;
 }
 
 .joinNowButton {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #2563eb 100%);
   color: #ffffff;
-  border: none;
-  border-radius: 14px;
-  padding: 1rem 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 1rem 1.6rem;
   font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
-  transition: all 0.2s ease;
+  gap: 0.65rem;
+  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.45);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 14px 35px rgba(59, 130, 246, 0.65);
+    background: linear-gradient(135deg, #4338ca 0%, #2563eb 50%, #1d4ed8 100%);
   }
 
   &:active {
@@ -347,8 +397,8 @@
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #94a3b8;
-  border-radius: 12px;
-  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  padding: 0.8rem 1rem;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
@@ -357,6 +407,6 @@
   &:hover {
     color: #ffffff;
     border-color: rgba(255, 255, 255, 0.25);
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
   }
 }

@@ -18,6 +18,17 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
+    if (typeof window !== "undefined" && config.baseURL) {
+      const hostname = window.location.hostname;
+      if (hostname !== "localhost" && hostname !== "127.0.0.1" && /^[\d.]+$/.test(hostname)) {
+        if (config.baseURL.includes("localhost") || config.baseURL.includes("127.0.0.1")) {
+          config.baseURL = config.baseURL
+            .replace("localhost", hostname)
+            .replace("127.0.0.1", hostname);
+        }
+      }
+    }
+
     const token = localStorage.getItem("accessToken");
 
     if (token) {

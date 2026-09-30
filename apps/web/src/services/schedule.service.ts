@@ -26,10 +26,12 @@ export interface CreateSchedulePayload {
   scheduledAt: string;
   durationMinutes: number;
   invitees: string[];
+  frontendUrl?: string;
 }
 
 export const createScheduledMeeting = async (payload: CreateSchedulePayload) => {
-  const response = await api.post("/schedule", payload);
+  const frontendUrl = typeof window !== "undefined" ? window.location.origin : undefined;
+  const response = await api.post("/schedule", { ...payload, frontendUrl });
   return response.data as {
     success: boolean;
     message: string;
@@ -48,7 +50,8 @@ export const deleteScheduledMeeting = async (id: string) => {
 };
 
 export const sendMeetingReminders = async (id: string) => {
-  const response = await api.post(`/schedule/${id}/reminders`);
+  const frontendUrl = typeof window !== "undefined" ? window.location.origin : undefined;
+  const response = await api.post(`/schedule/${id}/reminders`, { frontendUrl });
   return response.data as {
     success: boolean;
     message: string;
