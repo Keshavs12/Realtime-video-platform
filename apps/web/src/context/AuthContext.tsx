@@ -30,10 +30,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface Props {
-  children: ReactNode;
+  readonly children: ReactNode;
 }
 
-export const AuthProvider = ({ children }: Props) => {
+export const AuthProvider = ({ children }: Readonly<Props>) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);

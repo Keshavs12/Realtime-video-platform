@@ -209,7 +209,7 @@ export const useRoom = (
   });
 
   const effectiveUserId = user?.id || guestId;
-  const effectiveName = user?.name || (guestName && guestName.trim()) || "Guest";
+  const effectiveName = user?.name || guestName?.trim() || "Guest";
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [presenceList, setPresenceList] = useState<PresenceUser[]>([]);
@@ -312,7 +312,7 @@ export const useRoom = (
   const processQueuedCandidates = async (socketId: string) => {
     const peerConnection = peerConnectionsRef.current[socketId];
     const queue = iceCandidatesQueueRef.current[socketId];
-    if (peerConnection && queue && queue.length > 0) {
+    if (peerConnection && queue?.length > 0) {
       for (const cand of queue) {
         if (cand?.candidate) {
           try {
@@ -1030,7 +1030,7 @@ export const useRoom = (
 
         if (existingPeerIndex !== -1) {
           const existingPeer = prev[existingPeerIndex];
-          if (event.track && !existingPeer.stream.getTracks().some((t) => t.id === event.track.id)) {
+          if (event.track && !existingPeer?.stream?.getTracks().some((t) => t.id === event.track.id)) {
             existingPeer.stream.addTrack(event.track);
           }
           const updatedPeers = [...prev];
@@ -1328,7 +1328,7 @@ export const useRoom = (
       // Disable incoming video tracks from all remote peers to save bandwidth and CPU
       Object.values(peerConnectionsRef.current).forEach((pc) => {
         pc.getReceivers().forEach((receiver) => {
-          if (receiver.track && receiver.track.kind === "video") {
+          if (receiver.track?.kind === "video") {
             receiver.track.enabled = !nextMode;
           }
         });

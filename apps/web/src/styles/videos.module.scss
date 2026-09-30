@@ -68,8 +68,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background-color: #0f172a;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
   color: #93c5fd;
   padding: 8px 16px;
   border-radius: 9999px;
@@ -267,8 +268,9 @@
 }
 
 .deleteBtn {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background-color: #0f172a;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   border-radius: 8px;
   padding: 7px 10px;
@@ -495,7 +497,8 @@
 }
 
 .modalDeleteBtn {
-  background: rgba(239, 68, 68, 0.15);
+  background-color: #0f172a;
+  background: rgba(239, 68, 68, 0.2);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
   border-radius: 10px;

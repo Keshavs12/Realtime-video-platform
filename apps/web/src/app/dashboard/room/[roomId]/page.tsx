@@ -19,7 +19,7 @@ interface VideoFeedProps {
 /**
  * A helper component to assign a MediaStream to an HTML5 video tag.
  */
-const VideoFeed = ({ stream, muted = false, className }: VideoFeedProps) => {
+const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFeedProps>) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
 
@@ -1161,7 +1161,9 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
                   controls
                   playsInline
                   className={styles.recordingVideoPlayer}
-                />
+                >
+                  <track kind="captions" />
+                </video>
               </div>
             )}
 
