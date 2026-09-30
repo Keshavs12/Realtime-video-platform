@@ -60,8 +60,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background-color: #0b101b;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
   color: #93c5fd;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.84rem;
@@ -83,8 +84,9 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  background-color: #0b101b;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 3px 8px;
   border-radius: 6px;
   font-weight: 600;
@@ -104,14 +106,15 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #cbd5e1;
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background: rgba(255, 255, 255, 0.04);
+  background-color: #0b101b;
+  background: rgba(255, 255, 255, 0.06);
   padding: 4px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .headerRight {
@@ -121,9 +124,10 @@
 }
 
 .headerIconBtn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
+  background-color: #0b101b;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
   padding: 6px 12px;
   border-radius: 10px;
   font-size: 0.82rem;
@@ -591,10 +595,11 @@
 }
 
 .deviceSelect {
+  background-color: #0f172a;
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #94a3b8;
+  color: #cbd5e1;
   padding: 4px 10px;
   border-radius: 10px;
   font-size: 0.75rem;
@@ -902,7 +907,8 @@
   }
 
   &.locked {
-    background: rgba(239, 68, 68, 0.2);
+    background-color: #0f172a;
+    background: rgba(239, 68, 68, 0.25);
     border-color: rgba(239, 68, 68, 0.5);
     color: #fca5a5;
 
@@ -928,7 +934,8 @@
 }
 
 .hostBadgeSmall {
-  background: rgba(234, 179, 8, 0.2);
+  background-color: #0f172a;
+  background: rgba(234, 179, 8, 0.25);
   border: 1px solid rgba(234, 179, 8, 0.4);
   color: #fde047;
   font-size: 0.68rem;

@@ -34,7 +34,7 @@ function RecordingCard({
   onPlay,
   onDownload,
   onDelete,
-}: RecordingCardProps) {
+}: Readonly<RecordingCardProps>) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +54,9 @@ function RecordingCard({
             preload="metadata"
             className={styles.cardThumbnailVideo}
             muted
-          />
+          >
+            <track kind="captions" />
+          </video>
         ) : (
           <div className={styles.thumbnailPlaceholder}>🎥</div>
         )}
@@ -228,70 +230,84 @@ export default function MyVideosPage() {
             </div>
           )}
 
-          {recordings === null ? (
-            <p className={styles.empty}>Loading recordings…</p>
-          ) : recordings.length === 0 ? (
-            <div className={styles.emptyStateBox}>
-              <div className={styles.emptyIcon}>🎥</div>
-              <h3>No recorded meetings yet</h3>
-              <p>
-                During any call in a room, click the <strong>⏺️ Record</strong> button in the
-                bottom controls to capture screen video and all participant audio. Your recording
-                will be saved here automatically!
-              </p>
-            </div>
-          ) : (
-            <div className={styles.recordingsGrid}>
-              {recordings.map((rec) => (
-                <RecordingCard
-                  key={rec.id}
-                  recording={rec}
-                  onPlay={(r) => setActivePlayerRec(r)}
-                  onDownload={handleDownload}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
+          {(() => {
+            if (recordings === null) {
+              return <p className={styles.empty}>Loading recordings…</p>;
+            }
+            if (recordings.length === 0) {
+              return (
+                <div className={styles.emptyStateBox}>
+                  <div className={styles.emptyIcon}>🎥</div>
+                  <h3>No recorded meetings yet</h3>
+                  <p>
+                    During any call in a room, click the <strong>⏺️ Record</strong> button in the
+                    bottom controls to capture screen video and all participant audio. Your recording
+                    will be saved here automatically!
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div className={styles.recordingsGrid}>
+                {recordings.map((rec) => (
+                  <RecordingCard
+                    key={rec.id}
+                    recording={rec}
+                    onPlay={(r) => setActivePlayerRec(r)}
+                    onDownload={handleDownload}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {/* Tab 2: Call History */}
       {activeTab === "history" && (
         <div className={styles.tabContent}>
-          {history === null ? (
-            <p className={styles.empty}>Loading call history…</p>
-          ) : history.length === 0 ? (
-            <p className={styles.empty}>No past calls yet. Start or join a room to see it here.</p>
-          ) : (
-            <div className={styles.list}>
-              {history.map((entry, i) => (
-                <div
-                  key={`${entry.roomCode}-${entry.joinedAt}-${i}`}
-                  className={styles.row}
-                >
-                  <div>
-                    <div className={styles.roomCode}>{entry.roomCode}</div>
-                    <div className={styles.meta}>
-                      {formatDate(entry.joinedAt)}
-                      {entry.otherParticipantsCount > 0 &&
-                        ` · ${entry.otherParticipantsCount} other${
-                          entry.otherParticipantsCount > 1 ? "s" : ""
-                        }`}
-                    </div>
-                  </div>
-                  <span
-                    className={`${styles.badge} ${
-                      entry.isHost ? styles.hostBadge : styles.joinedBadge
-                    }`}
+          {(() => {
+            if (history === null) {
+              return <p className={styles.empty}>Loading call history…</p>;
+            }
+            if (history.length === 0) {
+              return (
+                <p className={styles.empty}>
+                  No past calls yet. Start or join a room to see it here.
+                </p>
+              );
+            }
+            return (
+              <div className={styles.list}>
+                {history.map((entry, i) => (
+                  <div
+                    key={`${entry.roomCode}-${entry.joinedAt}-${i}`}
+                    className={styles.row}
                   >
-                    {entry.isHost ? "Hosted" : "Joined"}
-                  </span>
-                  <span className={styles.duration}>{entry.durationMinutes} min</span>
-                </div>
-              ))}
-            </div>
-          )}
+                    <div>
+                      <div className={styles.roomCode}>{entry.roomCode}</div>
+                      <div className={styles.meta}>
+                        {formatDate(entry.joinedAt)}
+                        {entry.otherParticipantsCount > 0 &&
+                          ` · ${entry.otherParticipantsCount} other${
+                            entry.otherParticipantsCount > 1 ? "s" : ""
+                          }`}
+                      </div>
+                    </div>
+                    <span
+                      className={`${styles.badge} ${
+                        entry.isHost ? styles.hostBadge : styles.joinedBadge
+                      }`}
+                    >
+                      {entry.isHost ? "Hosted" : "Joined"}
+                    </span>
+                    <span className={styles.duration}>{entry.durationMinutes} min</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -327,7 +343,9 @@ export default function MyVideosPage() {
                 autoPlay
                 playsInline
                 className={styles.modalVideoTag}
-              />
+              >
+                <track kind="captions" />
+              </video>
             </div>
 
             <div className={styles.playerModalFooter}>

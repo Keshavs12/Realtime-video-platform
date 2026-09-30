@@ -81,7 +81,7 @@ export default function SchedulePage() {
   };
 
   // Submit Schedule Form
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!title.trim() || !scheduledAt) return;
 

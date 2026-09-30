@@ -18,6 +18,7 @@
 }
 
 .glassCard {
+  background-color: #0f172a;
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -108,11 +109,11 @@
     }
     
     &::placeholder {
-      color: #475569;
+      color: #94a3b8;
     }
 
     &:focus + label {
-      color: #818cf8;
+      color: #a5b4fc;
     }
   }
 }
@@ -167,7 +168,7 @@
   color: #94a3b8;
 
   a {
-    color: #818cf8;
+    color: #a5b4fc;
     text-decoration: none;
     font-weight: 600;
     transition: all 0.2s ease;
