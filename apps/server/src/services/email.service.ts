@@ -26,13 +26,31 @@ class EmailService {
         }
 
         if (!this.transporter) {
-            this.transporter = nodemailer.createTransport({
-                host: process.env.EMAIL_HOST || "smtp.gmail.com",
-                port: Number(process.env.EMAIL_PORT) || 465,
-                secure: Number(process.env.EMAIL_PORT) === 465 || !process.env.EMAIL_PORT,
-                auth: { user, pass },
-            });
-            logger.info(`[EmailService] Initialized SMTP transporter with user: ${user}`);
+            const host = process.env.EMAIL_HOST || "smtp.gmail.com";
+            const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
+
+            if (isGmail) {
+                this.transporter = nodemailer.createTransport({
+                    service: "gmail",
+                    auth: { user, pass },
+                    connectionTimeout: 10000,
+                    greetingTimeout: 10000,
+                    socketTimeout: 15000,
+                });
+                logger.info(`[EmailService] Initialized Gmail service transporter with user: ${user}`);
+            } else {
+                const port = Number(process.env.EMAIL_PORT) || 587;
+                this.transporter = nodemailer.createTransport({
+                    host,
+                    port,
+                    secure: port === 465,
+                    auth: { user, pass },
+                    connectionTimeout: 10000,
+                    greetingTimeout: 10000,
+                    socketTimeout: 15000,
+                });
+                logger.info(`[EmailService] Initialized SMTP transporter on ${host}:${port} with user: ${user}`);
+            }
         }
 
         return this.transporter;
@@ -113,10 +131,9 @@ class EmailService {
                 `Expires in 10 minutes.\n` +
                 `=======================================================\n`
             );
-            if (process.env.NODE_ENV !== "production") {
-                return false;
-            }
-            throw error;
+            // Return false gracefully instead of throwing 500 unhandled error
+            // so signup flow proceeds to the OTP screen. The OTP is preserved in DB and logged.
+            return false;
         }
     }
 
