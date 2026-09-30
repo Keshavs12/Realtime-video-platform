@@ -55,6 +55,7 @@
   gap: 0.75rem;
 }
 
+
 .meetingBadge {
   display: inline-flex;
   align-items: center;
@@ -243,6 +244,7 @@
     box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
     border-color: #10b981;
   }
+
   100% {
     box-shadow: 0 0 28px rgba(16, 185, 129, 0.75);
     border-color: #34d399;
@@ -277,9 +279,12 @@
 }
 
 @keyframes speakerPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.08);
   }
@@ -333,8 +338,13 @@
 }
 
 @keyframes wavePulse {
-  from { opacity: 0.6; }
-  to { opacity: 1; }
+  from {
+    opacity: 0.6;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 // Pin action button
@@ -435,6 +445,7 @@
   &::-webkit-scrollbar {
     height: 6px;
   }
+
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
     border-radius: 3px;
@@ -592,7 +603,8 @@
   cursor: pointer;
   transition: all 0.2s ease;
 
-  &:hover, &:focus {
+  &:hover,
+  &:focus {
     color: #ffffff;
     border-color: rgba(255, 255, 255, 0.25);
   }
@@ -743,8 +755,15 @@
 }
 
 @keyframes bounceIn {
-  from { transform: scale(0.6); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .chatMessages {
@@ -758,6 +777,7 @@
   &::-webkit-scrollbar {
     width: 5px;
   }
+
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.15);
     border-radius: 3px;
@@ -938,8 +958,13 @@
 }
 
 @keyframes handPulse {
-  0% { transform: scale(1); }
-  100% { transform: scale(1.12); }
+  0% {
+    transform: scale(1);
+  }
+
+  100% {
+    transform: scale(1.12);
+  }
 }
 
 .screenShareBadge {
@@ -961,7 +986,8 @@
   gap: 4px;
 }
 
-.hostMuteBtn, .hostKickBtn {
+.hostMuteBtn,
+.hostKickBtn {
   background: rgba(15, 23, 42, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 4px 7px;
@@ -988,10 +1014,12 @@
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   }
+
   70% {
     transform: scale(1.15);
     box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
   }
+
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
@@ -1137,13 +1165,16 @@
     opacity: 0;
     transform: translate(calc(-50% + var(--drift, 0px)), 20px) scale(0.6);
   }
+
   15% {
     opacity: 1;
     transform: translate(calc(-50% + var(--drift, 0px)), -40px) scale(1.15);
   }
+
   80% {
     opacity: 0.9;
   }
+
   100% {
     opacity: 0;
     transform: translate(calc(-50% + var(--drift, 0px)), -260px) scale(0.9);
@@ -1168,8 +1199,15 @@
 }
 
 @keyframes popIn {
-  0% { transform: translate(-50%, 15px) scale(0.85); opacity: 0; }
-  100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  0% {
+    transform: translate(-50%, 15px) scale(0.85);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
 }
 
 .reactionPickerBtn {
@@ -1272,8 +1310,15 @@
 }
 
 @keyframes modalScaleUp {
-  from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .recordingModalHeader {
