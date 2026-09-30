@@ -5,7 +5,8 @@
 .sidebar {
   width: 280px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.03);
+  background-color: #0f172a;
+  background: rgba(15, 23, 42, 0.95);
   backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   padding: 2rem 1.5rem;
@@ -51,6 +52,7 @@
   font-size: 1.5rem;
   font-weight: 800;
   margin-bottom: 3rem;
+  color: #ffffff;
   background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -65,7 +67,7 @@
   a {
     padding: 0.875rem 1rem;
     border-radius: 12px;
-    color: #cbd5e1;
+    color: #e2e8f0;
     text-decoration: none;
     font-weight: 500;
     transition: all 0.2s ease;
@@ -80,7 +82,7 @@
 
     &.active {
       background: #312e81;
-      color: #e0e7ff;
+      color: #ffffff;
       border: 1px solid #4338ca;
     }
   }
@@ -95,7 +97,7 @@
 .logoutButton {
   width: 100%;
   background: #1e1b4b;
-  color: #c7d2fe;
+  color: #e0e7ff;
   border: 1px solid #3730a3;
   padding: 0.875rem 1rem;
   border-radius: 12px;
