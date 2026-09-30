@@ -69,9 +69,12 @@ export default function SignupPage() {
       setCountdown(60);
       setSuccess("A 6-digit verification code has been sent to your email!");
     } catch (err: any) {
+      console.log(err, "ERR");
       setError(
         err.response?.data?.message ||
-          "Failed to send verification code. Please check your details."
+        (!err.response
+          ? "Unable to reach server. Please ensure the backend server is running."
+          : "Failed to send verification code. Please check your details.")
       );
     } finally {
       setLoading(false);
@@ -182,7 +185,7 @@ export default function SignupPage() {
     } catch (err: any) {
       setError(
         err.response?.data?.message ||
-          "Invalid or expired verification code. Please try again."
+        "Invalid or expired verification code. Please try again."
       );
       setVerifying(false);
     }

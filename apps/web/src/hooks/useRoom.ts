@@ -186,7 +186,24 @@ const updatePeerDetails = (
  * Custom React hook for WebRTC multi-peer video rooms and signaling.
  * Handles local media stream, Socket.IO connections, WebRTC peer connections, and presence list.
  */
-export const useRoom = (roomId: string, user: { id: string; name: string; email: string } | null) => {
+export const useRoom = (
+  roomId: string,
+  user: { id: string; name: string; email?: string } | null,
+  guestName?: string
+) => {
+  const [guestId] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("supercall_guest_id");
+      if (stored) return stored;
+      const created = `guest-${Math.random().toString(36).substring(2, 9)}`;
+      sessionStorage.setItem("supercall_guest_id", created);
+      return created;
+    }
+    return `guest-${Math.random().toString(36).substring(2, 9)}`;
+  });
+
+  const effectiveUserId = user?.id || guestId;
+  const effectiveName = user?.name || (guestName && guestName.trim()) || "Guest";
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [presenceList, setPresenceList] = useState<PresenceUser[]>([]);
@@ -215,6 +232,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   const [isLocalHandRaised, setIsLocalHandRaised] = useState(false);
   const [screenSharingPeers, setScreenSharingPeers] = useState<Set<string>>(new Set());
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
@@ -303,57 +321,70 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   };
 
   useEffect(() => {
-    if (!user) return;
-
     let isCancelled = false;
     let acquiredStream: MediaStream | null = null;
     let activeSocket: Socket | null = null;
 
-    // 1. Fetch Local Stream with fallback if camera is locked by another tab (NotReadableError)
+    // Helper to generate a fallback canvas video stream
+    const createFallbackCanvasStream = (label: string, subtitle: string, audioStream?: MediaStream | null): MediaStream => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#6366f1";
+        ctx.beginPath();
+        ctx.arc(320, 140, 45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 32px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText((label || "U")[0].toUpperCase(), 320, 140);
+        ctx.font = "16px sans-serif";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(label || "User", 320, 210);
+        ctx.font = "14px sans-serif";
+        ctx.fillStyle = "#f59e0b";
+        ctx.fillText(subtitle, 320, 240);
+      }
+      const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
+      const videoTrack = canvasStream?.getVideoTracks()[0];
+      const combinedTracks: MediaStreamTrack[] = videoTrack ? [videoTrack] : [];
+      if (audioStream) {
+        audioStream.getAudioTracks().forEach((t) => combinedTracks.push(t));
+      }
+      return new MediaStream(combinedTracks);
+    };
+
+    // 1. Fetch Local Stream with fallback if camera is locked or mediaDevices is unavailable (e.g. insecure HTTP)
     const acquireUserMedia = async (): Promise<MediaStream> => {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        console.warn("navigator.mediaDevices.getUserMedia is unavailable (insecure HTTP context or unsupported). Using canvas fallback.");
+        return createFallbackCanvasStream(effectiveName || "Guest", "(Camera disabled by browser on HTTP)");
+      }
+
       try {
         return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       } catch (err: any) {
-        console.warn("Camera+mic access failed, attempting fallback:", err.name, err.message);
+        console.warn("Camera+mic access failed, attempting fallback:", err?.name, err?.message);
 
         let audioStream: MediaStream | null = null;
         try {
-          audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          if (navigator.mediaDevices?.getUserMedia) {
+            audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          }
         } catch (audioErr) {
           console.warn("Audio-only access also unavailable:", audioErr);
         }
 
-        // Create fallback canvas video stream (e.g. for second tab on Linux where /dev/video0 is locked)
-        const canvas = document.createElement("canvas");
-        canvas.width = 640;
-        canvas.height = 360;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#0f172a";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = "#6366f1";
-          ctx.beginPath();
-          ctx.arc(320, 140, 45, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 32px sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText((user?.name || "U")[0].toUpperCase(), 320, 140);
-          ctx.font = "16px sans-serif";
-          ctx.fillStyle = "#94a3b8";
-          ctx.fillText(user?.name || "User", 320, 210);
-          ctx.font = "14px sans-serif";
-          ctx.fillStyle = "#f59e0b";
-          ctx.fillText("(Camera in use by another tab/app)", 320, 240);
-        }
-        const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
-        const videoTrack = canvasStream?.getVideoTracks()[0];
-        const combinedTracks: MediaStreamTrack[] = videoTrack ? [videoTrack] : [];
-        if (audioStream) {
-          audioStream.getAudioTracks().forEach((t) => combinedTracks.push(t));
-        }
-        return new MediaStream(combinedTracks);
+        return createFallbackCanvasStream(
+          effectiveName || "Guest",
+          err?.name === "NotReadableError" ? "(Camera in use by another tab/app)" : "(Camera permission denied)",
+          audioStream
+        );
       }
     };
 
@@ -373,24 +404,35 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         setSelectedVideoDeviceId(stream.getVideoTracks()[0]?.getSettings().deviceId || "");
         setSelectedAudioDeviceId(stream.getAudioTracks()[0]?.getSettings().deviceId || "");
         refreshDeviceList();
-        navigator.mediaDevices.addEventListener("devicechange", refreshDeviceList);
+        if (typeof navigator !== "undefined" && navigator.mediaDevices?.addEventListener) {
+          navigator.mediaDevices.addEventListener("devicechange", refreshDeviceList);
+        }
 
         // 2. Connect to Socket Server
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+        let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
+        if (typeof window !== "undefined") {
+          const hostname = window.location.hostname;
+          if (hostname !== "localhost" && hostname !== "127.0.0.1" && /^[\d.]+$/.test(hostname)) {
+            if (socketUrl.includes("localhost") || socketUrl.includes("127.0.0.1")) {
+              socketUrl = `${window.location.protocol}//${hostname}:5000`;
+            }
+          }
+        }
         const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
         const socket = io(socketUrl, {
           transports: ["websocket", "polling"],
-          auth: { token },
+          auth: { token, guestName: effectiveName },
           extraHeaders: { "ngrok-skip-browser-warning": "true" },
         });
         activeSocket = socket;
         socketRef.current = socket;
+        setSocketInstance(socket);
 
         // Join room once connected
         socket.on("connect", () => {
           socket.emit("join-room", {
             roomId,
-            name: user.name,
+            name: effectiveName,
           });
         });
 
@@ -468,6 +510,15 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
           }, 3500);
         });
 
+        socket.on("user-name-updated", ({ socketId, name: newName }: { socketId: string; name: string }) => {
+          setPeers((prev) =>
+            prev.map((p) => (p.socketId === socketId ? { ...p, name: newName } : p))
+          );
+          setPresenceList((prev) =>
+            prev.map((u) => (u.socketId === socketId ? { ...u, name: newName } : u))
+          );
+        });
+
         socket.on("peer-screen-share", ({ socketId, isSharing }: { socketId: string; isSharing: boolean }) => {
           setScreenSharingPeers((prev) => {
             const next = new Set(prev);
@@ -484,7 +535,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         // page refresh doesn't lose prior messages in this room.
         socket.on("chat-history", ({ messages: history }: { messages: { userId?: string; name?: string; message: string; at: number }[] }) => {
           setMessages(
-            history.map((m) => ({ ...m, isLocal: m.userId === user.id }))
+            history.map((m) => ({ ...m, isLocal: m.userId === effectiveUserId }))
           );
         });
 
@@ -497,7 +548,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
             if (u.socketId) {
               peerDetailsRef.current[u.socketId] = { userId: u.userId, name: u.name, isHost: u.isHost };
             }
-            if (u.userId !== user.id && !seen.has(u.userId)) {
+            if (u.userId !== effectiveUserId && !seen.has(u.userId)) {
               seen.add(u.userId);
               filteredUsers.push(u);
             }
@@ -512,7 +563,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
 
         socket.on("user-joined", (joinedUser: PresenceUser) => {
           // Never add self to presence list
-          if (joinedUser.userId === user.id) return;
+          if (joinedUser.userId === effectiveUserId) return;
 
           if (joinedUser.socketId) {
             peerDetailsRef.current[joinedUser.socketId] = {
@@ -586,8 +637,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
             socket.emit("answer", {
               to: from,
               answer,
-              userId: user.id,
-              name: user.name,
+              userId: effectiveUserId,
+              name: effectiveName,
             });
           }
         );
@@ -670,7 +721,9 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
     // Cleanup on unmount
     return () => {
       isCancelled = true;
-      navigator.mediaDevices.removeEventListener("devicechange", refreshDeviceList);
+      if (typeof navigator !== "undefined" && navigator.mediaDevices?.removeEventListener) {
+        navigator.mediaDevices.removeEventListener("devicechange", refreshDeviceList);
+      }
 
       if (acquiredStream) {
         acquiredStream.getTracks().forEach((track) => track.stop());
@@ -691,6 +744,8 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
         socketRef.current.emit("leave-room");
         socketRef.current.disconnect();
       }
+      socketRef.current = null;
+      setSocketInstance(null);
       iceCandidatesQueueRef.current = {};
       peerDetailsRef.current = {};
       Object.keys(audioAnalysersRef.current).forEach((key) => {
@@ -1026,18 +1081,29 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
 
   // List available cameras/microphones (labels only populate after permission is granted)
   const refreshDeviceList = async () => {
-    const devices = await navigator.mediaDevices.enumerateDevices();
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+      setVideoDevices([]);
+      setAudioDevices([]);
+      return;
+    }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
 
-    const videoInputs = devices
-      .filter((d) => d.kind === "videoinput")
-      .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+      const videoInputs = devices
+        .filter((d) => d.kind === "videoinput")
+        .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` }));
 
-    const audioInputs = devices
-      .filter((d) => d.kind === "audioinput")
-      .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
+      const audioInputs = devices
+        .filter((d) => d.kind === "audioinput")
+        .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
 
-    setVideoDevices(videoInputs);
-    setAudioDevices(audioInputs);
+      setVideoDevices(videoInputs);
+      setAudioDevices(audioInputs);
+    } catch (e) {
+      console.warn("Failed to enumerate devices:", e);
+      setVideoDevices([]);
+      setAudioDevices([]);
+    }
   };
 
   // Switch the active camera or microphone mid-call, swapping the track on
@@ -1045,6 +1111,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   // (avoids renegotiating offer/answer for every peer).
   const switchDevice = async (kind: "video" | "audio", deviceId: string) => {
     if (!localStreamRef.current) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
 
     const constraints: MediaStreamConstraints =
       kind === "video"
@@ -1199,12 +1266,12 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
 
   // Sends a chat message to everyone else in the room
   const sendMessage = (message: string) => {
-    if (!message.trim() || !socketRef.current || !user) return;
+    if (!message.trim() || !socketRef.current) return;
 
     socketRef.current.emit("chat-message", { message });
     setMessages((prev) => [
       ...prev,
-      { userId: user.id, name: user.name, message, at: Date.now(), isLocal: true },
+      { userId: effectiveUserId, name: effectiveName, message, at: Date.now(), isLocal: true },
     ]);
   };
 
@@ -1263,6 +1330,7 @@ export const useRoom = (roomId: string, user: { id: string; name: string; email:
   };
 
   return {
+    socket: socketInstance,
     localStream,
     peers,
     presenceList,

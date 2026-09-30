@@ -161,6 +161,36 @@ export default function DashboardPage() {
             )}
           </form>
         </div>
+
+        {/* Schedule a Meeting Card */}
+        <div className={styles.card}>
+          <h3>Schedule a Meeting</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+            <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+              Plan upcoming video calls and dispatch email invitations to participants via Nodemailer.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/schedule')}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                color: 'white',
+                border: 'none',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s',
+              }}
+              onMouseOver={(e) => (e.currentTarget.style.opacity = '0.9')}
+              onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
+              onFocus={(e) => (e.currentTarget.style.opacity = '0.9')}
+              onBlur={(e) => (e.currentTarget.style.opacity = '1')}
+            >
+              📅 Schedule &amp; Invite
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className={styles.card} style={{ minHeight: '180px' }}>

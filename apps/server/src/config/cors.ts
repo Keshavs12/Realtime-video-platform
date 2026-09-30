@@ -27,11 +27,29 @@ export const isOriginAllowed = (origin?: string): boolean => {
         const originUrl = new URL(origin);
         const originHostname = originUrl.hostname;
 
-        // Auto-allow all Vercel deployment preview and production domains & localhost
+        // Auto-allow all Vercel deployment preview and production domains, localhost, and local network IPs
         if (
             originHostname.endsWith(".vercel.app") ||
             originHostname === "localhost" ||
-            originHostname === "127.0.0.1"
+            originHostname === "127.0.0.1" ||
+            originHostname.startsWith("192.168.") ||
+            originHostname.startsWith("172.16.") ||
+            originHostname.startsWith("172.17.") ||
+            originHostname.startsWith("172.18.") ||
+            originHostname.startsWith("172.19.") ||
+            originHostname.startsWith("172.20.") ||
+            originHostname.startsWith("172.21.") ||
+            originHostname.startsWith("172.22.") ||
+            originHostname.startsWith("172.23.") ||
+            originHostname.startsWith("172.24.") ||
+            originHostname.startsWith("172.25.") ||
+            originHostname.startsWith("172.26.") ||
+            originHostname.startsWith("172.27.") ||
+            originHostname.startsWith("172.28.") ||
+            originHostname.startsWith("172.29.") ||
+            originHostname.startsWith("172.30.") ||
+            originHostname.startsWith("172.31.") ||
+            originHostname.startsWith("10.")
         ) {
             return true;
         }

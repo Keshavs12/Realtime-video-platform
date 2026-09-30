@@ -43,6 +43,9 @@ const handleLogout = async ()=>{
           <Link href="/dashboard" className={pathname === "/dashboard" ? styles.active : ""} onClick={onClose}>
             Overview
           </Link>
+          <Link href="/dashboard/schedule" className={pathname === "/dashboard/schedule" ? styles.active : ""} onClick={onClose}>
+            Schedule &amp; Invites
+          </Link>
           <Link href="/dashboard/videos" className={pathname === "/dashboard/videos" ? styles.active : ""} onClick={onClose}>
             My Videos
           </Link>

@@ -4,6 +4,10 @@ import React, { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useRoom } from "@/hooks/useRoom";
+import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
+import { formatDuration, formatBytes } from "@/lib/videoStorage";
+import { GreenRoomLobby } from "@/components/GreenRoomLobby";
+import { WhiteboardModal } from "@/components/WhiteboardModal";
 import styles from "@/styles/room.module.scss";
 
 interface VideoFeedProps {
@@ -118,8 +122,12 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const { roomId } = use(params);
   const router = useRouter();
   const { user } = useAuth();
+  const [guestName, setGuestName] = useState("");
+  const isGuest = !user;
+  const localDisplayName = user?.name || (guestName && guestName.trim()) || "You";
   
   const {
+    socket,
     localStream,
     peers,
     presenceList,
@@ -160,7 +168,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     hostMutePeer,
     hostMuteAll,
     hostKickPeer,
-  } = useRoom(roomId, user);
+  } = useRoom(roomId, user, guestName);
 
   const [chatInput, setChatInput] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -169,8 +177,75 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const isChatAtBottomRef = useRef(true);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
 
+  // In-Call Meeting Recording & Studio hook
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordVideoUrl, setRecordVideoUrl] = useState<string | null>(null);
+
+  // Pre-Join "Green Room" Lobby state
+  const [hasJoinedLobby, setHasJoinedLobby] = useState(false);
+
+  // Real-Time Collaborative Whiteboard state
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
+
+  // Active call duration timer
+  const [callDurationSeconds, setCallDurationSeconds] = useState(0);
+  useEffect(() => {
+    if (!hasJoinedLobby) return;
+    const interval = setInterval(() => {
+      setCallDurationSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [hasJoinedLobby]);
+
+  // Collapsible sidebar & tabs
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"people" | "chat" | "host">("chat");
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyMeetingLink = () => {
+    if (typeof navigator !== "undefined") {
+      navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
+  const {
+    isRecording,
+    isPaused,
+    recordingSeconds,
+    lastSavedRecording,
+    startRecording,
+    stopRecording,
+    pauseRecording,
+    resumeRecording,
+    downloadRecording,
+  } = useMeetingRecorder({
+    roomCode: roomId,
+    localStream,
+    onRecordingComplete: () => {
+      setShowRecordModal(true);
+    },
+  });
+
+  useEffect(() => {
+    if (lastSavedRecording?.blob) {
+      const url = URL.createObjectURL(lastSavedRecording.blob);
+      setRecordVideoUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setRecordVideoUrl(null);
+    }
+  }, [lastSavedRecording]);
+
   const handleLeave = () => {
-    router.push("/dashboard");
+    if (isGuest) {
+      router.push("/login");
+    } else {
+      router.push("/dashboard");
+    }
   };
 
   const handleSendMessage = (e: React.SyntheticEvent) => {
@@ -280,6 +355,40 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     );
   }
 
+  // Pre-Join "Green Room" Lobby Screen
+  if (!hasJoinedLobby) {
+    return (
+      <GreenRoomLobby
+        roomId={roomId}
+        userName={localDisplayName}
+        isGuest={isGuest}
+        guestName={guestName}
+        onGuestNameChange={setGuestName}
+        localStream={localStream}
+        isAudioMuted={isAudioMuted}
+        isVideoMuted={isVideoMuted}
+        toggleAudio={toggleAudio}
+        toggleVideo={toggleVideo}
+        videoDevices={videoDevices}
+        audioDevices={audioDevices}
+        selectedVideoDeviceId={selectedVideoDeviceId}
+        selectedAudioDeviceId={selectedAudioDeviceId}
+        switchCamera={switchCamera}
+        switchMicrophone={switchMicrophone}
+        participantCount={presenceList.length}
+        onJoinMeeting={() => {
+          setHasJoinedLobby(true);
+          const finalName = (guestName && guestName.trim()) || user?.name || "Guest";
+          if (socket) {
+            socket.emit("update-name", { name: finalName });
+            socket.emit("join-room", { roomId, name: finalName });
+          }
+        }}
+        onCancel={() => (isGuest ? router.push("/login") : router.push("/dashboard"))}
+      />
+    );
+  }
+
   const totalParticipants = peers.length + 1;
   const gridClass =
     totalParticipants === 1
@@ -316,8 +425,8 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
         {isVideoMuted ? (
           <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
-            <div className={styles.avatarInitial}>{(user?.name || "Y")[0].toUpperCase()}</div>
-            <span className={styles.avatarName}>{user?.name || "You"}</span>
+            <div className={styles.avatarInitial}>{(localDisplayName || "Y")[0].toUpperCase()}</div>
+            <span className={styles.avatarName}>{localDisplayName}</span>
           </div>
         ) : (
           <VideoFeed
@@ -327,7 +436,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           />
         )}
         <div className={styles.peerName}>
-          <span>👤 {user?.name || "You"} (You)</span>
+          <span>👤 {localDisplayName} (You)</span>
           {isSpeaking && <span className={styles.speakingWave}>🎙️ ılı</span>}
           {isAudioMuted && <span>🔇</span>}
           {isVideoMuted && <span>🚫 Video Off</span>}
@@ -412,11 +521,123 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
   return (
     <div className={styles.roomContainer}>
-      {/* Video feeds and floating controllers */}
+      {/* Top Header Bar */}
+      <header className={styles.topHeaderBar}>
+        <div className={styles.headerLeft}>
+          <button
+            type="button"
+            className={styles.meetingBadge}
+            onClick={handleCopyMeetingLink}
+            title="Click to copy meeting link"
+          >
+            <span>{roomId}</span>
+            <span>{copiedLink ? "✓ Copied" : "📋"}</span>
+          </button>
+          <span className={styles.securityBadge}>
+            🔒 Mesh Encrypted
+          </span>
+        </div>
+
+        <div className={styles.headerCenter}>
+          <div className={styles.callTimer}>
+            <span>⏱️</span>
+            <span>{formatDuration(callDurationSeconds)}</span>
+          </div>
+          {isRecording && (
+            <div className={styles.recordingBadge} style={{ position: "static" }}>
+              <span className={`${styles.recDot} ${isPaused ? styles.pausedDot : ""}`}></span>
+              <span className={styles.recText}>
+                {isPaused ? "PAUSED" : "REC"} {formatDuration(recordingSeconds)}
+              </span>
+              <button
+                type="button"
+                className={styles.recMiniButton}
+                onClick={isPaused ? resumeRecording : pauseRecording}
+                title={isPaused ? "Resume Recording" : "Pause Recording"}
+              >
+                {isPaused ? "▶️" : "⏸️"}
+              </button>
+              <button
+                type="button"
+                className={styles.recStopButton}
+                onClick={stopRecording}
+                title="Stop and Save Recording"
+              >
+                ⏹️
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.headerRight}>
+          <button
+            type="button"
+            className={`${styles.headerIconBtn} ${isSidebarOpen && sidebarTab === "people" ? styles.active : ""}`}
+            onClick={() => {
+              if (isSidebarOpen && sidebarTab === "people") {
+                setIsSidebarOpen(false);
+              } else {
+                setIsSidebarOpen(true);
+                setSidebarTab("people");
+              }
+            }}
+            title="Participants"
+          >
+            <span>👥</span>
+            <span>{presenceList.length + 1}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.headerIconBtn} ${isSidebarOpen && sidebarTab === "chat" ? styles.active : ""}`}
+            onClick={() => {
+              if (isSidebarOpen && sidebarTab === "chat") {
+                setIsSidebarOpen(false);
+              } else {
+                setIsSidebarOpen(true);
+                setSidebarTab("chat");
+                setUnreadCount(0);
+              }
+            }}
+            title="In-call Chat"
+          >
+            <span>💬</span>
+            <span>Chat</span>
+            {unreadCount > 0 && <span className={styles.unreadBadge}>{unreadCount}</span>}
+          </button>
+
+          {isHost && (
+            <button
+              type="button"
+              className={`${styles.headerIconBtn} ${isSidebarOpen && sidebarTab === "host" ? styles.active : ""}`}
+              onClick={() => {
+                if (isSidebarOpen && sidebarTab === "host") {
+                  setIsSidebarOpen(false);
+                } else {
+                  setIsSidebarOpen(true);
+                  setSidebarTab("host");
+                }
+              }}
+              title="Host Controls"
+            >
+              <span>👑</span>
+              <span>Host</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Video Section */}
       <div className={styles.videoSection}>
         {hostNotification && (
           <div className={styles.hostNotificationBanner}>
             <span>{hostNotification}</span>
+          </div>
+        )}
+
+        {isLowBandwidthMode && (
+          <div className={styles.lowBandwidthBanner}>
+            <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
           </div>
         )}
 
@@ -434,75 +655,110 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           ))}
         </div>
 
-        {isLowBandwidthMode && (
-          <div className={styles.lowBandwidthBanner}>
-            <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
-          </div>
-        )}
+        {/* Video Stage Area */}
+        <div className={styles.videoStageArea}>
+          {activeSpotlightId ? (
+            <div className={styles.spotlightStage}>
+              <button
+                type="button"
+                className={styles.unpinButton}
+                onClick={() => setSpotlightId(null)}
+                title="Return to Grid View"
+              >
+                ✖ Exit Spotlight
+              </button>
 
-        {activeSpotlightId ? (
-          <div className={styles.spotlightStage}>
-            <button
-              type="button"
-              className={styles.unpinButton}
-              onClick={() => setSpotlightId(null)}
-              title="Return to Grid View"
-            >
-              ✖ Exit Spotlight
-            </button>
+              {/* Main Stage */}
+              {activeSpotlightId === "local"
+                ? renderLocalFeed(true)
+                : (() => {
+                    const target = peers.find((p) => p.socketId === activeSpotlightId);
+                    return target ? renderPeerFeed(target, true) : renderLocalFeed(true);
+                  })()}
 
-            {/* Main Stage */}
-            {activeSpotlightId === "local"
-              ? renderLocalFeed(true)
-              : (() => {
-                  const target = peers.find((p) => p.socketId === activeSpotlightId);
-                  return target ? renderPeerFeed(target, true) : renderLocalFeed(true);
-                })()}
-
-            {/* Filmstrip */}
-            <div className={styles.filmstrip}>
-              {activeSpotlightId !== "local" && (
-                <div
-                  tabIndex={0}
-                  role="button"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") setSpotlightId("local");
-                  }}
-                  onClick={() => setSpotlightId("local")}
-                  title="Switch Spotlight to You"
-                >
-                  {renderLocalFeed(false, true)}
-                </div>
-              )}
-              {peers
-                .filter((p) => p.socketId !== activeSpotlightId)
-                .map((p) => (
+              {/* Filmstrip */}
+              <div className={styles.filmstrip}>
+                {activeSpotlightId !== "local" && (
                   <div
-                    key={p.socketId}
                     tabIndex={0}
                     role="button"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") setSpotlightId(p.socketId);
+                      if (e.key === "Enter" || e.key === " ") setSpotlightId("local");
                     }}
-                    onClick={() => setSpotlightId(p.socketId)}
-                    title="Switch Spotlight"
+                    onClick={() => setSpotlightId("local")}
+                    title="Switch Spotlight to You"
                   >
-                    {renderPeerFeed(p, false, true)}
+                    {renderLocalFeed(false, true)}
                   </div>
-                ))}
-            </div>
-          </div>
-        ) : (
-          <div className={`${styles.videoGrid} ${gridClass}`}>
-            {renderLocalFeed()}
-            {peers.map((peer) => renderPeerFeed(peer))}
-            {peers.length === 0 && (
-              <div className="flex items-center justify-center col-span-full h-full text-zinc-400 p-8 text-center bg-zinc-950/20 rounded-2xl border border-dashed border-zinc-800">
-                <p>⌛ Waiting for other participants to join...</p>
+                )}
+                {peers
+                  .filter((p) => p.socketId !== activeSpotlightId)
+                  .map((p) => (
+                    <div
+                      key={p.socketId}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setSpotlightId(p.socketId);
+                      }}
+                      onClick={() => setSpotlightId(p.socketId)}
+                      title="Switch Spotlight"
+                    >
+                      {renderPeerFeed(p, false, true)}
+                    </div>
+                  ))}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className={`${styles.videoGrid} ${gridClass}`}>
+              {renderLocalFeed()}
+              {peers.map((peer) => renderPeerFeed(peer))}
+              {peers.length === 0 && (
+                <div style={{
+                  gridColumn: "1 / -1",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.85rem",
+                  padding: "2.5rem 1.5rem",
+                  background: "rgba(15, 23, 42, 0.4)",
+                  border: "1px dashed rgba(255, 255, 255, 0.12)",
+                  borderRadius: "20px",
+                  color: "#94a3b8",
+                  fontSize: "0.95rem",
+                  margin: "auto",
+                  maxWidth: "520px"
+                }}>
+                  <span style={{ fontSize: "1.05rem", fontWeight: 600, color: "#f1f5f9" }}>⌛ Waiting for other participants to join...</span>
+                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", textAlign: "center" }}>
+                    Share this room link with your team or invitees so they can join right away.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCopyMeetingLink}
+                    style={{
+                      background: "rgba(59, 130, 246, 0.2)",
+                      border: "1px solid rgba(59, 130, 246, 0.4)",
+                      color: "#93c5fd",
+                      padding: "8px 16px",
+                      borderRadius: "10px",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem"
+                    }}
+                  >
+                    <span>📋</span>
+                    <span>{copiedLink ? "✓ Link Copied!" : "Copy Meeting Link"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Reaction Emoji Picker Popup */}
         {showReactionsPicker && (
@@ -523,241 +779,449 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           </div>
         )}
 
-        {/* Controllers */}
-        <div className={styles.controls}>
-          <button
-            onClick={toggleAudio}
-            className={`${styles.controlButton} ${isAudioMuted ? styles.active : ""}`}
-            title={isAudioMuted ? "Unmute Audio" : "Mute Audio"}
-          >
-            {isAudioMuted ? "🔇" : "🎤"}
-          </button>
-          <button
-            onClick={toggleVideo}
-            className={`${styles.controlButton} ${isVideoMuted ? styles.active : ""}`}
-            title={isVideoMuted ? "Turn Video On" : "Turn Video Off"}
-          >
-            {isVideoMuted ? "🚫" : "📹"}
-          </button>
-          <button
-            onClick={handleToggleScreenShare}
-            className={`${styles.controlButton} ${isScreenSharing ? styles.active : ""}`}
-            title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
-          >
-            🖥️
-          </button>
-          <button
-            type="button"
-            onClick={toggleRaiseHand}
-            className={`${styles.controlButton} ${isLocalHandRaised ? styles.handRaised : ""}`}
-            title={isLocalHandRaised ? "Lower Hand" : "Raise Hand"}
-          >
-            ✋
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowReactionsPicker((prev) => !prev)}
-            className={`${styles.controlButton} ${showReactionsPicker ? styles.active : ""}`}
-            title="Send Reaction"
-          >
-            😊
-          </button>
-          <button
-            type="button"
-            onClick={toggleLowBandwidthMode}
-            className={`${styles.controlButton} ${isLowBandwidthMode ? styles.active : ""}`}
-            title={isLowBandwidthMode ? "Disable Low Data Mode" : "Enable Low Data Mode (Audio Only)"}
-          >
-            📶
-          </button>
-          <button
-            onClick={handleLeave}
-            className={`${styles.controlButton} ${styles.leave}`}
-            title="Leave Room"
-          >
-            📞
-          </button>
-        </div>
+        {/* Floating Bottom Control Dock */}
+        <div className={styles.bottomDockContainer}>
+          <div className={styles.controls}>
+            <button
+              onClick={toggleAudio}
+              className={`${styles.controlButton} ${isAudioMuted ? styles.active : ""}`}
+              title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
+            >
+              {isAudioMuted ? "🔇" : "🎤"}
+            </button>
+            <button
+              onClick={toggleVideo}
+              className={`${styles.controlButton} ${isVideoMuted ? styles.active : ""}`}
+              title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
+            >
+              {isVideoMuted ? "🚫" : "📹"}
+            </button>
+            <button
+              onClick={handleToggleScreenShare}
+              className={`${styles.controlButton} ${isScreenSharing ? styles.active : ""}`}
+              title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
+            >
+              🖥️
+            </button>
+            <button
+              type="button"
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`${styles.controlButton} ${isRecording ? styles.recordingActive : ""}`}
+              title={isRecording ? "Stop Recording" : "Record Meeting"}
+            >
+              {isRecording ? "⏹️" : "⏺️"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowWhiteboard((prev) => !prev)}
+              className={`${styles.controlButton} ${showWhiteboard ? styles.active : ""}`}
+              title={showWhiteboard ? "Close Whiteboard" : "Open Collaborative Whiteboard"}
+            >
+              🎨
+            </button>
+            <button
+              type="button"
+              onClick={toggleRaiseHand}
+              className={`${styles.controlButton} ${isLocalHandRaised ? styles.handRaised : ""}`}
+              title={isLocalHandRaised ? "Lower Hand" : "Raise Hand"}
+            >
+              ✋
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowReactionsPicker((prev) => !prev)}
+              className={`${styles.controlButton} ${showReactionsPicker ? styles.active : ""}`}
+              title="Reactions"
+            >
+              😊
+            </button>
+            <button
+              type="button"
+              onClick={toggleLowBandwidthMode}
+              className={`${styles.controlButton} ${isLowBandwidthMode ? styles.active : ""}`}
+              title={isLowBandwidthMode ? "Disable Low Data Mode" : "Enable Low Data Mode"}
+            >
+              📶
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSidebarOpen((prev) => !prev);
+                setUnreadCount(0);
+              }}
+              className={`${styles.controlButton} ${isSidebarOpen ? styles.active : ""}`}
+              style={isSidebarOpen ? { background: "rgba(59, 130, 246, 0.4)", borderColor: "#3b82f6" } : {}}
+              title="Toggle Chat & Participants"
+            >
+              💬
+            </button>
+            <button
+              onClick={handleLeave}
+              className={`${styles.controlButton} ${styles.leave}`}
+              title="Leave Call"
+            >
+              📞
+            </button>
+          </div>
 
-        {/* Device selection */}
-        <div className={styles.deviceSelectors}>
-          <select
-            className={styles.deviceSelect}
-            value={selectedVideoDeviceId}
-            onChange={(e) => switchCamera(e.target.value)}
-            title="Choose camera"
-          >
-            {videoDevices.map((device) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label}
-              </option>
-            ))}
-          </select>
+          {/* Compact device selectors */}
+          <div className={styles.deviceSelectors}>
+            <select
+              className={styles.deviceSelect}
+              value={selectedVideoDeviceId}
+              onChange={(e) => switchCamera(e.target.value)}
+              title="Select Camera"
+            >
+              {videoDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
 
-          <select
-            className={styles.deviceSelect}
-            value={selectedAudioDeviceId}
-            onChange={(e) => switchMicrophone(e.target.value)}
-            title="Choose microphone"
-          >
-            {audioDevices.map((device) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label}
-              </option>
-            ))}
-          </select>
+            <select
+              className={styles.deviceSelect}
+              value={selectedAudioDeviceId}
+              onChange={(e) => switchMicrophone(e.target.value)}
+              title="Select Microphone"
+            >
+              {audioDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* Right Sidebar: Presence List */}
-      <div className={styles.sidebar}>
-        <h3>Room Participants ({presenceList.length + 1})</h3>
+      {/* Right Sidebar: People, Chat, Host Controls */}
+      {isSidebarOpen && (
+        <aside className={styles.sidebar}>
+          {/* Sidebar Tab Switcher */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+            paddingBottom: "0.75rem",
+          }}>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                type="button"
+                onClick={() => setSidebarTab("people")}
+                style={{
+                  background: sidebarTab === "people" ? "rgba(59, 130, 246, 0.2)" : "transparent",
+                  color: sidebarTab === "people" ? "#60a5fa" : "#94a3b8",
+                  border: sidebarTab === "people" ? "1px solid rgba(59, 130, 246, 0.4)" : "1px solid transparent",
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                👥 People ({presenceList.length + 1})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarTab("chat");
+                  setUnreadCount(0);
+                }}
+                style={{
+                  background: sidebarTab === "chat" ? "rgba(59, 130, 246, 0.2)" : "transparent",
+                  color: sidebarTab === "chat" ? "#60a5fa" : "#94a3b8",
+                  border: sidebarTab === "chat" ? "1px solid rgba(59, 130, 246, 0.4)" : "1px solid transparent",
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                💬 Chat {unreadCount > 0 ? `(${unreadCount})` : ""}
+              </button>
+              {isHost && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarTab("host")}
+                  style={{
+                    background: sidebarTab === "host" ? "rgba(234, 179, 8, 0.2)" : "transparent",
+                    color: sidebarTab === "host" ? "#facc15" : "#94a3b8",
+                    border: sidebarTab === "host" ? "1px solid rgba(234, 179, 8, 0.4)" : "1px solid transparent",
+                    padding: "4px 10px",
+                    borderRadius: "8px",
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  👑 Host
+                </button>
+              )}
+            </div>
 
-        {/* Host Governance Panel */}
-        {isHost && (
-          <div className={styles.hostControlsPanel}>
-            <div className={styles.hostHeader}>
-              <span>👑 Host Governance</span>
-              <span className={styles.hostBadge}>{isRoomLocked ? "🔒 Locked" : "🔓 Open"}</span>
-            </div>
-            <div className={styles.hostActionsRow}>
-              <button
-                type="button"
-                onClick={hostToggleLock}
-                className={`${styles.hostActionButton} ${isRoomLocked ? styles.locked : ""}`}
-                title={isRoomLocked ? "Unlock Meeting for New Participants" : "Lock Meeting to Current Participants"}
-              >
-                {isRoomLocked ? "🔓 Unlock Room" : "🔒 Lock Room"}
-              </button>
-              <button
-                type="button"
-                onClick={hostMuteAll}
-                className={styles.hostActionButton}
-                title="Mute all other participants' microphones"
-              >
-                🔇 Mute All
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#94a3b8",
+                fontSize: "1.1rem",
+                cursor: "pointer",
+                padding: "2px 6px",
+              }}
+              title="Close Sidebar"
+            >
+              ✕
+            </button>
           </div>
-        )}
 
-        <ul className={styles.userList}>
-          {/* Current Local User */}
-          <li className={styles.userItem}>
-            <div className={styles.userAvatar}>
-              {(user?.name || "U")[0].toUpperCase()}
-            </div>
-            <div className={styles.userInfo}>
-              <span className={styles.name}>{user?.name || "You"}</span>
-              <span className={styles.status}>🟢 Active</span>
-            </div>
-            <div className={styles.userActions}>
-              {isHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
-              {isLocalHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
-            </div>
-          </li>
-
-          {/* Connected Peers */}
-          {presenceList.map((presenceUser) => {
-            const matchedPeer = peers.find(
-              (p) => p.socketId === presenceUser.socketId || (presenceUser.userId && p.userId === presenceUser.userId)
-            );
-            const displayName =
-              presenceUser.name ||
-              matchedPeer?.name ||
-              (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant");
-            const isPeerHost = Boolean(presenceUser.isHost || matchedPeer?.isHost);
-            const isHandRaised = raisedHands.some((h) => h.socketId === presenceUser.socketId);
-
-            return (
-              <li key={presenceUser.socketId} className={styles.userItem}>
+          {/* People Tab Content */}
+          {sidebarTab === "people" && (
+            <ul className={styles.userList} style={{ maxHeight: "none", flex: 1 }}>
+              {/* Local User */}
+              <li className={styles.userItem}>
                 <div className={styles.userAvatar}>
-                  {(displayName || "P")[0].toUpperCase()}
+                  {(localDisplayName || "U")[0].toUpperCase()}
                 </div>
                 <div className={styles.userInfo}>
-                  <span className={styles.name}>{displayName}</span>
+                  <span className={styles.name}>{localDisplayName} (You)</span>
                   <span className={styles.status}>🟢 Active</span>
                 </div>
                 <div className={styles.userActions}>
-                  {isPeerHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
-                  {isHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
-                  {isHost && (
-                    <div className={styles.hostPeerButtons}>
-                      <button
-                        type="button"
-                        onClick={() => hostMutePeer(presenceUser.socketId)}
-                        className={styles.hostMuteBtn}
-                        title={`Mute ${displayName}`}
-                      >
-                        🔇
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm(`Remove ${displayName} from the meeting?`)) {
-                            hostKickPeer(presenceUser.socketId);
-                          }
-                        }}
-                        className={styles.hostKickBtn}
-                        title={`Remove ${displayName} from meeting`}
-                      >
-                        ❌
-                      </button>
-                    </div>
-                  )}
+                  {isHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
+                  {isLocalHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
                 </div>
               </li>
-            );
-          })}
-        </ul>
 
-        {/* In-call chat */}
-        <div className={styles.chatSection}>
-          <div className={styles.chatHeader}>
-            <h3>Chat</h3>
-            {unreadCount > 0 && (
-              <span className={styles.unreadBadge}>{unreadCount} new</span>
-            )}
-          </div>
-          <div
-            className={styles.chatMessages}
-            ref={chatMessagesRef}
-            onScroll={handleChatScroll}
-          >
-            {messages.map((msg, i) => {
-              const authorName =
-                msg.name ||
-                presenceList.find((p) => msg.userId && p.userId === msg.userId)?.name ||
-                peers.find((p) => msg.userId && p.userId === msg.userId)?.name ||
-                "Participant";
+              {/* Connected Peers */}
+              {presenceList.map((presenceUser) => {
+                const matchedPeer = peers.find(
+                  (p) => p.socketId === presenceUser.socketId || (presenceUser.userId && p.userId === presenceUser.userId)
+                );
+                const displayName =
+                  presenceUser.name ||
+                  matchedPeer?.name ||
+                  (presenceUser.userId ? `Peer (${presenceUser.userId.slice(0, 4)})` : "Participant");
+                const isPeerHost = Boolean(presenceUser.isHost || matchedPeer?.isHost);
+                const isHandRaised = raisedHands.some((h) => h.socketId === presenceUser.socketId);
 
-              return (
-                <div
-                  key={`${msg.at}-${i}`}
-                  className={`${styles.chatMessage} ${msg.isLocal ? styles.own : ""}`}
+                return (
+                  <li key={presenceUser.socketId} className={styles.userItem}>
+                    <div className={styles.userAvatar}>
+                      {(displayName || "P")[0].toUpperCase()}
+                    </div>
+                    <div className={styles.userInfo}>
+                      <span className={styles.name}>{displayName}</span>
+                      <span className={styles.status}>🟢 Active</span>
+                    </div>
+                    <div className={styles.userActions}>
+                      {isPeerHost && <span className={styles.hostBadgeSmall}>👑 Host</span>}
+                      {isHandRaised && <span className={styles.handBadgeSmall} title="Hand Raised">✋</span>}
+                      {isHost && (
+                        <div className={styles.hostPeerButtons}>
+                          <button
+                            type="button"
+                            onClick={() => hostMutePeer(presenceUser.socketId)}
+                            className={styles.hostMuteBtn}
+                            title={`Mute ${displayName}`}
+                          >
+                            🔇
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Remove ${displayName} from the meeting?`)) {
+                                hostKickPeer(presenceUser.socketId);
+                              }
+                            }}
+                            className={styles.hostKickBtn}
+                            title={`Remove ${displayName} from meeting`}
+                          >
+                            ❌
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {/* Host Controls Tab Content */}
+          {sidebarTab === "host" && isHost && (
+            <div className={styles.hostControlsPanel} style={{ margin: 0 }}>
+              <div className={styles.hostHeader}>
+                <span>👑 Host Governance</span>
+                <span className={styles.hostBadge}>{isRoomLocked ? "🔒 Locked" : "🔓 Open"}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "#94a3b8" }}>
+                Manage meeting security and participant permissions in real-time.
+              </p>
+              <div className={styles.hostActionsRow}>
+                <button
+                  type="button"
+                  onClick={hostToggleLock}
+                  className={`${styles.hostActionButton} ${isRoomLocked ? styles.locked : ""}`}
+                  title={isRoomLocked ? "Unlock Meeting for New Participants" : "Lock Meeting to Current Participants"}
                 >
-                  {!msg.isLocal && (
-                    <div className={styles.chatMessageAuthor}>{authorName}</div>
-                  )}
-                  {msg.message}
+                  {isRoomLocked ? "🔓 Unlock Room" : "🔒 Lock Room"}
+                </button>
+                <button
+                  type="button"
+                  onClick={hostMuteAll}
+                  className={styles.hostActionButton}
+                  title="Mute all other participants' microphones"
+                >
+                  🔇 Mute All
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Chat Tab Content */}
+          {sidebarTab === "chat" && (
+            <div className={styles.chatSection} style={{ borderTop: "none", paddingTop: 0 }}>
+              <div
+                className={styles.chatMessages}
+                ref={chatMessagesRef}
+                onScroll={handleChatScroll}
+              >
+                {messages.length === 0 && (
+                  <div style={{ textAlign: "center", color: "#64748b", fontSize: "0.82rem", margin: "auto 0" }}>
+                    No messages yet. Send a message to everyone in the room!
+                  </div>
+                )}
+                {messages.map((msg, i) => {
+                  const authorName =
+                    msg.name ||
+                    presenceList.find((p) => msg.userId && p.userId === msg.userId)?.name ||
+                    peers.find((p) => msg.userId && p.userId === msg.userId)?.name ||
+                    "Participant";
+
+                  return (
+                    <div
+                      key={`${msg.at}-${i}`}
+                      className={`${styles.chatMessage} ${msg.isLocal ? styles.own : ""}`}
+                    >
+                      {!msg.isLocal && (
+                        <div className={styles.chatMessageAuthor}>{authorName}</div>
+                      )}
+                      {msg.message}
+                    </div>
+                  );
+                })}
+              </div>
+              <form className={styles.chatInputRow} onSubmit={handleSendMessage}>
+                <input
+                  type="text"
+                  className={styles.chatInput}
+                  placeholder="Type a message…"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                />
+                <button type="submit" className={styles.chatSendButton} disabled={!chatInput.trim()}>
+                  Send
+                </button>
+              </form>
+            </div>
+          )}
+        </aside>
+      )}
+
+      {/* Post-Recording Completion Modal */}
+      {showRecordModal && lastSavedRecording && (
+        <div className={styles.recordingModalOverlay} onClick={() => setShowRecordModal(false)}>
+          <div className={styles.recordingModal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.recordingModalHeader}>
+              <div className={styles.modalTitleBox}>
+                <span className={styles.modalTitleIcon}>🎉</span>
+                <div>
+                  <h3>Meeting Recording Saved!</h3>
+                  <p>Saved locally in your browser studio (Zero cloud cost, instant access)</p>
                 </div>
-              );
-            })}
+              </div>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setShowRecordModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {recordVideoUrl && (
+              <div className={styles.recordingVideoContainer}>
+                <video
+                  src={recordVideoUrl}
+                  controls
+                  playsInline
+                  className={styles.recordingVideoPlayer}
+                />
+              </div>
+            )}
+
+            <div className={styles.recordingMetaGrid}>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Duration</span>
+                <span className={styles.metaValue}>{formatDuration(lastSavedRecording.durationSeconds)}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>File Size</span>
+                <span className={styles.metaValue}>{formatBytes(lastSavedRecording.sizeBytes)}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Room</span>
+                <span className={styles.metaValue}>{lastSavedRecording.roomCode}</span>
+              </div>
+              <div className={styles.metaCard}>
+                <span className={styles.metaLabel}>Storage</span>
+                <span className={styles.metaValue}>IndexedDB (Local)</span>
+              </div>
+            </div>
+
+            <div className={styles.recordingModalActions}>
+              <button
+                type="button"
+                className={styles.downloadRecBtn}
+                onClick={() => downloadRecording(lastSavedRecording)}
+              >
+                ⬇️ Download .webm Video
+              </button>
+              <button
+                type="button"
+                className={styles.viewStudioBtn}
+                onClick={() => {
+                  setShowRecordModal(false);
+                  router.push("/dashboard/videos");
+                }}
+              >
+                🎬 View in My Videos Studio
+              </button>
+              <button
+                type="button"
+                className={styles.dismissRecBtn}
+                onClick={() => setShowRecordModal(false)}
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
-          <form className={styles.chatInputRow} onSubmit={handleSendMessage}>
-            <input
-              type="text"
-              className={styles.chatInput}
-              placeholder="Type a message…"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button type="submit" className={styles.chatSendButton} disabled={!chatInput.trim()}>
-              Send
-            </button>
-          </form>
         </div>
-      </div>
+      )}
+
+      {/* Real-Time Collaborative Whiteboard Modal */}
+      <WhiteboardModal
+        isOpen={showWhiteboard}
+        onClose={() => setShowWhiteboard(false)}
+        socket={socket}
+        roomId={roomId}
+        isHost={isHost}
+      />
     </div>
   );
 }

@@ -28,6 +28,29 @@ interface JoinRoomPayload {
     name?: string;
 }
 
+export interface WhiteboardPoint {
+    x: number;
+    y: number;
+}
+
+export interface WhiteboardElement {
+    id: string;
+    type: "path" | "line" | "rect" | "circle";
+    tool: "pen" | "highlighter" | "eraser" | "line" | "rect" | "circle";
+    color: string;
+    size: number;
+    points?: WhiteboardPoint[];
+    startX?: number;
+    startY?: number;
+    endX?: number;
+    endY?: number;
+    userId?: string;
+}
+
+// In-memory whiteboard elements history per room (up to 2000 elements)
+const roomWhiteboardHistory = new Map<string, WhiteboardElement[]>();
+
+
 /**
  * Initializes and configures the Socket.IO server.
  * Handles room management (join, leave, presence) and WebRTC signaling.
@@ -80,7 +103,7 @@ export const initSocketServer = (server: HttpServer): Server => {
         console.log("ℹ️ No REDIS_URL provided — running Socket.IO with default in-memory adapter");
     }
 
-    // Enforce JWT authentication on every incoming socket connection
+    // Enforce JWT authentication on registered users, or support Guest users (Google Meet style)
     io.use(async (socket, next) => {
         try {
             const token =
@@ -88,13 +111,19 @@ export const initSocketServer = (server: HttpServer): Server => {
                 socket.handshake.headers?.authorization?.replace("Bearer ", "");
 
             if (!token) {
-                return next(new Error("Authentication error: Access token required"));
+                const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
+                socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
+                socket.data.name = guestName.trim() || "Guest";
+                socket.data.email = "";
+                socket.data.isGuest = true;
+                return next();
             }
 
             const payload = verifyAccessToken(token);
             socket.data.userId = payload.userId;
             socket.data.name = payload.name;
             socket.data.email = payload.email;
+            socket.data.isGuest = false;
 
             // If name is missing from JWT payload (e.g. existing active session token), fetch from DB
             if (!socket.data.name && socket.data.userId) {
@@ -113,14 +142,20 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             next();
         } catch (err) {
-            console.warn(`🔒 Unauthorized socket connection attempt rejected: ${socket.id}`);
-            return next(new Error("Authentication error: Invalid or expired token"));
+            // If token is invalid or expired, allow as Guest instead of rejecting
+            const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
+            socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
+            socket.data.name = guestName.trim() || "Guest";
+            socket.data.email = "";
+            socket.data.isGuest = true;
+            next();
         }
     });
 
     // Closes out the caller's currently-open RoomParticipant row (if any) for
     // a given room code, so history/stats reflect that they actually left.
     const closeOpenParticipation = async (roomCode: string, userId: string) => {
+        if (!userId || userId.startsWith("guest-")) return;
         const room = await prisma.room.findUnique({ where: { code: roomCode } });
         if (!room) return;
 
@@ -229,12 +264,14 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.isHost = isHost;
 
             socket.join(roomId);
-            try {
-                await prisma.roomParticipant.create({
-                    data: { roomId: room.id, userId },
-                });
-            } catch (dbErr) {
-                console.error("Failed to record room participant in DB:", dbErr);
+            if (!socket.data.isGuest) {
+                try {
+                    await prisma.roomParticipant.create({
+                        data: { roomId: room.id, userId },
+                    });
+                } catch (dbErr) {
+                    console.error("Failed to record room participant in DB:", dbErr);
+                }
             }
             console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${roomId}`);
 
@@ -301,6 +338,23 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
         });
 
+        // 1b. Update participant display name (e.g. guest sets name in Green Room lobby)
+        socket.on("update-name", ({ name }: { name: string }) => {
+            if (name && typeof name === "string" && name.trim()) {
+                const cleanName = name.trim();
+                socket.data.name = cleanName;
+                const roomId = socket.data.roomId;
+                if (roomId) {
+                    console.log(`👤 User ${socket.data.userId} updated name to: ${cleanName} in room ${roomId}`);
+                    io.in(roomId).emit("user-name-updated", {
+                        socketId: socket.id,
+                        userId: socket.data.userId,
+                        name: cleanName,
+                    });
+                }
+            }
+        });
+
         // 2. Leave Room
         const handleLeaveRoom = async () => {
             const { roomId, userId } = socket.data;
@@ -320,6 +374,17 @@ export const initSocketServer = (server: HttpServer): Server => {
                 // Clear room info from socket.data while preserving authenticated user identity
                 socket.data.roomId = undefined;
                 socket.data.roomDbId = undefined;
+
+                // Clean up whiteboard history if room stays empty for 5 minutes
+                const remainingSockets = await io.in(roomId).fetchSockets();
+                if (remainingSockets.length === 0) {
+                    setTimeout(async () => {
+                        const check = await io.in(roomId).fetchSockets();
+                        if (check.length === 0) {
+                            roomWhiteboardHistory.delete(roomId);
+                        }
+                    }, 5 * 60 * 1000);
+                }
             }
         };
 
@@ -553,6 +618,65 @@ export const initSocketServer = (server: HttpServer): Server => {
                 name: name || "Guest",
                 isSharing: Boolean(payload?.isSharing),
             });
+        });
+
+        // 3g. Real-Time Collaborative Whiteboard
+        socket.on("whiteboard-draw", (payload: {
+            prevX: number;
+            prevY: number;
+            currX: number;
+            currY: number;
+            color: string;
+            size: number;
+            tool: string;
+        }) => {
+            const { roomId } = socket.data;
+            if (!roomId || !payload) return;
+            // Broadcast live streaming line segment to all other peers in the room
+            socket.to(roomId).emit("whiteboard-draw", payload);
+        });
+
+        socket.on("whiteboard-element-add", (element: WhiteboardElement) => {
+            const { roomId, userId } = socket.data;
+            if (!roomId || !element) return;
+
+            element.userId = userId;
+            let history = roomWhiteboardHistory.get(roomId);
+            if (!history) {
+                history = [];
+                roomWhiteboardHistory.set(roomId, history);
+            }
+            history.push(element);
+            if (history.length > 2000) {
+                history.shift();
+            }
+
+            // Broadcast newly completed element to other peers
+            socket.to(roomId).emit("whiteboard-element-add", element);
+        });
+
+        socket.on("whiteboard-undo", () => {
+            const { roomId } = socket.data;
+            if (!roomId) return;
+            const history = roomWhiteboardHistory.get(roomId);
+            if (history && history.length > 0) {
+                history.pop();
+                io.to(roomId).emit("whiteboard-history", { elements: history });
+            }
+        });
+
+        socket.on("whiteboard-clear", () => {
+            const { roomId } = socket.data;
+            if (!roomId) return;
+            roomWhiteboardHistory.set(roomId, []);
+            io.to(roomId).emit("whiteboard-clear");
+        });
+
+        socket.on("whiteboard-request-history", () => {
+            const { roomId } = socket.data;
+            if (!roomId) return;
+            const history = roomWhiteboardHistory.get(roomId) || [];
+            socket.emit("whiteboard-history", { elements: history });
         });
 
         // 4. Disconnect
