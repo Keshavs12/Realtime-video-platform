@@ -41,36 +41,25 @@ class EmailService {
             const { user, pass } = this.getCleanCredentials();
             const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
             const port = Number(process.env.EMAIL_PORT) || 465;
+            const secure = port === 465;
             const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
 
-            if (isGmail) {
-                // Using explicit smtp.gmail.com on port 465 with family: 4 is much more resilient
-                // than nodemailer's default service: "gmail" on cloud platforms (Render, AWS, GCP)
-                // because it avoids IPv6 network drops and port ambiguities.
-                this.transporter = nodemailer.createTransport({
-                    host: "smtp.gmail.com",
-                    port: 465,
-                    secure: true,
-                    auth: { user, pass },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 20000,
-                    family: 4,
-                } as any);
-                logger.info(`[EmailService] Initialized Gmail SMTP transporter on port 465 for: ${user}`);
-            } else {
-                this.transporter = nodemailer.createTransport({
-                    host,
-                    port,
-                    secure: port === 465,
-                    auth: { user, pass },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 20000,
-                    family: 4,
-                } as any);
-                logger.info(`[EmailService] Initialized SMTP transporter on ${host}:${port} for: ${user}`);
-            }
+            const smtpConfig: any = {
+                host: isGmail ? "smtp.gmail.com" : host,
+                port,
+                secure,
+                auth: { user, pass },
+                connectionTimeout: 15000,
+                greetingTimeout: 15000,
+                socketTimeout: 20000,
+                family: 4,
+                tls: {
+                    rejectUnauthorized: false,
+                },
+            };
+
+            this.transporter = nodemailer.createTransport(smtpConfig);
+            logger.info(`[EmailService] Initialized SMTP transporter on ${smtpConfig.host}:${port} (secure: ${secure}) for: ${user}`);
         }
 
         return this.transporter;
@@ -100,7 +89,9 @@ class EmailService {
         }
 
         const { user } = this.getCleanCredentials();
-        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
+        const rawFrom = process.env.EMAIL_FROM;
+        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
+        const sender = cleanFrom || `"SuperCall" <${user}>`;
 
         const html = `
 <!DOCTYPE html>
@@ -151,7 +142,10 @@ class EmailService {
             logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
             return true;
         } catch (error: any) {
-            logger.error({ err: error.message }, `[EmailService] SMTP delivery failed for ${to}`);
+            logger.error(
+                { err: error.message, code: error.code, response: error.response },
+                `[EmailService] SMTP delivery failed for ${to}`
+            );
             logger.warn(
                 `\n=======================================================\n` +
                 `📧 [DEV SIMULATION - SMTP ERROR FALLBACK] OTP for ${to} (${name}): ${otp}\n` +
@@ -191,7 +185,9 @@ class EmailService {
         });
 
         const { user } = this.getCleanCredentials();
-        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
+        const rawFrom = process.env.EMAIL_FROM;
+        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
+        const sender = cleanFrom || `"SuperCall" <${user}>`;
 
         const html = `
 <!DOCTYPE html>
