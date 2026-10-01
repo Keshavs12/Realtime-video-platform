@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import { prisma } from "./config/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { allowedOrigins, corsOriginDelegate } from "./config/cors";
+import { emailService } from "./services/email.service";
 
 import crypto from "node:crypto";
 
@@ -57,6 +58,7 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
       checks: {
         database: "connected",
         dbLatencyMs,
+        emailService: emailService.isConfigured() ? "configured" : "not_configured",
         memory: {
           rssMb: Math.round(memory.rss / 1024 / 1024),
           heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),

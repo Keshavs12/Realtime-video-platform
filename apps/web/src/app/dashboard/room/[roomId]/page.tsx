@@ -229,15 +229,28 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   });
 
   useEffect(() => {
+    let isMounted = true;
     if (lastSavedRecording?.blob) {
       const url = URL.createObjectURL(lastSavedRecording.blob);
-      setRecordVideoUrl(url);
+      Promise.resolve().then(() => {
+        if (isMounted) {
+          setRecordVideoUrl(url);
+        }
+      });
       return () => {
+        isMounted = false;
         URL.revokeObjectURL(url);
       };
     } else {
-      setRecordVideoUrl(null);
+      Promise.resolve().then(() => {
+        if (isMounted) {
+          setRecordVideoUrl(null);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [lastSavedRecording]);
 
   const handleLeave = () => {

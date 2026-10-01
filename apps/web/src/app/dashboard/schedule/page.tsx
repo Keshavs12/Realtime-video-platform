@@ -21,7 +21,14 @@ export default function SchedulePage() {
   // Form states
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduledAt, setScheduledAt] = useState(() => {
+    const now = new Date();
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(0);
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  });
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [invitees, setInvitees] = useState<string[]>([]);
   const [inviteeInput, setInviteeInput] = useState("");
@@ -41,16 +48,12 @@ export default function SchedulePage() {
   };
 
   useEffect(() => {
-    loadMeetings();
-
-    // Default datetime-local to 1 hour from now
-    const now = new Date();
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-    const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setScheduledAt(localIso);
+    getScheduledMeetings()
+      .then(setMeetings)
+      .catch((err) => {
+        console.error("Failed to fetch scheduled meetings:", err);
+        setMeetings([]);
+      });
   }, []);
 
   // Invitee management

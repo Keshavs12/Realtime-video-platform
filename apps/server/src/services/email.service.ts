@@ -10,46 +10,66 @@ interface SendOtpOptions {
 class EmailService {
     private transporter: Transporter | null = null;
 
-    private getTransporter(): Transporter | null {
-        const user = process.env.EMAIL_USER;
-        const pass = process.env.EMAIL_PASS;
+    private getCleanCredentials() {
+        const rawUser = process.env.EMAIL_USER;
+        const rawPass = process.env.EMAIL_PASS;
 
-        const isConfigured =
-            Boolean(user &&
+        const user = rawUser ? rawUser.trim().replace(/^["']|["']$/g, "") : "";
+        const pass = rawPass ? rawPass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "") : "";
+
+        return { user, pass };
+    }
+
+    public isConfigured(): boolean {
+        const { user, pass } = this.getCleanCredentials();
+
+        return Boolean(
+            user &&
             pass &&
             !user.includes("your_real_email") &&
             !user.includes("your_gmail") &&
-            !pass.includes("xxxx"));
+            !pass.includes("xxxx")
+        );
+    }
 
-        if (!isConfigured) {
+    private getTransporter(): Transporter | null {
+        if (!this.isConfigured()) {
             return null;
         }
 
         if (!this.transporter) {
-            const host = process.env.EMAIL_HOST || "smtp.gmail.com";
+            const { user, pass } = this.getCleanCredentials();
+            const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
+            const port = Number(process.env.EMAIL_PORT) || 465;
             const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
 
             if (isGmail) {
+                // Using explicit smtp.gmail.com on port 465 with family: 4 is much more resilient
+                // than nodemailer's default service: "gmail" on cloud platforms (Render, AWS, GCP)
+                // because it avoids IPv6 network drops and port ambiguities.
                 this.transporter = nodemailer.createTransport({
-                    service: "gmail",
+                    host: "smtp.gmail.com",
+                    port: 465,
+                    secure: true,
                     auth: { user, pass },
-                    connectionTimeout: 10000,
-                    greetingTimeout: 10000,
-                    socketTimeout: 15000,
-                });
-                logger.info(`[EmailService] Initialized Gmail service transporter with user: ${user}`);
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 20000,
+                    family: 4,
+                } as any);
+                logger.info(`[EmailService] Initialized Gmail SMTP transporter on port 465 for: ${user}`);
             } else {
-                const port = Number(process.env.EMAIL_PORT) || 587;
                 this.transporter = nodemailer.createTransport({
                     host,
                     port,
                     secure: port === 465,
                     auth: { user, pass },
-                    connectionTimeout: 10000,
-                    greetingTimeout: 10000,
-                    socketTimeout: 15000,
-                });
-                logger.info(`[EmailService] Initialized SMTP transporter on ${host}:${port} with user: ${user}`);
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 20000,
+                    family: 4,
+                } as any);
+                logger.info(`[EmailService] Initialized SMTP transporter on ${host}:${port} for: ${user}`);
             }
         }
 
@@ -60,20 +80,27 @@ class EmailService {
      * Sends an OTP verification email to the user.
      */
     async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
-        const transporter = this.getTransporter();
+        const isConfigured = this.isConfigured();
 
-        // Fallback: If SMTP credentials aren't configured yet, log OTP so testing never fails
-        if (!transporter) {
+        // Fallback: If SMTP credentials aren't configured yet, log OTP so testing never fails in dev
+        if (!isConfigured) {
             logger.warn(
                 `\n=======================================================\n` +
                 `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
-                `Expires in 10 minutes.\n` +
+                `Expires in 15 minutes.\n` +
+                `Configure EMAIL_USER and EMAIL_PASS in environment variables to send real emails.\n` +
                 `=======================================================\n`
             );
-            return true;
+            return process.env.NODE_ENV !== "production";
         }
 
-        const sender = process.env.EMAIL_FROM || `"SuperCall" <${process.env.EMAIL_USER}>`;
+        const transporter = this.getTransporter();
+        if (!transporter) {
+            return false;
+        }
+
+        const { user } = this.getCleanCredentials();
+        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
 
         const html = `
 <!DOCTYPE html>
@@ -163,7 +190,8 @@ class EmailService {
             timeZoneName: "short",
         });
 
-        const sender = process.env.EMAIL_FROM || `"SuperCall" <${process.env.EMAIL_USER}>`;
+        const { user } = this.getCleanCredentials();
+        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
 
         const html = `
 <!DOCTYPE html>

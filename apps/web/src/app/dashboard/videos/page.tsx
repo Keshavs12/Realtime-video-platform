@@ -39,8 +39,14 @@ function RecordingCard({
 
   useEffect(() => {
     const url = URL.createObjectURL(recording.blob);
-    setVideoUrl(url);
+    let isMounted = true;
+    Promise.resolve().then(() => {
+      if (isMounted) {
+        setVideoUrl(url);
+      }
+    });
     return () => {
+      isMounted = false;
       URL.revokeObjectURL(url);
     };
   }, [recording.blob]);
@@ -119,19 +125,14 @@ export default function MyVideosPage() {
   const [activePlayerRec, setActivePlayerRec] = useState<SavedRecording | null>(null);
   const [playerVideoUrl, setPlayerVideoUrl] = useState<string | null>(null);
 
-  // Load IndexedDB recordings
-  const loadRecordings = async () => {
-    try {
-      const recs = await getAllRecordings();
-      setRecordings(recs);
-    } catch (err) {
-      console.error("Failed to load recordings from IndexedDB:", err);
-      setRecordings([]);
-    }
-  };
-
   useEffect(() => {
-    loadRecordings();
+    getAllRecordings()
+      .then(setRecordings)
+      .catch((err) => {
+        console.error("Failed to load recordings from IndexedDB:", err);
+        setRecordings([]);
+      });
+
     roomService
       .getRoomHistory()
       .then(setHistory)
@@ -143,15 +144,28 @@ export default function MyVideosPage() {
 
   // Update URL for modal player
   useEffect(() => {
+    let isMounted = true;
     if (activePlayerRec?.blob) {
       const url = URL.createObjectURL(activePlayerRec.blob);
-      setPlayerVideoUrl(url);
+      Promise.resolve().then(() => {
+        if (isMounted) {
+          setPlayerVideoUrl(url);
+        }
+      });
       return () => {
+        isMounted = false;
         URL.revokeObjectURL(url);
       };
     } else {
-      setPlayerVideoUrl(null);
+      Promise.resolve().then(() => {
+        if (isMounted) {
+          setPlayerVideoUrl(null);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [activePlayerRec]);
 
   const handleDownload = (rec: SavedRecording) => {
