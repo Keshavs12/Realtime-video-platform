@@ -255,7 +255,9 @@ class EmailService {
                     { err: error.message, code: error.code, response: error.response },
                     `[EmailService] SMTP delivery failed for ${to}`
                 );
-                this.lastErrorMessage = error.message || "SMTP connection failed";
+                if (!this.lastErrorMessage) {
+                    this.lastErrorMessage = error.message || "SMTP connection failed";
+                }
                 logger.warn(
                     `\n=======================================================\n` +
                     `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${to} (${name}): ${otp}\n` +

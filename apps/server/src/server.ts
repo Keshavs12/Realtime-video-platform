@@ -1,8 +1,14 @@
 import http from "node:http";
+import dns from "node:dns";
 import app from "./app";
 import { initSocketServer, closeRedisClients } from "./socket";
 import { logger } from "./utils/logger";
 import { prisma } from "./config/prisma";
+
+// Prefer IPv4 for DNS resolution to avoid ENETUNREACH on cloud platforms (e.g. Render) without IPv6 routes
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder("ipv4first");
+}
 
 const PORT = process.env.PORT || 5000;
 
