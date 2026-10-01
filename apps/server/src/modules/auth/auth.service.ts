@@ -333,6 +333,22 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name, otp });
 
+    if (!emailSent && process.env.NODE_ENV === "production") {
+        if (!emailService.isConfigured()) {
+            throw new AppError(
+                "Email service is not configured on the backend server. Please configure your email provider (Brevo, Resend, or SMTP).",
+                503
+            );
+        }
+        const lastErr = emailService.getLastError();
+        throw new AppError(
+            lastErr
+                ? `Failed to deliver verification code to your email: ${lastErr}`
+                : "Failed to deliver verification code to your email. Please check your email address or mail service configuration.",
+            502
+        );
+    }
+
     return {
         email,
         expiresInSeconds,
@@ -377,6 +393,22 @@ export const resendSignupOtp = async (email: string) => {
     });
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
+
+    if (!emailSent && process.env.NODE_ENV === "production") {
+        if (!emailService.isConfigured()) {
+            throw new AppError(
+                "Email service is not configured on the backend server. Please configure your email provider (Brevo, Resend, or SMTP).",
+                503
+            );
+        }
+        const lastErr = emailService.getLastError();
+        throw new AppError(
+            lastErr
+                ? `Failed to deliver verification code to your email: ${lastErr}`
+                : "Failed to deliver verification code to your email. Please check your email address or mail service configuration.",
+            502
+        );
+    }
 
     return {
         email,

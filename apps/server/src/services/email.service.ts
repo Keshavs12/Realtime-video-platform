@@ -9,6 +9,11 @@ interface SendOtpOptions {
 
 class EmailService {
     private transporter: Transporter | null = null;
+    private lastErrorMessage: string | null = null;
+
+    public getLastError(): string | null {
+        return this.lastErrorMessage;
+    }
 
     private getCleanCredentials() {
         const rawUser = process.env.EMAIL_USER;
@@ -83,6 +88,7 @@ class EmailService {
      * Sends an OTP verification email to the user.
      */
     async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
+        this.lastErrorMessage = null;
         const { user } = this.getCleanCredentials();
         const rawFrom = process.env.EMAIL_FROM;
         const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
@@ -155,9 +161,11 @@ class EmailService {
                 } else {
                     const errBody = await response.text();
                     logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${to}`);
+                    this.lastErrorMessage = `Brevo delivery failed: ${errBody}`;
                 }
             } catch (err: any) {
                 logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${to}`);
+                this.lastErrorMessage = `Brevo request error: ${err.message}`;
             }
         }
 
@@ -182,9 +190,11 @@ class EmailService {
                 } else {
                     const errBody = await response.text();
                     logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${to}`);
+                    this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
                 }
             } catch (err: any) {
                 logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${to}`);
+                this.lastErrorMessage = `Gmail Relay error: ${err.message}`;
             }
         }
 
@@ -214,13 +224,20 @@ class EmailService {
                 } else {
                     const errBody = await response.text();
                     logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${to}`);
+                    try {
+                        const parsed = JSON.parse(errBody);
+                        this.lastErrorMessage = parsed.message || errBody;
+                    } catch {
+                        this.lastErrorMessage = errBody;
+                    }
                 }
             } catch (err: any) {
                 logger.error({ err: err.message }, `[EmailService] Resend API request error for ${to}`);
+                this.lastErrorMessage = `Resend error: ${err.message}`;
             }
         }
 
-        // 2. SMTP Transport (Gmail / Custom SMTP)
+        // 4. SMTP Transport (Gmail / Custom SMTP)
         const transporter = this.getTransporter();
         if (transporter) {
             try {
@@ -238,11 +255,12 @@ class EmailService {
                     { err: error.message, code: error.code, response: error.response },
                     `[EmailService] SMTP delivery failed for ${to}`
                 );
+                this.lastErrorMessage = error.message || "SMTP connection failed";
                 logger.warn(
                     `\n=======================================================\n` +
                     `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${to} (${name}): ${otp}\n` +
                     `Render Free Tier blocks outbound SMTP ports 25, 465, and 587.\n` +
-                    `To send real emails on Render, add RESEND_API_KEY to Render Environment Variables (HTTPS port 443 is never blocked).\n` +
+                    `To send real emails on Render, add RESEND_API_KEY or BREVO_API_KEY to Render Environment Variables.\n` +
                     `Expires in 10 minutes.\n` +
                     `=======================================================\n`
                 );
@@ -250,12 +268,13 @@ class EmailService {
             }
         }
 
-        // Fallback when neither Resend nor SMTP is configured
+        // Fallback when neither Resend, Brevo, nor SMTP is configured
+        this.lastErrorMessage = "No email provider configured (configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS).";
         logger.warn(
             `\n=======================================================\n` +
             `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
             `Expires in 15 minutes.\n` +
-            `Configure RESEND_API_KEY or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
+            `Configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
             `=======================================================\n`
         );
         return false;
