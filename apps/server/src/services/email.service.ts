@@ -14,7 +14,16 @@ class EmailService {
         const rawUser = process.env.EMAIL_USER;
         const rawPass = process.env.EMAIL_PASS;
 
-        const user = rawUser ? rawUser.trim().replace(/^["']|["']$/g, "") : "";
+        let user = "";
+        if (rawUser) {
+            // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
+            const angleMatch = rawUser.match(/<([^>]+)>/);
+            const emailRegexMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            user = (angleMatch ? angleMatch[1] : (emailRegexMatch ? emailRegexMatch[0] : rawUser))
+                .trim()
+                .replace(/^["']|["']$/g, "");
+        }
+
         const pass = rawPass ? rawPass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "") : "";
 
         return { user, pass };
@@ -40,7 +49,9 @@ class EmailService {
         if (!this.transporter) {
             const { user, pass } = this.getCleanCredentials();
             const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
-            const port = Number(process.env.EMAIL_PORT) || 465;
+            const rawPort = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : null;
+            // On cloud platforms (Render, AWS, DigitalOcean), port 587 is much more reliable than 465 (which is often blocked)
+            const port = rawPort || 587;
             const secure = port === 465;
             const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
 
@@ -49,9 +60,9 @@ class EmailService {
                 port,
                 secure,
                 auth: { user, pass },
-                connectionTimeout: 15000,
-                greetingTimeout: 15000,
-                socketTimeout: 20000,
+                connectionTimeout: 10000,
+                greetingTimeout: 10000,
+                socketTimeout: 15000,
                 family: 4,
                 tls: {
                     rejectUnauthorized: false,
