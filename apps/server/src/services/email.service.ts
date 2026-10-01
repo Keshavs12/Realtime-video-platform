@@ -182,6 +182,7 @@ class EmailService {
                         text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
                         html,
                     }),
+                    redirect: "follow",
                 });
 
                 if (response.ok) {
@@ -422,6 +423,7 @@ class EmailService {
                             text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
                             html,
                         }),
+                        redirect: "follow",
                     });
                     if (response.ok) sent++;
                     else failed++;
