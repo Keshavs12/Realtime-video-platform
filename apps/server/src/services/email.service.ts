@@ -130,7 +130,8 @@ class EmailService {
         const resendApiKey = process.env.RESEND_API_KEY?.trim();
         if (resendApiKey) {
             try {
-                const resendFrom = process.env.RESEND_FROM?.trim() || cleanFrom || "SuperCall <onboarding@resend.dev>";
+                // Do not fallback to cleanFrom if it has an unverified domain; Resend requires onboarding@resend.dev unless RESEND_FROM is configured
+                const resendFrom = process.env.RESEND_FROM?.trim() || "SuperCall <onboarding@resend.dev>";
                 const response = await fetch("https://api.resend.com/emails", {
                     method: "POST",
                     headers: {
@@ -297,7 +298,7 @@ class EmailService {
         if (resendApiKey) {
             let sent = 0;
             let failed = 0;
-            const resendFrom = process.env.RESEND_FROM?.trim() || cleanFrom || "SuperCall <onboarding@resend.dev>";
+            const resendFrom = process.env.RESEND_FROM?.trim() || "SuperCall <onboarding@resend.dev>";
             for (const recipient of to) {
                 try {
                     const response = await fetch("https://api.resend.com/emails", {
