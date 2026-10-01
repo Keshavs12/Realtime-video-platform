@@ -10,15 +10,15 @@ export function useMicMeter(stream: MediaStream | null, isMuted: boolean = false
   const [volume, setVolume] = useState<number>(0);
   const animFrameRef = useRef<number | null>(null);
 
+  const isAudioDisabled = !stream || isMuted;
+
   useEffect(() => {
-    if (!stream || isMuted) {
-      setVolume(0);
+    if (isAudioDisabled || !stream) {
       return;
     }
 
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0 || !audioTracks[0].enabled) {
-      setVolume(0);
       return;
     }
 
@@ -90,7 +90,7 @@ export function useMicMeter(stream: MediaStream | null, isMuted: boolean = false
         // ignore
       }
     };
-  }, [stream, isMuted]);
+  }, [stream, isMuted, isAudioDisabled]);
 
-  return volume;
+  return isAudioDisabled ? 0 : volume;
 }

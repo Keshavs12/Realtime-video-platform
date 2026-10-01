@@ -52,13 +52,16 @@ export function GreenRoomLobby({
   const [copied, setCopied] = useState(false);
   const [nameError, setNameError] = useState("");
   const [enteredName, setEnteredName] = useState(guestName || "");
-  const micVolume = useMicMeter(localStream, isAudioMuted);
+  const [prevGuestName, setPrevGuestName] = useState(guestName);
 
-  useEffect(() => {
-    if (guestName && !enteredName) {
+  if (guestName !== prevGuestName) {
+    setPrevGuestName(guestName);
+    if (!enteredName) {
       setEnteredName(guestName);
     }
-  }, [guestName, enteredName]);
+  }
+
+  const micVolume = useMicMeter(localStream, isAudioMuted);
 
   useEffect(() => {
     if (videoRef.current && localStream) {
