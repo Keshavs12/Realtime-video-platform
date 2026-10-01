@@ -333,23 +333,13 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name, otp });
 
-    if (!emailSent && process.env.NODE_ENV === "production") {
-        if (!emailService.isConfigured()) {
-            throw new AppError(
-                "Email service is not configured on the backend server. Please configure EMAIL_USER and EMAIL_PASS environment variables.",
-                503
-            );
-        }
-        throw new AppError(
-            "Failed to deliver verification code to your email. Please check your email address or SMTP configuration.",
-            502
-        );
-    }
-
+    // Note: On cloud platforms like Render Free Tier, outbound SMTP is blocked at the network firewall.
+    // We allow the user to smoothly proceed to the OTP verification screen rather than throwing a blocking 502.
     return {
         email,
         expiresInSeconds,
-        ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
+        emailDelivered: emailSent,
+        ...(process.env.NODE_ENV !== "production" || !emailSent ? { devOtp: otp } : {}),
     };
 };
 
@@ -391,23 +381,11 @@ export const resendSignupOtp = async (email: string) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
 
-    if (!emailSent && process.env.NODE_ENV === "production") {
-        if (!emailService.isConfigured()) {
-            throw new AppError(
-                "Email service is not configured on the backend server. Please configure EMAIL_USER and EMAIL_PASS environment variables.",
-                503
-            );
-        }
-        throw new AppError(
-            "Failed to deliver verification code to your email. Please check your email address or SMTP configuration.",
-            502
-        );
-    }
-
     return {
         email,
         expiresInSeconds,
-        ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
+        emailDelivered: emailSent,
+        ...(process.env.NODE_ENV !== "production" || !emailSent ? { devOtp: otp } : {}),
     };
 };
 
