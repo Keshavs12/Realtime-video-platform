@@ -88,6 +88,17 @@ export default function SchedulePage() {
     e.preventDefault();
     if (!title.trim() || !scheduledAt) return;
 
+    // Auto-add any email that's typed but not yet added via "+ Add"
+    let finalInvitees = [...invitees];
+    const pendingEmail = inviteeInput.trim().toLowerCase();
+    if (pendingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pendingEmail)) {
+      if (!finalInvitees.includes(pendingEmail)) {
+        finalInvitees.push(pendingEmail);
+      }
+      setInviteeInput("");
+      setInvitees(finalInvitees);
+    }
+
     setIsSubmitting(true);
     setFeedback(null);
 
@@ -97,7 +108,7 @@ export default function SchedulePage() {
         description: description.trim() || undefined,
         scheduledAt: new Date(scheduledAt).toISOString(),
         durationMinutes,
-        invitees,
+        invitees: finalInvitees,
       });
 
       setFeedback({
