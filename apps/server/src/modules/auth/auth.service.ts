@@ -333,13 +333,10 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name, otp });
 
-    // Note: On cloud platforms like Render Free Tier, outbound SMTP is blocked at the network firewall.
-    // We allow the user to smoothly proceed to the OTP verification screen rather than throwing a blocking 502.
     return {
         email,
         expiresInSeconds,
         emailDelivered: emailSent,
-        ...(process.env.NODE_ENV !== "production" || !emailSent ? { devOtp: otp } : {}),
     };
 };
 
@@ -385,7 +382,6 @@ export const resendSignupOtp = async (email: string) => {
         email,
         expiresInSeconds,
         emailDelivered: emailSent,
-        ...(process.env.NODE_ENV !== "production" || !emailSent ? { devOtp: otp } : {}),
     };
 };
 

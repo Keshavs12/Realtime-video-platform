@@ -64,16 +64,10 @@ export default function SignupPage() {
     setSuccess("");
 
     try {
-      const res = await sendSignupOtp(formData);
+      await sendSignupOtp(formData);
       setPhase("otp");
       setCountdown(60);
-      const data = res?.data?.data;
-      if (data?.devOtp && !data?.emailDelivered) {
-        setSuccess(`Verification Code: ${data.devOtp}`);
-        setOtp(data.devOtp.split(""));
-      } else {
-        setSuccess("A 6-digit verification code has been sent to your email!");
-      }
+      setSuccess("A 6-digit verification code has been sent to your email!");
     } catch (err: any) {
       console.log(err, "ERR");
       setError(
@@ -152,17 +146,11 @@ export default function SignupPage() {
     setSuccess("");
 
     try {
-      const res = await resendSignupOtp(formData.email);
+      await resendSignupOtp(formData.email);
       setCountdown(60);
-      const data = res?.data?.data;
-      if (data?.devOtp && !data?.emailDelivered) {
-        setSuccess(`New Verification Code: ${data.devOtp}`);
-        setOtp(data.devOtp.split(""));
-      } else {
-        setOtp(["", "", "", "", "", ""]);
-        setSuccess("A new 6-digit verification code has been sent!");
-        inputRefs.current[0]?.focus();
-      }
+      setOtp(["", "", "", "", "", ""]);
+      setSuccess("A new 6-digit verification code has been sent!");
+      inputRefs.current[0]?.focus();
     } catch (err: any) {
       setError(
         err.response?.data?.message || "Failed to resend code. Please try again."

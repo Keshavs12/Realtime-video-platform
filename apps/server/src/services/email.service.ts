@@ -30,7 +30,7 @@ class EmailService {
     }
 
     public isConfigured(): boolean {
-        if (Boolean(process.env.RESEND_API_KEY?.trim())) {
+        if (Boolean(process.env.BREVO_API_KEY?.trim() || process.env.GMAIL_RELAY_URL?.trim() || process.env.RESEND_API_KEY?.trim())) {
             return true;
         }
         const { user, pass } = this.getCleanCredentials();
@@ -126,7 +126,69 @@ class EmailService {
 </html>
 `;
 
-        // 1. Preferred modern Cloud method: Resend HTTP REST API (Port 443 HTTPS - never blocked by Render)
+        // 1. Brevo HTTP REST API (Port 443 HTTPS - Delivers to ANY recipient including yopmail, 300 free/day)
+        const brevoApiKey = process.env.BREVO_API_KEY?.trim();
+        if (brevoApiKey) {
+            try {
+                const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || user || "support@supercall.com";
+                const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                    method: "POST",
+                    headers: {
+                        "api-key": brevoApiKey,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    body: JSON.stringify({
+                        sender: {
+                            name: "SuperCall",
+                            email: brevoSenderEmail,
+                        },
+                        to: [{ email: to, name }],
+                        subject: `${otp} is your SuperCall verification code`,
+                        htmlContent: html,
+                    }),
+                });
+
+                if (response.ok) {
+                    logger.info(`[EmailService] Verification OTP successfully sent via Brevo API to ${to}`);
+                    return true;
+                } else {
+                    const errBody = await response.text();
+                    logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${to}`);
+                }
+            } catch (err: any) {
+                logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${to}`);
+            }
+        }
+
+        // 2. Gmail HTTPS Relay (Port 443 HTTPS - Sends from personal Gmail via Google Apps Script Webhook)
+        const gmailRelayUrl = process.env.GMAIL_RELAY_URL?.trim();
+        if (gmailRelayUrl) {
+            try {
+                const response = await fetch(gmailRelayUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        to,
+                        subject: `${otp} is your SuperCall verification code`,
+                        text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                        html,
+                    }),
+                });
+
+                if (response.ok) {
+                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${to}`);
+                    return true;
+                } else {
+                    const errBody = await response.text();
+                    logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${to}`);
+                }
+            } catch (err: any) {
+                logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${to}`);
+            }
+        }
+
+        // 3. Resend HTTP REST API (Port 443 HTTPS)
         const resendApiKey = process.env.RESEND_API_KEY?.trim();
         if (resendApiKey) {
             try {
@@ -293,6 +355,61 @@ class EmailService {
 </body>
 </html>
 `;
+
+        const brevoApiKey = process.env.BREVO_API_KEY?.trim();
+        if (brevoApiKey) {
+            let sent = 0;
+            let failed = 0;
+            const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || user || "support@supercall.com";
+            for (const recipient of to) {
+                try {
+                    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                        method: "POST",
+                        headers: {
+                            "api-key": brevoApiKey,
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                        },
+                        body: JSON.stringify({
+                            sender: { name: "SuperCall", email: brevoSenderEmail },
+                            to: [{ email: recipient }],
+                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                            htmlContent: html,
+                        }),
+                    });
+                    if (response.ok) sent++;
+                    else failed++;
+                } catch {
+                    failed++;
+                }
+            }
+            return { sent, failed };
+        }
+
+        const gmailRelayUrl = process.env.GMAIL_RELAY_URL?.trim();
+        if (gmailRelayUrl) {
+            let sent = 0;
+            let failed = 0;
+            for (const recipient of to) {
+                try {
+                    const response = await fetch(gmailRelayUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            to: recipient,
+                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                            text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
+                            html,
+                        }),
+                    });
+                    if (response.ok) sent++;
+                    else failed++;
+                } catch {
+                    failed++;
+                }
+            }
+            return { sent, failed };
+        }
 
         const resendApiKey = process.env.RESEND_API_KEY?.trim();
         if (resendApiKey) {
