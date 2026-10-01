@@ -14,13 +14,25 @@ class EmailService {
         const rawUser = process.env.EMAIL_USER;
         const rawPass = process.env.EMAIL_PASS;
 
-        const user = rawUser ? rawUser.trim().replace(/^["']|["']$/g, "") : "";
+        let user = "";
+        if (rawUser) {
+            // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
+            const angleMatch = rawUser.match(/<([^>]+)>/);
+            const emailRegexMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            user = (angleMatch ? angleMatch[1] : (emailRegexMatch ? emailRegexMatch[0] : rawUser))
+                .trim()
+                .replace(/^["']|["']$/g, "");
+        }
+
         const pass = rawPass ? rawPass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "") : "";
 
         return { user, pass };
     }
 
     public isConfigured(): boolean {
+        if (Boolean(process.env.RESEND_API_KEY?.trim())) {
+            return true;
+        }
         const { user, pass } = this.getCleanCredentials();
 
         return Boolean(
@@ -33,44 +45,35 @@ class EmailService {
     }
 
     private getTransporter(): Transporter | null {
-        if (!this.isConfigured()) {
+        const { user, pass } = this.getCleanCredentials();
+        if (!user || !pass) {
             return null;
         }
 
         if (!this.transporter) {
-            const { user, pass } = this.getCleanCredentials();
             const host = (process.env.EMAIL_HOST || "smtp.gmail.com").trim();
-            const port = Number(process.env.EMAIL_PORT) || 465;
+            const rawPort = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : null;
+            // On cloud platforms (Render, AWS, DigitalOcean), port 587 is much more reliable than 465 (which is often blocked)
+            const port = rawPort || 587;
+            const secure = port === 465;
             const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
 
-            if (isGmail) {
-                // Using explicit smtp.gmail.com on port 465 with family: 4 is much more resilient
-                // than nodemailer's default service: "gmail" on cloud platforms (Render, AWS, GCP)
-                // because it avoids IPv6 network drops and port ambiguities.
-                this.transporter = nodemailer.createTransport({
-                    host: "smtp.gmail.com",
-                    port: 465,
-                    secure: true,
-                    auth: { user, pass },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 20000,
-                    family: 4,
-                } as any);
-                logger.info(`[EmailService] Initialized Gmail SMTP transporter on port 465 for: ${user}`);
-            } else {
-                this.transporter = nodemailer.createTransport({
-                    host,
-                    port,
-                    secure: port === 465,
-                    auth: { user, pass },
-                    connectionTimeout: 15000,
-                    greetingTimeout: 15000,
-                    socketTimeout: 20000,
-                    family: 4,
-                } as any);
-                logger.info(`[EmailService] Initialized SMTP transporter on ${host}:${port} for: ${user}`);
-            }
+            const smtpConfig: any = {
+                host: isGmail ? "smtp.gmail.com" : host,
+                port,
+                secure,
+                auth: { user, pass },
+                connectionTimeout: 10000,
+                greetingTimeout: 10000,
+                socketTimeout: 15000,
+                family: 4,
+                tls: {
+                    rejectUnauthorized: false,
+                },
+            };
+
+            this.transporter = nodemailer.createTransport(smtpConfig);
+            logger.info(`[EmailService] Initialized SMTP transporter on ${smtpConfig.host}:${port} (secure: ${secure}) for: ${user}`);
         }
 
         return this.transporter;
@@ -80,27 +83,10 @@ class EmailService {
      * Sends an OTP verification email to the user.
      */
     async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
-        const isConfigured = this.isConfigured();
-
-        // Fallback: If SMTP credentials aren't configured yet, log OTP so testing never fails in dev
-        if (!isConfigured) {
-            logger.warn(
-                `\n=======================================================\n` +
-                `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
-                `Expires in 15 minutes.\n` +
-                `Configure EMAIL_USER and EMAIL_PASS in environment variables to send real emails.\n` +
-                `=======================================================\n`
-            );
-            return process.env.NODE_ENV !== "production";
-        }
-
-        const transporter = this.getTransporter();
-        if (!transporter) {
-            return false;
-        }
-
         const { user } = this.getCleanCredentials();
-        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
+        const rawFrom = process.env.EMAIL_FROM;
+        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
+        const sender = cleanFrom || `"SuperCall" <${user || "support@supercall.com"}>`;
 
         const html = `
 <!DOCTYPE html>
@@ -140,28 +126,76 @@ class EmailService {
 </html>
 `;
 
-        try {
-            await transporter.sendMail({
-                from: sender,
-                to,
-                subject: `${otp} is your SuperCall verification code`,
-                text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
-                html,
-            });
-            logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
-            return true;
-        } catch (error: any) {
-            logger.error({ err: error.message }, `[EmailService] SMTP delivery failed for ${to}`);
-            logger.warn(
-                `\n=======================================================\n` +
-                `📧 [DEV SIMULATION - SMTP ERROR FALLBACK] OTP for ${to} (${name}): ${otp}\n` +
-                `Expires in 10 minutes.\n` +
-                `=======================================================\n`
-            );
-            // Return false gracefully instead of throwing 500 unhandled error
-            // so signup flow proceeds to the OTP screen. The OTP is preserved in DB and logged.
-            return false;
+        // 1. Preferred modern Cloud method: Resend HTTP REST API (Port 443 HTTPS - never blocked by Render)
+        const resendApiKey = process.env.RESEND_API_KEY?.trim();
+        if (resendApiKey) {
+            try {
+                const resendFrom = process.env.RESEND_FROM?.trim() || cleanFrom || "SuperCall <onboarding@resend.dev>";
+                const response = await fetch("https://api.resend.com/emails", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${resendApiKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        from: resendFrom,
+                        to: [to],
+                        subject: `${otp} is your SuperCall verification code`,
+                        html,
+                    }),
+                });
+
+                if (response.ok) {
+                    logger.info(`[EmailService] Verification OTP successfully sent via Resend API to ${to}`);
+                    return true;
+                } else {
+                    const errBody = await response.text();
+                    logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${to}`);
+                }
+            } catch (err: any) {
+                logger.error({ err: err.message }, `[EmailService] Resend API request error for ${to}`);
+            }
         }
+
+        // 2. SMTP Transport (Gmail / Custom SMTP)
+        const transporter = this.getTransporter();
+        if (transporter) {
+            try {
+                await transporter.sendMail({
+                    from: sender,
+                    to,
+                    subject: `${otp} is your SuperCall verification code`,
+                    text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                    html,
+                });
+                logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
+                return true;
+            } catch (error: any) {
+                logger.error(
+                    { err: error.message, code: error.code, response: error.response },
+                    `[EmailService] SMTP delivery failed for ${to}`
+                );
+                logger.warn(
+                    `\n=======================================================\n` +
+                    `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${to} (${name}): ${otp}\n` +
+                    `Render Free Tier blocks outbound SMTP ports 25, 465, and 587.\n` +
+                    `To send real emails on Render, add RESEND_API_KEY to Render Environment Variables (HTTPS port 443 is never blocked).\n` +
+                    `Expires in 10 minutes.\n` +
+                    `=======================================================\n`
+                );
+                return false;
+            }
+        }
+
+        // Fallback when neither Resend nor SMTP is configured
+        logger.warn(
+            `\n=======================================================\n` +
+            `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
+            `Expires in 15 minutes.\n` +
+            `Configure RESEND_API_KEY or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
+            `=======================================================\n`
+        );
+        return false;
     }
 
     /**
@@ -191,7 +225,9 @@ class EmailService {
         });
 
         const { user } = this.getCleanCredentials();
-        const sender = process.env.EMAIL_FROM?.trim() || `"SuperCall" <${user}>`;
+        const rawFrom = process.env.EMAIL_FROM;
+        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
+        const sender = cleanFrom || `"SuperCall" <${user}>`;
 
         const html = `
 <!DOCTYPE html>
@@ -256,6 +292,35 @@ class EmailService {
 </body>
 </html>
 `;
+
+        const resendApiKey = process.env.RESEND_API_KEY?.trim();
+        if (resendApiKey) {
+            let sent = 0;
+            let failed = 0;
+            const resendFrom = process.env.RESEND_FROM?.trim() || cleanFrom || "SuperCall <onboarding@resend.dev>";
+            for (const recipient of to) {
+                try {
+                    const response = await fetch("https://api.resend.com/emails", {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${resendApiKey}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            from: resendFrom,
+                            to: [recipient],
+                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                            html,
+                        }),
+                    });
+                    if (response.ok) sent++;
+                    else failed++;
+                } catch {
+                    failed++;
+                }
+            }
+            return { sent, failed };
+        }
 
         if (!transporter) {
             logger.warn(
