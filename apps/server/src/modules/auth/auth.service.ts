@@ -331,11 +331,25 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
         },
     });
 
-    await emailService.sendSignupOtp({ to: email, name, otp });
+    const emailSent = await emailService.sendSignupOtp({ to: email, name, otp });
+
+    if (!emailSent && process.env.NODE_ENV === "production") {
+        if (!emailService.isConfigured()) {
+            throw new AppError(
+                "Email service is not configured on the backend server. Please configure EMAIL_USER and EMAIL_PASS environment variables.",
+                503
+            );
+        }
+        throw new AppError(
+            "Failed to deliver verification code to your email. Please check your email address or SMTP configuration.",
+            502
+        );
+    }
 
     return {
         email,
         expiresInSeconds,
+        ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
     };
 };
 
@@ -375,11 +389,25 @@ export const resendSignupOtp = async (email: string) => {
         },
     });
 
-    await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
+    const emailSent = await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
+
+    if (!emailSent && process.env.NODE_ENV === "production") {
+        if (!emailService.isConfigured()) {
+            throw new AppError(
+                "Email service is not configured on the backend server. Please configure EMAIL_USER and EMAIL_PASS environment variables.",
+                503
+            );
+        }
+        throw new AppError(
+            "Failed to deliver verification code to your email. Please check your email address or SMTP configuration.",
+            502
+        );
+    }
 
     return {
         email,
         expiresInSeconds,
+        ...(process.env.NODE_ENV !== "production" ? { devOtp: otp } : {}),
     };
 };
 
