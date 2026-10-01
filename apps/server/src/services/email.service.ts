@@ -225,11 +225,13 @@ class EmailService {
                 } else {
                     const errBody = await response.text();
                     logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${to}`);
-                    try {
-                        const parsed = JSON.parse(errBody);
-                        this.lastErrorMessage = parsed.message || errBody;
-                    } catch {
-                        this.lastErrorMessage = errBody;
+                    if (!this.lastErrorMessage) {
+                        try {
+                            const parsed = JSON.parse(errBody);
+                            this.lastErrorMessage = parsed.message || errBody;
+                        } catch {
+                            this.lastErrorMessage = errBody;
+                        }
                     }
                 }
             } catch (err: any) {
