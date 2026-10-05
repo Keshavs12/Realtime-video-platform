@@ -142,8 +142,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
 
             next();
-        } catch (_err) {
-            // Token verification failed or expired; fall back gracefully to guest session without crashing
+        } catch (err) {
+            console.warn("Token verification failed or expired; falling back gracefully to guest session:", err);
             const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
             socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
             socket.data.name = guestName.trim() || "Guest";
