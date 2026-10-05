@@ -7,9 +7,9 @@ interface SendOtpOptions {
     otp: string;
 }
 
-const sanitizeLog = (val: string): string => val.replace(/[\r\n\t]/g, "");
+const sanitizeLog = (val: string): string => (val ? String(val).replace(/[\r\n\t]/g, "") : "");
 
-const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}/;
+const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
 class EmailService {
     private transporter: Transporter | null = null;
@@ -156,16 +156,18 @@ class EmailService {
                 }),
             });
 
+            const safeTo = sanitizeLog(to);
             if (response.ok) {
-                logger.info(`[EmailService] Verification OTP successfully sent via Brevo API to ${to}`);
+                logger.info(`[EmailService] Verification OTP successfully sent via Brevo API to ${safeTo}`);
                 return true;
             }
             const errBody = await response.text();
-            logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${to}`);
+            logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${safeTo}`);
             this.lastErrorMessage = `Brevo delivery failed: ${errBody}`;
             return false;
         } catch (err: any) {
-            logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${to}`);
+            const safeTo = sanitizeLog(to);
+            logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${safeTo}`);
             this.lastErrorMessage = `Brevo request error: ${err.message}`;
             return false;
         }
@@ -251,18 +253,20 @@ class EmailService {
                 }),
             });
 
+            const safeTo = sanitizeLog(to);
             if (response.ok) {
-                logger.info(`[EmailService] Verification OTP successfully sent via Resend API to ${to}`);
+                logger.info(`[EmailService] Verification OTP successfully sent via Resend API to ${safeTo}`);
                 return true;
             }
             const errBody = await response.text();
-            logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${to}`);
+            logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${safeTo}`);
             if (!this.lastErrorMessage) {
                 this.lastErrorMessage = this.parseErrorMessage(errBody);
             }
             return false;
         } catch (err: any) {
-            logger.error({ err: err.message }, `[EmailService] Resend API request error for ${to}`);
+            const safeTo = sanitizeLog(to);
+            logger.error({ err: err.message }, `[EmailService] Resend API request error for ${safeTo}`);
             this.lastErrorMessage = `Resend error: ${err.message}`;
             return false;
         }
@@ -272,6 +276,10 @@ class EmailService {
         const transporter = this.getTransporter();
         if (!transporter) return false;
 
+        const safeTo = sanitizeLog(to);
+        const safeName = sanitizeLog(name);
+        const safeOtp = sanitizeLog(otp);
+
         try {
             await transporter.sendMail({
                 from: sender,
@@ -280,19 +288,19 @@ class EmailService {
                 text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
                 html,
             });
-            logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
+            logger.info(`[EmailService] Verification OTP successfully sent to ${safeTo}`);
             return true;
         } catch (error: any) {
             logger.error(
                 { err: error.message, code: error.code, response: error.response },
-                `[EmailService] SMTP delivery failed for ${to}`
+                `[EmailService] SMTP delivery failed for ${safeTo}`
             );
             if (!this.lastErrorMessage) {
                 this.lastErrorMessage = error.message || "SMTP connection failed";
             }
             logger.warn(
                 `\n=======================================================\n` +
-                `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${to} (${name}): ${otp}\n` +
+                `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${safeTo} (${safeName}): ${safeOtp}\n` +
                 `Render Free Tier blocks outbound SMTP ports 25, 465, and 587.\n` +
                 `To send real emails on Render, add RESEND_API_KEY or BREVO_API_KEY to Render Environment Variables.\n` +
                 `Expires in 10 minutes.\n` +
@@ -320,9 +328,12 @@ class EmailService {
 
         // Fallback when neither Resend, Brevo, nor SMTP is configured
         this.lastErrorMessage = "No email provider configured (configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS).";
+        const safeTo = sanitizeLog(to);
+        const safeName = sanitizeLog(name);
+        const safeOtp = sanitizeLog(otp);
         logger.warn(
             `\n=======================================================\n` +
-            `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
+            `📧 [DEV SIMULATION] OTP for ${safeTo} (${safeName}): ${safeOtp}\n` +
             `Expires in 15 minutes.\n` +
             `Configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
             `=======================================================\n`
@@ -538,11 +549,14 @@ class EmailService {
 
         if (!transporter) {
             const safeRecipients = to.map(sanitizeLog).join(", ");
+            const safeTitle = sanitizeLog(meetingTitle);
+            const safeDate = sanitizeLog(formattedDate);
+            const safeUrl = sanitizeLog(meetingUrl);
             logger.warn(
                 `\n=======================================================\n` +
                 `📧 [DEV SIMULATION] Meeting Invite for ${safeRecipients}\n` +
-                `Title: ${meetingTitle} | Date: ${formattedDate}\n` +
-                `Join Link: ${meetingUrl}\n` +
+                `Title: ${safeTitle} | Date: ${safeDate}\n` +
+                `Join Link: ${safeUrl}\n` +
                 `=======================================================\n`
             );
             return { sent: to.length, failed: 0 };
@@ -554,6 +568,7 @@ class EmailService {
         await Promise.all(
             to.map(async (recipient) => {
                 const safeRecipient = sanitizeLog(recipient);
+                const safeRoomCode = sanitizeLog(roomCode);
                 try {
                     await transporter.sendMail({
                         from: sender,
@@ -562,7 +577,7 @@ class EmailService {
                         text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
                         html,
                     });
-                    logger.info(`[EmailService] Meeting invite sent to ${safeRecipient} for room ${roomCode}`);
+                    logger.info(`[EmailService] Meeting invite sent to ${safeRecipient} for room ${safeRoomCode}`);
                     sent++;
                 } catch (err: any) {
                     logger.error({ err: err.message }, `[EmailService] Failed to send meeting invite to ${safeRecipient}`);

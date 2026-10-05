@@ -26,9 +26,14 @@
     font-weight: 700;
     color: #ffffff;
     margin: 0;
-    background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+
+    @supports (-webkit-background-clip: text) or (background-clip: text) {
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+    }
   }
 
   p {
@@ -39,7 +44,7 @@
 }
 
 .scheduleNewBtn {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
   color: #ffffff;
   border: none;
   border-radius: 12px;
@@ -50,13 +55,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4);
   transition: all 0.2s ease;
   white-space: nowrap;
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.55);
+    box-shadow: 0 6px 20px rgba(29, 78, 216, 0.55);
   }
 }
 
@@ -129,7 +134,7 @@
 }
 
 .closeBtn {
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #cbd5e1;
   width: 32px;
@@ -142,7 +147,7 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: #334155;
     color: #ffffff;
   }
 }
@@ -180,7 +185,7 @@
 .input,
 .textarea,
 .select {
-  background: rgba(255, 255, 255, 0.05);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #ffffff;
   padding: 10px 14px;
@@ -191,7 +196,7 @@
 
   &:focus {
     border-color: #3b82f6;
-    background: rgba(255, 255, 255, 0.08);
+    background: #1e293b;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
 
@@ -212,9 +217,9 @@
 }
 
 .addInviteeBtn {
-  background: rgba(59, 130, 246, 0.2);
+  background: #172554;
   border: 1px solid rgba(59, 130, 246, 0.4);
-  color: #93c5fd;
+  color: #bfdbfe;
   padding: 0 16px;
   border-radius: 10px;
   font-size: 0.85rem;
@@ -224,7 +229,7 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(59, 130, 246, 0.35);
+    background: #1e3a8a;
     color: #ffffff;
   }
 }
@@ -240,9 +245,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(99, 102, 241, 0.18);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  color: #c7d2fe;
+  background: #1e1b4b;
+  border: 1px solid #4338ca;
+  color: #e0e7ff;
   padding: 3px 10px;
   border-radius: 20px;
   font-size: 0.8rem;
@@ -262,7 +267,7 @@
 }
 
 .submitBtn {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
   color: #ffffff;
   border: none;
   border-radius: 12px;
@@ -271,12 +276,12 @@
   font-weight: 700;
   cursor: pointer;
   margin-top: 0.5rem;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4);
   transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 6px 20px rgba(29, 78, 216, 0.6);
   }
 
   &:disabled {
@@ -372,9 +377,9 @@
 }
 
 .hostBadge {
-  background: rgba(234, 179, 8, 0.15);
-  border: 1px solid rgba(234, 179, 8, 0.35);
-  color: #fde047;
+  background: #422006;
+  border: 1px solid #ca8a04;
+  color: #fef08a;
   font-size: 0.72rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -382,9 +387,9 @@
 }
 
 .guestBadge {
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  color: #6ee7b7;
+  background: #064e3b;
+  border: 1px solid #059669;
+  color: #a7f3d0;
   font-size: 0.72rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -423,7 +428,7 @@
 }
 
 .startBtn {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #059669, #047857);
   color: #ffffff;
   border: none;
   border-radius: 10px;
@@ -435,19 +440,19 @@
   align-items: center;
   gap: 0.4rem;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45);
+    box-shadow: 0 6px 18px rgba(5, 150, 105, 0.45);
   }
 }
 
 .copyBtn,
 .reminderBtn {
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #f1f5f9;
+  color: #ffffff;
   border-radius: 10px;
   padding: 8px 12px;
   font-size: 0.82rem;
@@ -456,14 +461,14 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: #334155;
   }
 }
 
 .deleteBtn {
-  background: rgba(239, 68, 68, 0.12);
+  background: #450a0a;
   border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
+  color: #fecaca;
   border-radius: 10px;
   padding: 8px 10px;
   font-size: 0.82rem;
@@ -471,7 +476,7 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(239, 68, 68, 0.25);
+    background: #7f1d1d;
     border-color: #ef4444;
   }
 }
@@ -513,14 +518,14 @@
   font-weight: 500;
 
   &.success {
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.35);
-    color: #6ee7b7;
+    background: #064e3b;
+    border: 1px solid #059669;
+    color: #a7f3d0;
   }
 
   &.error {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: #fca5a5;
+    background: #450a0a;
+    border: 1px solid #dc2626;
+    color: #fecaca;
   }
 }

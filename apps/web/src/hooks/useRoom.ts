@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 // STUN alone is usually enough on a shared LAN. Once peers are on separate
@@ -227,6 +227,20 @@ const updatePresenceOnSignaling = (
     return p;
   });
 
+const updateScreenSharingPeers = (
+  prev: Set<string>,
+  socketId: string,
+  isSharing: boolean
+): Set<string> => {
+  const next = new Set(prev);
+  if (isSharing) {
+    next.add(socketId);
+  } else {
+    next.delete(socketId);
+  }
+  return next;
+};
+
 
 /**
  * Custom React hook for WebRTC multi-peer video rooms and signaling.
@@ -284,6 +298,11 @@ export const useRoom = (
   const [isLocalHandRaised, setIsLocalHandRaised] = useState(false);
   const [screenSharingPeers, setScreenSharingPeers] = useState<Set<string>>(new Set());
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const scheduleReactionRemoval = useCallback((id: string) => {
+    setTimeout(() => {
+      setReactions((prev) => removeReactionById(prev, id));
+    }, 3500);
+  }, []);
   const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -554,9 +573,7 @@ export const useRoom = (
         socket.on("reaction-received", (reaction: FloatingReaction) => {
           playReactionPop();
           setReactions((prev) => [...prev, reaction]);
-          setTimeout(() => {
-            setReactions((prev) => removeReactionById(prev, reaction.id));
-          }, 3500);
+          scheduleReactionRemoval(reaction.id);
         });
 
         socket.on("user-name-updated", ({ socketId, name: newName }: { socketId: string; name: string }) => {
@@ -565,15 +582,7 @@ export const useRoom = (
         });
 
         socket.on("peer-screen-share", ({ socketId, isSharing }: { socketId: string; isSharing: boolean }) => {
-          setScreenSharingPeers((prev) => {
-            const next = new Set(prev);
-            if (isSharing) {
-              next.add(socketId);
-            } else {
-              next.delete(socketId);
-            }
-            return next;
-          });
+          setScreenSharingPeers((prev) => updateScreenSharingPeers(prev, socketId, isSharing));
         });
 
         // Server replays persisted chat history right after join, so a
