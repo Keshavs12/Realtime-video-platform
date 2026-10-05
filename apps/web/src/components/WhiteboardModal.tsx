@@ -60,16 +60,21 @@ const STROKE_SIZES = [
   { label: "Marker", size: 16 },
 ];
 
+interface WhiteboardDrawOptions {
+  width: number;
+  height: number;
+  scaledSize: number;
+  tool: WhiteboardTool;
+  color: string;
+}
+
 function drawInitialDot(
   ctx: CanvasRenderingContext2D,
   normX: number,
   normY: number,
-  width: number,
-  height: number,
-  scaledSize: number,
-  tool: WhiteboardTool,
-  color: string
+  options: WhiteboardDrawOptions
 ) {
+  const { width, height, scaledSize, tool, color } = options;
   ctx.save();
   if (tool === "eraser") {
     ctx.globalCompositeOperation = "destination-out";
@@ -98,12 +103,9 @@ function renderFreehandStep(
   ctx: CanvasRenderingContext2D,
   prev: WhiteboardPoint,
   curr: WhiteboardPoint,
-  width: number,
-  height: number,
-  scaledSize: number,
-  tool: WhiteboardTool,
-  color: string
+  options: WhiteboardDrawOptions
 ) {
+  const { width, height, scaledSize, tool, color } = options;
   ctx.save();
   if (tool === "eraser") {
     ctx.globalCompositeOperation = "destination-out";
@@ -134,12 +136,9 @@ function renderShapePreview(
   prevCtx: CanvasRenderingContext2D,
   start: WhiteboardPoint,
   curr: WhiteboardPoint,
-  width: number,
-  height: number,
-  scaledSize: number,
-  tool: WhiteboardTool,
-  color: string
+  options: WhiteboardDrawOptions
 ) {
+  const { width, height, scaledSize, tool, color } = options;
   prevCtx.clearRect(0, 0, width, height);
   prevCtx.save();
   prevCtx.strokeStyle = color;
@@ -448,7 +447,13 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
       const ctx = mainCanvas?.getContext("2d");
       if (ctx) {
         const scaledSize = Math.max(1, selectedSize * (rect.width / 1200));
-        drawInitialDot(ctx, normX, normY, rect.width, rect.height, scaledSize, selectedTool, selectedColor);
+        drawInitialDot(ctx, normX, normY, {
+          width: rect.width,
+          height: rect.height,
+          scaledSize,
+          tool: selectedTool,
+          color: selectedColor,
+        });
       }
     }
   };
@@ -475,7 +480,13 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
       const ctx = mainCanvas?.getContext("2d");
       if (!ctx) return;
 
-      renderFreehandStep(ctx, prev, { x: normX, y: normY }, width, height, scaledSize, selectedTool, selectedColor);
+      renderFreehandStep(ctx, prev, { x: normX, y: normY }, {
+        width,
+        height,
+        scaledSize,
+        tool: selectedTool,
+        color: selectedColor,
+      });
 
       // Broadcast live stroke step to other peers
       if (socket) {
@@ -495,7 +506,13 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     } else {
       const prevCtx = canvas.getContext("2d");
       if (!prevCtx) return;
-      renderShapePreview(prevCtx, start, { x: normX, y: normY }, width, height, scaledSize, selectedTool, selectedColor);
+      renderShapePreview(prevCtx, start, { x: normX, y: normY }, {
+        width,
+        height,
+        scaledSize,
+        tool: selectedTool,
+        color: selectedColor,
+      });
     }
   };
 
@@ -657,23 +674,31 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     a.remove();
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div
-      className={styles.whiteboardOverlay}
-      onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
-      role="presentation"
-    >
-      <div
-        className={styles.whiteboardModal}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
+    <div className={styles.whiteboardOverlay}>
+      <button
+        type="button"
+        className={styles.modalBackdrop}
+        onClick={onClose}
+        aria-label="Close whiteboard modal"
+        tabIndex={-1}
+      />
+      <dialog
+        open
         aria-modal="true"
         aria-label="Collaborative Whiteboard"
+        className={styles.whiteboardModal}
       >
         {/* Header Bar */}
         <header className={styles.whiteboardHeader}>
@@ -843,7 +868,7 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
   );
 };

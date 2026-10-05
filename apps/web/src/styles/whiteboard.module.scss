@@ -11,8 +11,22 @@
   animation: fadeIn 0.2s ease-out;
 }
 
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  border: none;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  z-index: 0;
+}
+
 .whiteboardModal {
   position: relative;
+  z-index: 1;
+  margin: 0;
+  color: inherit;
   width: 95vw;
   max-width: 1400px;
   height: 90vh;

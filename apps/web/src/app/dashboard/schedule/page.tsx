@@ -58,6 +58,15 @@ export default function SchedulePage() {
       });
   }, []);
 
+  useEffect(() => {
+    if (!showModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowModal(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showModal]);
+
   // Invitee management
   const handleAddInvitee = () => {
     const trimmed = inviteeInput.trim().toLowerCase();
@@ -332,21 +341,19 @@ export default function SchedulePage() {
 
         {/* Schedule Modal */}
         {showModal && (
-          <div
-            role="presentation"
-            className={styles.modalOverlay}
-            onClick={() => setShowModal(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setShowModal(false);
-            }}
-          >
-            <div
-              role="dialog"
+          <div className={styles.modalOverlay}>
+            <button
+              type="button"
+              className={styles.modalBackdrop}
+              onClick={() => setShowModal(false)}
+              aria-label="Close schedule modal"
+              tabIndex={-1}
+            />
+            <dialog
+              open
               aria-modal="true"
               aria-labelledby="schedule-modal-title"
               className={styles.modalContent}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
             >
               <div className={styles.modalHeader}>
                 <h3 id="schedule-modal-title">Schedule a Video Meeting</h3>
@@ -467,7 +474,7 @@ export default function SchedulePage() {
                   })()}
                 </button>
               </form>
-            </div>
+            </dialog>
           </div>
         )}
       </div>

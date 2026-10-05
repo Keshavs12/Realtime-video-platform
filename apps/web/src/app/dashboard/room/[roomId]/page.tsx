@@ -345,6 +345,15 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     }
   }, [roomFull, router]);
 
+  useEffect(() => {
+    if (!showRecordModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowRecordModal(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showRecordModal]);
+
   if (roomNotFound) {
     return (
       <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
@@ -1145,21 +1154,19 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
       {/* Post-Recording Completion Modal */}
       {showRecordModal && lastSavedRecording && (
-        <div
-          role="presentation"
-          className={styles.recordingModalOverlay}
-          onClick={() => setShowRecordModal(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setShowRecordModal(false);
-          }}
-        >
-          <div
-            role="dialog"
+        <div className={styles.recordingModalOverlay}>
+          <button
+            type="button"
+            className={styles.modalBackdrop}
+            onClick={() => setShowRecordModal(false)}
+            aria-label="Close modal overlay"
+            tabIndex={-1}
+          />
+          <dialog
+            open
             aria-modal="true"
             aria-labelledby="recording-saved-modal-title"
             className={styles.recordingModal}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
           >
             <div className={styles.recordingModalHeader}>
               <div className={styles.modalTitleBox}>
@@ -1236,7 +1243,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
                 Dismiss
               </button>
             </div>
-          </div>
+          </dialog>
         </div>
       )}
 

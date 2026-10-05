@@ -53,18 +53,11 @@ function RecordingCard({
 
   return (
     <div className={styles.recordingCard}>
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-label={`Play recording ${recording.roomCode}`}
         className={styles.thumbnailWrapper}
         onClick={() => onPlay(recording)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onPlay(recording);
-          }
-        }}
       >
         {videoUrl ? (
           <video
@@ -84,7 +77,7 @@ function RecordingCard({
         <div className={styles.hoverPlayOverlay}>
           <div className={styles.playIconCircle}>▶</div>
         </div>
-      </div>
+      </button>
 
       <div className={styles.cardBody}>
         <div className={styles.cardTitleRow}>
@@ -207,6 +200,15 @@ export default function MyVideosPage() {
       setActivePlayerRec(null);
     }
   };
+
+  useEffect(() => {
+    if (!activePlayerRec) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActivePlayerRec(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activePlayerRec]);
 
   // Calculate total recording stats
   const totalSizeBytes = (recordings || []).reduce((acc, r) => acc + r.sizeBytes, 0);
@@ -339,21 +341,19 @@ export default function MyVideosPage() {
 
       {/* Modal Video Player */}
       {activePlayerRec && playerVideoUrl && (
-        <div
-          role="presentation"
-          className={styles.playerModalOverlay}
-          onClick={() => setActivePlayerRec(null)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setActivePlayerRec(null);
-          }}
-        >
-          <div
-            role="dialog"
+        <div className={styles.playerModalOverlay}>
+          <button
+            type="button"
+            className={styles.modalBackdrop}
+            onClick={() => setActivePlayerRec(null)}
+            aria-label="Close video player modal"
+            tabIndex={-1}
+          />
+          <dialog
+            open
             aria-modal="true"
             aria-labelledby="player-modal-title"
             className={styles.playerModal}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
           >
             <div className={styles.playerModalHeader}>
               <div>
@@ -401,7 +401,7 @@ export default function MyVideosPage() {
                 🗑️ Delete Recording
               </button>
             </div>
-          </div>
+          </dialog>
         </div>
       )}
     </div>

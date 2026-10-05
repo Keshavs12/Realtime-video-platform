@@ -83,7 +83,8 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background-color: rgba(16, 185, 129, 0.15);
+  background-color: #0b101b;
+  background: rgba(16, 185, 129, 0.15);
   border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 3px 8px;
   border-radius: 6px;
@@ -108,7 +109,8 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: #0b101b;
+  background: rgba(255, 255, 255, 0.06);
   padding: 4px 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1302,7 +1304,22 @@
   padding: 1rem;
 }
 
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  border: none;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  z-index: 0;
+}
+
 .recordingModal {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: inherit;
   background: #0f172a;
   border: 1px solid rgba(59, 130, 246, 0.35);
   box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(59, 130, 246, 0.2);

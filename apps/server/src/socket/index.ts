@@ -238,7 +238,7 @@ export const initSocketServer = (server: HttpServer): Server => {
                 await Promise.all(
                     staleSockets.map(async (s) => {
                         console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
-                        await s.leave(roomId);
+                        s.leave(roomId);
                         socket.to(roomId).emit("user-left", {
                             socketId: s.id,
                             userId,
