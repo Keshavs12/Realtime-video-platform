@@ -35,7 +35,7 @@ const stripTrailingSlashes = (url: string): string => {
     return result;
 };
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
 
 export const resolveAppUrl = (clientOrigin?: string): string => {
     const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
