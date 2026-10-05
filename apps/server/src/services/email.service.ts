@@ -7,6 +7,8 @@ interface SendOtpOptions {
     otp: string;
 }
 
+const sanitizeLog = (val: string): string => val.replace(/[\r\n\t]/g, "");
+
 class EmailService {
     private transporter: Transporter | null = null;
     private lastErrorMessage: string | null = null;
@@ -22,9 +24,11 @@ class EmailService {
         let user = "";
         if (rawUser) {
             // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
-            const angleMatch = rawUser.match(/<([^>]+)>/);
-            const emailRegexMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-            user = (angleMatch ? angleMatch[1] : (emailRegexMatch ? emailRegexMatch[0] : rawUser))
+            const openAngle = rawUser.indexOf("<");
+            const closeAngle = rawUser.indexOf(">", openAngle);
+            const angleEmail = openAngle !== -1 && closeAngle > openAngle ? rawUser.slice(openAngle + 1, closeAngle).trim() : null;
+            const emailMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/);
+            user = (angleEmail || (emailMatch ? emailMatch[0] : rawUser))
                 .trim()
                 .replace(/^["']|["']$/g, "");
         }
@@ -35,7 +39,7 @@ class EmailService {
     }
 
     public isConfigured(): boolean {
-        if (Boolean(process.env.BREVO_API_KEY?.trim() || process.env.GMAIL_RELAY_URL?.trim() || process.env.RESEND_API_KEY?.trim())) {
+        if (process.env.BREVO_API_KEY?.trim() || process.env.GMAIL_RELAY_URL?.trim() || process.env.RESEND_API_KEY?.trim()) {
             return true;
         }
         const { user, pass } = this.getCleanCredentials();
@@ -210,17 +214,19 @@ class EmailService {
                     finalResponse = initialResponse;
                 }
 
+                const safeTo = sanitizeLog(to);
                 if (finalResponse.ok) {
-                    const respText = await finalResponse.text();
-                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${to}. Response: ${respText}`);
+                    const respText = sanitizeLog(await finalResponse.text());
+                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${safeTo}. Response: ${respText}`);
                     return true;
                 } else {
                     const errBody = await finalResponse.text();
-                    logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${to}`);
+                    logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${safeTo}`);
                     this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
                 }
             } catch (err: any) {
-                logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${to}`);
+                const safeTo = sanitizeLog(to);
+                logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${safeTo}`);
                 this.lastErrorMessage = `Gmail Relay error: ${err.message}`;
             }
         }
@@ -411,28 +417,30 @@ class EmailService {
             let sent = 0;
             let failed = 0;
             const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || user || "support@supercall.com";
-            for (const recipient of to) {
-                try {
-                    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-                        method: "POST",
-                        headers: {
-                            "api-key": brevoApiKey,
-                            "Content-Type": "application/json",
-                            "Accept": "application/json",
-                        },
-                        body: JSON.stringify({
-                            sender: { name: "SuperCall", email: brevoSenderEmail },
-                            to: [{ email: recipient }],
-                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
-                            htmlContent: html,
-                        }),
-                    });
-                    if (response.ok) sent++;
-                    else failed++;
-                } catch {
-                    failed++;
-                }
-            }
+            await Promise.all(
+                to.map(async (recipient) => {
+                    try {
+                        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                            method: "POST",
+                            headers: {
+                                "api-key": brevoApiKey,
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                            },
+                            body: JSON.stringify({
+                                sender: { name: "SuperCall", email: brevoSenderEmail },
+                                to: [{ email: recipient }],
+                                subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                                htmlContent: html,
+                            }),
+                        });
+                        if (response.ok) sent++;
+                        else failed++;
+                    } catch {
+                        failed++;
+                    }
+                })
+            );
             return { sent, failed };
         }
 
@@ -440,45 +448,47 @@ class EmailService {
         if (gmailRelayUrl) {
             let sent = 0;
             let failed = 0;
-            for (const recipient of to) {
-                try {
-                    const payload = JSON.stringify({
-                        to: recipient,
-                        subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
-                        text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
-                        html,
-                    });
+            await Promise.all(
+                to.map(async (recipient) => {
+                    try {
+                        const payload = JSON.stringify({
+                            to: recipient,
+                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                            text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
+                            html,
+                        });
 
-                    const initialResponse = await fetch(gmailRelayUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: payload,
-                        redirect: "manual",
-                    });
+                        const initialResponse = await fetch(gmailRelayUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: payload,
+                            redirect: "manual",
+                        });
 
-                    let finalResponse: Response;
-                    if (initialResponse.status >= 300 && initialResponse.status < 400) {
-                        const redirectUrl = initialResponse.headers.get("location");
-                        if (redirectUrl) {
-                            finalResponse = await fetch(redirectUrl, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: payload,
-                                redirect: "follow",
-                            });
+                        let finalResponse: Response;
+                        if (initialResponse.status >= 300 && initialResponse.status < 400) {
+                            const redirectUrl = initialResponse.headers.get("location");
+                            if (redirectUrl) {
+                                finalResponse = await fetch(redirectUrl, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: payload,
+                                    redirect: "follow",
+                                });
+                            } else {
+                                finalResponse = initialResponse;
+                            }
                         } else {
                             finalResponse = initialResponse;
                         }
-                    } else {
-                        finalResponse = initialResponse;
-                    }
 
-                    if (finalResponse.ok) sent++;
-                    else failed++;
-                } catch {
-                    failed++;
-                }
-            }
+                        if (finalResponse.ok) sent++;
+                        else failed++;
+                    } catch {
+                        failed++;
+                    }
+                })
+            );
             return { sent, failed };
         }
 
@@ -487,34 +497,37 @@ class EmailService {
             let sent = 0;
             let failed = 0;
             const resendFrom = process.env.RESEND_FROM?.trim() || "SuperCall <onboarding@resend.dev>";
-            for (const recipient of to) {
-                try {
-                    const response = await fetch("https://api.resend.com/emails", {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${resendApiKey}`,
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                            from: resendFrom,
-                            to: [recipient],
-                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
-                            html,
-                        }),
-                    });
-                    if (response.ok) sent++;
-                    else failed++;
-                } catch {
-                    failed++;
-                }
-            }
+            await Promise.all(
+                to.map(async (recipient) => {
+                    try {
+                        const response = await fetch("https://api.resend.com/emails", {
+                            method: "POST",
+                            headers: {
+                                Authorization: `Bearer ${resendApiKey}`,
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                                from: resendFrom,
+                                to: [recipient],
+                                subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                                html,
+                            }),
+                        });
+                        if (response.ok) sent++;
+                        else failed++;
+                    } catch {
+                        failed++;
+                    }
+                })
+            );
             return { sent, failed };
         }
 
         if (!transporter) {
+            const safeRecipients = to.map(sanitizeLog).join(", ");
             logger.warn(
                 `\n=======================================================\n` +
-                `📧 [DEV SIMULATION] Meeting Invite for ${to.join(", ")}\n` +
+                `📧 [DEV SIMULATION] Meeting Invite for ${safeRecipients}\n` +
                 `Title: ${meetingTitle} | Date: ${formattedDate}\n` +
                 `Join Link: ${meetingUrl}\n` +
                 `=======================================================\n`
@@ -525,22 +538,25 @@ class EmailService {
         let sent = 0;
         let failed = 0;
 
-        for (const recipient of to) {
-            try {
-                await transporter.sendMail({
-                    from: sender,
-                    to: recipient,
-                    subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
-                    text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
-                    html,
-                });
-                logger.info(`[EmailService] Meeting invite sent to ${recipient} for room ${roomCode}`);
-                sent++;
-            } catch (err: any) {
-                logger.error({ err: err.message }, `[EmailService] Failed to send meeting invite to ${recipient}`);
-                failed++;
-            }
-        }
+        await Promise.all(
+            to.map(async (recipient) => {
+                const safeRecipient = sanitizeLog(recipient);
+                try {
+                    await transporter.sendMail({
+                        from: sender,
+                        to: recipient,
+                        subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                        text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
+                        html,
+                    });
+                    logger.info(`[EmailService] Meeting invite sent to ${safeRecipient} for room ${roomCode}`);
+                    sent++;
+                } catch (err: any) {
+                    logger.error({ err: err.message }, `[EmailService] Failed to send meeting invite to ${safeRecipient}`);
+                    failed++;
+                }
+            })
+        );
 
         return { sent, failed };
     }

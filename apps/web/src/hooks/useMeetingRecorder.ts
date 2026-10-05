@@ -197,7 +197,7 @@ export function useMeetingRecorder({
    * Stops the active recording.
    */
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+    if (mediaRecorderRef.current?.state && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
   }, []);
@@ -206,7 +206,7 @@ export function useMeetingRecorder({
    * Pauses the active recording.
    */
   const pauseRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+    if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.pause();
       clearTimer();
       setIsPaused(true);
@@ -217,7 +217,7 @@ export function useMeetingRecorder({
    * Resumes a paused recording.
    */
   const resumeRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+    if (mediaRecorderRef.current?.state === "paused") {
       mediaRecorderRef.current.resume();
       setIsPaused(false);
       timerIntervalRef.current = setInterval(() => {
@@ -240,7 +240,7 @@ export function useMeetingRecorder({
     a.download = `SuperCall-${recording.roomCode}-${new Date(recording.recordedAt).toISOString().slice(0, 10)}.webm`;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }, []);
 

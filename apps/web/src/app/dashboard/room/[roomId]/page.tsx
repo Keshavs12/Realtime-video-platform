@@ -56,9 +56,9 @@ const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFeedProps
       }
     };
 
-    playVideo();
+    void playVideo();
 
-    const handleTrackEvent = () => playVideo();
+    const handleTrackEvent = () => void playVideo();
     stream.getTracks().forEach((track) => {
       track.addEventListener("unmute", handleTrackEvent);
     });
@@ -118,13 +118,40 @@ const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFeedProps
   );
 };
 
+function getFeedWrapperClass(isSpotlight: boolean, isFilmstrip: boolean, isSpeaking: boolean): string {
+  let base = styles.videoWrapper;
+  if (isSpotlight) {
+    base = styles.spotlightMain;
+  } else if (isFilmstrip) {
+    base = styles.filmstripItem;
+  }
+  return isSpeaking ? `${base} ${styles.activeSpeaker}` : base;
+}
+
+function getGridClass(count: number): string {
+  if (count === 1) return styles.count1;
+  if (count === 2) return styles.count2;
+  if (count <= 4) return styles.count3;
+  return styles.countMany;
+}
+
+function getPeerDisplayName(
+  peer: { name?: string; userId?: string; socketId: string },
+  presenceList: { socketId: string; userId?: string; name?: string }[]
+): string {
+  const match = presenceList.find(
+    (p) => p.socketId === peer.socketId || (peer.userId && p.userId === peer.userId)
+  );
+  return peer.name || match?.name || (peer.userId ? `Peer (${peer.userId.slice(0, 4)})` : "Participant");
+}
+
 export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId: string }> }>) {
   const { roomId } = use(params);
   const router = useRouter();
   const { user } = useAuth();
   const [guestName, setGuestName] = useState("");
   const isGuest = !user;
-  const localDisplayName = user?.name || (guestName && guestName.trim()) || "You";
+  const localDisplayName = user?.name || guestName?.trim() || "You";
   
   const {
     socket,
@@ -204,7 +231,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
   const handleCopyMeetingLink = () => {
     if (typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(window.location.href);
+      void navigator.clipboard.writeText(window.location.href);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     }
@@ -232,7 +259,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     let isMounted = true;
     if (lastSavedRecording?.blob) {
       const url = URL.createObjectURL(lastSavedRecording.blob);
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setRecordVideoUrl(url);
         }
@@ -242,7 +269,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         URL.revokeObjectURL(url);
       };
     } else {
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setRecordVideoUrl(null);
         }
@@ -293,9 +320,9 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
   useEffect(() => {
     if (messages.length === 0) return;
-    const lastMsg = messages[messages.length - 1];
+    const lastMsg = messages.at(-1);
 
-    if (isChatAtBottomRef.current || lastMsg.isLocal) {
+    if (isChatAtBottomRef.current || lastMsg?.isLocal) {
       chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight, behavior: "smooth" });
       setUnreadCount(0);
     } else {
@@ -391,7 +418,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         participantCount={presenceList.length}
         onJoinMeeting={() => {
           setHasJoinedLobby(true);
-          const finalName = (guestName && guestName.trim()) || user?.name || "Guest";
+          const finalName = guestName?.trim() || user?.name || "Guest";
           if (socket) {
             socket.emit("update-name", { name: finalName });
             socket.emit("join-room", { roomId, name: finalName });
@@ -403,22 +430,11 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   }
 
   const totalParticipants = peers.length + 1;
-  const gridClass =
-    totalParticipants === 1
-      ? styles.count1
-      : totalParticipants === 2
-      ? styles.count2
-      : totalParticipants <= 4
-      ? styles.count3
-      : styles.countMany;
+  const gridClass = getGridClass(totalParticipants);
 
   const renderLocalFeed = (isSpotlight = false, isFilmstrip = false) => {
     const isSpeaking = Boolean(speakingMap["local"]);
-    const wrapperClass = isSpotlight
-      ? `${styles.spotlightMain} ${isSpeaking ? styles.activeSpeaker : ""}`
-      : isFilmstrip
-      ? `${styles.filmstripItem} ${isSpeaking ? styles.activeSpeaker : ""}`
-      : `${styles.videoWrapper} ${isSpeaking ? styles.activeSpeaker : ""}`;
+    const wrapperClass = getFeedWrapperClass(isSpotlight, isFilmstrip, isSpeaking);
 
     return (
       <div className={wrapperClass} key="local-feed">
@@ -459,24 +475,15 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   };
 
   const renderPeerFeed = (peer: (typeof peers)[0], isSpotlight = false, isFilmstrip = false) => {
-    const peerName =
-      peer.name ||
-      presenceList.find(
-        (p) => p.socketId === peer.socketId || (peer.userId && p.userId === peer.userId)
-      )?.name;
-    const displayName =
-      peerName || (peer.userId ? `Peer (${peer.userId.slice(0, 4)})` : "Participant");
+    const displayName = getPeerDisplayName(peer, presenceList);
     const isSpeaking = Boolean(speakingMap[peer.socketId]);
     const stats = networkQuality[peer.socketId];
-    const hasVideoTrack =
-      peer.stream &&
-      peer.stream.getVideoTracks().some((t) => t.enabled && t.readyState === "live");
-
-    const wrapperClass = isSpotlight
-      ? `${styles.spotlightMain} ${isSpeaking ? styles.activeSpeaker : ""}`
-      : isFilmstrip
-      ? `${styles.filmstripItem} ${isSpeaking ? styles.activeSpeaker : ""}`
-      : `${styles.videoWrapper} ${isSpeaking ? styles.activeSpeaker : ""}`;
+    const hasVideoTrack = Boolean(
+      peer.stream?.getVideoTracks().some((t) => t.enabled && t.readyState === "live")
+    );
+    const wrapperClass = getFeedWrapperClass(isSpotlight, isFilmstrip, isSpeaking);
+    const isHandRaised = raisedHands.some((h) => h.socketId === peer.socketId);
+    const isPresenting = screenSharingPeers.has(peer.socketId);
 
     return (
       <div className={wrapperClass} key={peer.socketId}>
@@ -492,12 +499,8 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         )}
 
         {peer.isHost && <span className={styles.hostBadge}>👑 Host</span>}
-        {raisedHands.some((h) => h.socketId === peer.socketId) && (
-          <span className={styles.handBadge}>✋ Hand Raised</span>
-        )}
-        {screenSharingPeers.has(peer.socketId) && (
-          <span className={styles.screenShareBadge}>🖥️ Presenting</span>
-        )}
+        {isHandRaised && <span className={styles.handBadge}>✋ Hand Raised</span>}
+        {isPresenting && <span className={styles.screenShareBadge}>🖥️ Presenting</span>}
 
         {stats?.isReconnecting && (
           <div className={styles.reconnectingBadge}>
@@ -692,33 +695,27 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
               {/* Filmstrip */}
               <div className={styles.filmstrip}>
                 {activeSpotlightId !== "local" && (
-                  <div
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") setSpotlightId("local");
-                    }}
+                  <button
+                    type="button"
+                    className={styles.filmstripButton}
                     onClick={() => setSpotlightId("local")}
                     title="Switch Spotlight to You"
                   >
                     {renderLocalFeed(false, true)}
-                  </div>
+                  </button>
                 )}
                 {peers
                   .filter((p) => p.socketId !== activeSpotlightId)
                   .map((p) => (
-                    <div
+                    <button
+                      type="button"
                       key={p.socketId}
-                      tabIndex={0}
-                      role="button"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") setSpotlightId(p.socketId);
-                      }}
+                      className={styles.filmstripButton}
                       onClick={() => setSpotlightId(p.socketId)}
                       title="Switch Spotlight"
                     >
                       {renderPeerFeed(p, false, true)}
-                    </div>
+                    </button>
                   ))}
               </div>
             </div>
@@ -1148,13 +1145,27 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
       {/* Post-Recording Completion Modal */}
       {showRecordModal && lastSavedRecording && (
-        <div className={styles.recordingModalOverlay} onClick={() => setShowRecordModal(false)}>
-          <div className={styles.recordingModal} onClick={(e) => e.stopPropagation()}>
+        <div
+          role="presentation"
+          className={styles.recordingModalOverlay}
+          onClick={() => setShowRecordModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowRecordModal(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recording-saved-modal-title"
+            className={styles.recordingModal}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className={styles.recordingModalHeader}>
               <div className={styles.modalTitleBox}>
                 <span className={styles.modalTitleIcon}>🎉</span>
                 <div>
-                  <h3>Meeting Recording Saved!</h3>
+                  <h3 id="recording-saved-modal-title">Meeting Recording Saved!</h3>
                   <p>Saved locally in your browser studio (Zero cloud cost, instant access)</p>
                 </div>
               </div>
@@ -1235,7 +1246,6 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         onClose={() => setShowWhiteboard(false)}
         socket={socket}
         roomId={roomId}
-        isHost={isHost}
       />
     </div>
   );

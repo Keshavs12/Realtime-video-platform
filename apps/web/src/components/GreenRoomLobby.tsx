@@ -47,7 +47,7 @@ export function GreenRoomLobby({
   participantCount,
   onJoinMeeting,
   onCancel,
-}: GreenRoomLobbyProps) {
+}: Readonly<GreenRoomLobbyProps>) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [copied, setCopied] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -71,7 +71,7 @@ export function GreenRoomLobby({
   }, [localStream, isVideoMuted]);
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(roomId);
+    void navigator.clipboard.writeText(roomId);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -92,6 +92,13 @@ export function GreenRoomLobby({
   };
 
   const isMediaUnavailable = videoDevices.length === 0 && audioDevices.length === 0;
+
+  let audioStatusText = "Ready";
+  if (isAudioMuted) {
+    audioStatusText = "Muted";
+  } else if (micVolume > 6) {
+    audioStatusText = "Speaking";
+  }
 
   return (
     <div className={styles.lobbyContainer}>
@@ -149,11 +156,7 @@ export function GreenRoomLobby({
                   isAudioMuted ? styles.muted : styles.active
                 }`}
               >
-                {isAudioMuted
-                  ? "Muted"
-                  : micVolume > 6
-                  ? "Speaking"
-                  : "Ready"}
+                {audioStatusText}
               </span>
             </div>
             <div className={styles.vuMeterTrack}>
@@ -237,7 +240,6 @@ export function GreenRoomLobby({
                     handleJoinClick();
                   }
                 }}
-                autoFocus
               />
               {nameError && (
                 <span style={{ color: "#ef4444", fontSize: "0.8rem", marginTop: "2px" }}>

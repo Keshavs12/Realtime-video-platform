@@ -9,5 +9,5 @@ type AsyncRouteHandler = (
 export const asyncHandler =
     (fn: AsyncRouteHandler) =>
     (req: Request, res: Response, next: NextFunction) => {
-        fn(req, res, next).catch(next);
+        void fn(req, res, next).catch(next);
     };

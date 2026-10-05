@@ -1,6 +1,14 @@
 import { asyncHandler } from "../../utils/asyncHandler";
 import * as scheduleService from "./schedule.service";
 
+const stripTrailingSlashes = (url: string): string => {
+    let result = url;
+    while (result.endsWith("/")) {
+        result = result.slice(0, -1);
+    }
+    return result;
+};
+
 export const createMeeting = asyncHandler(async (req, res) => {
     const rawOrigin = req.body?.frontendUrl || req.get("origin") || req.get("referer");
     let clientOrigin: string | undefined;
@@ -8,7 +16,7 @@ export const createMeeting = asyncHandler(async (req, res) => {
         try {
             clientOrigin = new URL(rawOrigin).origin;
         } catch {
-            clientOrigin = String(rawOrigin).replace(/\/+$/, "");
+            clientOrigin = stripTrailingSlashes(String(rawOrigin));
         }
     }
 
@@ -58,7 +66,7 @@ export const sendReminders = asyncHandler(async (req, res) => {
         try {
             clientOrigin = new URL(rawOrigin).origin;
         } catch {
-            clientOrigin = String(rawOrigin).replace(/\/+$/, "");
+            clientOrigin = stripTrailingSlashes(String(rawOrigin));
         }
     }
 

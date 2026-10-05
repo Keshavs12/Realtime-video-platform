@@ -15,7 +15,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetchDashboardData();
+    void fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {

@@ -1,7 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { emailService } from "../../services/email.service";
-import os from "os";
+import os from "node:os";
 import crypto from "node:crypto";
 
 export const getLanIpAddress = (): string | null => {
@@ -27,17 +27,27 @@ export const getLanIpAddress = (): string | null => {
     return null;
 };
 
+const stripTrailingSlashes = (url: string): string => {
+    let result = url;
+    while (result.endsWith("/")) {
+        result = result.slice(0, -1);
+    }
+    return result;
+};
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
 export const resolveAppUrl = (clientOrigin?: string): string => {
     const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
 
     // 1. If an explicit clientOrigin was sent that is NOT localhost (e.g. domain, tunnel, public IP)
     if (clientOrigin && !clientOrigin.includes("localhost") && !clientOrigin.includes("127.0.0.1")) {
-        return clientOrigin.replace(/\/+$/, "");
+        return stripTrailingSlashes(clientOrigin);
     }
 
     // 2. If FRONTEND_URL or APP_URL is configured in server .env
     if (envUrl) {
-        return envUrl.replace(/\/+$/, "");
+        return stripTrailingSlashes(envUrl);
     }
 
     // 3. If clientOrigin was localhost or missing, resolve to host machine's LAN IP so recipients can access
@@ -46,7 +56,7 @@ export const resolveAppUrl = (clientOrigin?: string): string => {
         return `http://${lanIp}:3000`;
     }
 
-    return clientOrigin ? clientOrigin.replace(/\/+$/, "") : "http://localhost:3000";
+    return clientOrigin ? stripTrailingSlashes(clientOrigin) : "http://localhost:3000";
 };
 
 export interface CreateScheduledMeetingInput {
@@ -66,12 +76,12 @@ export const createScheduledMeeting = async (
 ) => {
     const { title, description, scheduledAt, durationMinutes = 30, invitees = [] } = input;
 
-    if (!title || !title.trim()) {
+    if (!title?.trim()) {
         throw new AppError("Meeting title is required.", 400);
     }
 
     const scheduledDate = new Date(scheduledAt);
-    if (isNaN(scheduledDate.getTime())) {
+    if (Number.isNaN(scheduledDate.getTime())) {
         throw new AppError("Invalid scheduled date and time.", 400);
     }
 
@@ -81,12 +91,12 @@ export const createScheduledMeeting = async (
     // Parse and sanitize invitee emails
     let inviteeList: string[] = [];
     if (Array.isArray(invitees)) {
-        inviteeList = invitees.map((e) => e.trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+        inviteeList = invitees.map((e) => e.trim().toLowerCase()).filter((e) => EMAIL_REGEX.test(e));
     } else if (typeof invitees === "string") {
         inviteeList = invitees
             .split(",")
             .map((e) => e.trim().toLowerCase())
-            .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+            .filter((e) => EMAIL_REGEX.test(e));
     }
     inviteeList = Array.from(new Set(inviteeList));
 

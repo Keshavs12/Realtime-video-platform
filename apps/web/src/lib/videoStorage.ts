@@ -36,7 +36,7 @@ function openDB(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB"));
   });
 }
 
@@ -62,7 +62,7 @@ export async function saveRecording(
     const request = store.add(item);
 
     request.onsuccess = () => resolve(item);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error || new Error("Failed to save recording in IndexedDB"));
   });
 }
 
@@ -86,7 +86,7 @@ export async function getAllRecordings(): Promise<SavedRecording[]> {
       );
       resolve(items);
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error || new Error("Failed to get recordings from IndexedDB"));
   });
 }
 
@@ -104,7 +104,7 @@ export async function getRecordingById(
     const request = store.get(id);
 
     request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error || new Error("Failed to get recording by id from IndexedDB"));
   });
 }
 
@@ -120,7 +120,7 @@ export async function deleteRecording(id: string): Promise<void> {
     const request = store.delete(id);
 
     request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error || new Error("Failed to delete recording from IndexedDB"));
   });
 }
 
@@ -132,7 +132,7 @@ export function formatBytes(bytes: number): string {
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 /**
