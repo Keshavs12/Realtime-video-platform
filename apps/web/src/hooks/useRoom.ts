@@ -177,7 +177,7 @@ const updatePeerDetails = (
           ...p,
           userId: ansUserId || p.userId,
           name: ansName || p.name,
-          isHost: isHost !== undefined ? isHost : p.isHost,
+          isHost: isHost ?? p.isHost,
         }
       : p
   );
@@ -313,15 +313,17 @@ export const useRoom = (
     const peerConnection = peerConnectionsRef.current[socketId];
     const queue = iceCandidatesQueueRef.current[socketId];
     if (peerConnection && queue?.length > 0) {
-      for (const cand of queue) {
-        if (cand?.candidate) {
-          try {
-            await peerConnection.addIceCandidate(cand);
-          } catch (e) {
-            console.error("Error adding queued ICE candidate:", e);
+      await Promise.all(
+        queue.map(async (cand) => {
+          if (cand?.candidate) {
+            try {
+              await peerConnection.addIceCandidate(cand);
+            } catch (e) {
+              console.error("Error adding queued ICE candidate:", e);
+            }
           }
-        }
-      }
+        })
+      );
       delete iceCandidatesQueueRef.current[socketId];
     }
   };
@@ -409,9 +411,11 @@ export const useRoom = (
         // Record which devices are active, then list all available ones
         setSelectedVideoDeviceId(stream.getVideoTracks()[0]?.getSettings().deviceId || "");
         setSelectedAudioDeviceId(stream.getAudioTracks()[0]?.getSettings().deviceId || "");
-        refreshDeviceList();
+        void refreshDeviceList();
         if (typeof navigator !== "undefined" && navigator.mediaDevices?.addEventListener) {
-          navigator.mediaDevices.addEventListener("devicechange", refreshDeviceList);
+          navigator.mediaDevices.addEventListener("devicechange", () => {
+            void refreshDeviceList();
+          });
         }
 
         // 2. Connect to Socket Server
@@ -562,9 +566,11 @@ export const useRoom = (
           setPresenceList(filteredUsers);
 
           // The newly joined user initiates the peer connection with all existing peers
-          for (const existingUser of filteredUsers) {
-            await initiateCall(existingUser.socketId, existingUser.userId, existingUser.name, stream);
-          }
+          await Promise.all(
+            filteredUsers.map((existingUser) =>
+              initiateCall(existingUser.socketId, existingUser.userId, existingUser.name, stream)
+            )
+          );
         });
 
         socket.on("user-joined", (joinedUser: PresenceUser) => {
@@ -804,8 +810,8 @@ export const useRoom = (
           }
           item.analyser.getByteFrequencyData(buffer);
           let sum = 0;
-          for (let i = 0; i < buffer.length; i++) {
-            sum += buffer[i];
+          for (const val of buffer) {
+            sum += val;
           }
           const avg = sum / buffer.length;
           // Voice threshold
@@ -836,52 +842,54 @@ export const useRoom = (
       const pcs = peerConnectionsRef.current;
       const statsMap: { [socketId: string]: NetworkQualityStats } = {};
 
-      for (const [socketId, pc] of Object.entries(pcs)) {
-        if (!pc) continue;
-        try {
-          const stats = await pc.getStats();
-          let rttMs = 0;
-          let packetsLost = 0;
-          let packetsReceived = 0;
+      await Promise.all(
+        Object.entries(pcs).map(async ([socketId, pc]) => {
+          if (!pc) return;
+          try {
+            const stats = await pc.getStats();
+            let rttMs = 0;
+            let packetsLost = 0;
+            let packetsReceived = 0;
 
-          stats.forEach((report) => {
-            if (report.type === "candidate-pair" && (report.nominated || report.state === "succeeded")) {
-              if (typeof report.currentRoundTripTime === "number") {
-                rttMs = Math.round(report.currentRoundTripTime * 1000);
+            stats.forEach((report) => {
+              if (report.type === "candidate-pair" && (report.nominated || report.state === "succeeded")) {
+                if (typeof report.currentRoundTripTime === "number") {
+                  rttMs = Math.round(report.currentRoundTripTime * 1000);
+                }
               }
-            }
-            if (report.type === "inbound-rtp") {
-              if (typeof report.packetsLost === "number") packetsLost += report.packetsLost;
-              if (typeof report.packetsReceived === "number") packetsReceived += report.packetsReceived;
-            }
-          });
+              if (report.type === "inbound-rtp") {
+                if (typeof report.packetsLost === "number") packetsLost += report.packetsLost;
+                if (typeof report.packetsReceived === "number") packetsReceived += report.packetsReceived;
+              }
+            });
 
-          const total = packetsLost + packetsReceived;
-          const packetLossPercent = total > 0 ? Math.round((packetsLost / total) * 100) : 0;
-          const connState = pc.connectionState || pc.iceConnectionState || "connected";
-          const isReconnecting =
-            connState === "connecting" ||
-            pc.iceConnectionState === "checking" ||
-            pc.iceConnectionState === "disconnected";
+            const total = packetsLost + packetsReceived;
+            const packetLossPercent = total > 0 ? Math.round((packetsLost / total) * 100) : 0;
+            const connState = pc.connectionState || pc.iceConnectionState || "connected";
+            const isReconnecting =
+              connState === "connecting" ||
+              pc.iceConnectionState === "checking" ||
+              pc.iceConnectionState === "disconnected";
 
-          let quality: "good" | "fair" | "poor" = "good";
-          if (rttMs > 300 || packetLossPercent > 5) {
-            quality = "poor";
-          } else if (rttMs > 150 || packetLossPercent > 2) {
-            quality = "fair";
+            let quality: "good" | "fair" | "poor" = "good";
+            if (rttMs > 300 || packetLossPercent > 5) {
+              quality = "poor";
+            } else if (rttMs > 150 || packetLossPercent > 2) {
+              quality = "fair";
+            }
+
+            statsMap[socketId] = {
+              quality,
+              rttMs,
+              packetLossPercent,
+              connectionState: connState,
+              isReconnecting,
+            };
+          } catch {
+            // ignore closed connection
           }
-
-          statsMap[socketId] = {
-            quality,
-            rttMs,
-            packetLossPercent,
-            connectionState: connState,
-            isReconnecting,
-          };
-        } catch {
-          // ignore closed connection
-        }
-      }
+        })
+      );
 
       setNetworkQuality(statsMap);
     }, 2500);
@@ -1147,7 +1155,7 @@ export const useRoom = (
       const sender = peerConnection
         .getSenders()
         .find((s) => s.track?.kind === newTrack.kind);
-      sender?.replaceTrack(newTrack);
+      void sender?.replaceTrack(newTrack);
     });
 
     if (kind === "video") {
@@ -1185,7 +1193,7 @@ export const useRoom = (
 
       Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
         const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
-        sender?.replaceTrack(screenTrack);
+        void sender?.replaceTrack(screenTrack);
       });
 
       // Broadcast presenting state to all peers in the room
@@ -1215,7 +1223,7 @@ export const useRoom = (
       localStreamRef.current.addTrack(cameraTrack);
       Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
         const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
-        sender?.replaceTrack(cameraTrack);
+        void sender?.replaceTrack(cameraTrack);
       });
     }
     cameraTrackRef.current = null;

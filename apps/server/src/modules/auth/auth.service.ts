@@ -165,7 +165,7 @@ export const refreshToken = async (token: string) => {
         },
     });
 
-    if (!user || !user.refreshToken) {
+    if (!user?.refreshToken) {
         throw new AppError("Invalid refresh token.", 401);
     }
 

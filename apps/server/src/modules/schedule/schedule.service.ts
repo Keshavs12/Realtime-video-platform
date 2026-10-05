@@ -1,7 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../utils/AppError";
 import { emailService } from "../../services/email.service";
-import os from "os";
+import os from "node:os";
 import crypto from "node:crypto";
 
 export const getLanIpAddress = (): string | null => {
@@ -76,7 +76,7 @@ export const createScheduledMeeting = async (
 ) => {
     const { title, description, scheduledAt, durationMinutes = 30, invitees = [] } = input;
 
-    if (!title || !title.trim()) {
+    if (!title?.trim()) {
         throw new AppError("Meeting title is required.", 400);
     }
 

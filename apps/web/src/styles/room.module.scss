@@ -452,6 +452,15 @@
   }
 }
 
+.filmstripButton {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: block;
+  text-align: left;
+}
+
 .filmstripItem {
   width: 190px;
   min-width: 190px;

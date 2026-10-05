@@ -193,7 +193,7 @@ export default function SignupPage() {
 
   const handleManualVerifySubmit = (e: React.SyntheticEvent) => {
     e.preventDefault();
-    triggerVerification(otp.join(""));
+    void triggerVerification(otp.join(""));
   };
 
   return (
@@ -356,7 +356,7 @@ export default function SignupPage() {
               <div className={styles.otpGrid}>
                 {otp.map((digit, idx) => (
                   <input
-                    key={idx}
+                    key={`otp-slot-${idx}`}
                     ref={(el) => {
                       inputRefs.current[idx] = el;
                     }}
@@ -377,7 +377,7 @@ export default function SignupPage() {
               <button
                 type="submit"
                 className={styles.submitBtn}
-                disabled={verifying || otp.some((d) => d === "")}
+                disabled={verifying || otp.includes("")}
               >
                 {verifying ? "Verifying..." : "Verify & Continue →"}
               </button>

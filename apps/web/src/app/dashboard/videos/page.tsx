@@ -189,7 +189,7 @@ export default function MyVideosPage() {
       .slice(0, 10)}.webm`;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
