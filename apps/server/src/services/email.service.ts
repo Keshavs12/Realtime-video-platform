@@ -170,26 +170,52 @@ class EmailService {
         }
 
         // 2. Gmail HTTPS Relay (Port 443 HTTPS - Sends from personal Gmail via Google Apps Script Webhook)
+        // Google Apps Script returns a 302 redirect on POST. When `redirect: "follow"` is used,
+        // the fetch API converts the POST to a GET (per HTTP spec), dropping the request body.
+        // Fix: manually follow the redirect by capturing the Location header, then re-POST to it.
         const gmailRelayUrl = process.env.GMAIL_RELAY_URL?.trim();
         if (gmailRelayUrl) {
             try {
-                const response = await fetch(gmailRelayUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        to,
-                        subject: `${otp} is your SuperCall verification code`,
-                        text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
-                        html,
-                    }),
-                    redirect: "follow",
+                const payload = JSON.stringify({
+                    to,
+                    subject: `${otp} is your SuperCall verification code`,
+                    text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                    html,
                 });
 
-                if (response.ok) {
-                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${to}`);
+                // Step 1: POST without following redirect to capture the 302 Location header
+                const initialResponse = await fetch(gmailRelayUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: payload,
+                    redirect: "manual",
+                });
+
+                let finalResponse: Response;
+
+                if (initialResponse.status >= 300 && initialResponse.status < 400) {
+                    // Got a redirect — re-POST the body to the redirect URL
+                    const redirectUrl = initialResponse.headers.get("location");
+                    if (!redirectUrl) {
+                        throw new Error("Gmail Relay returned redirect but no Location header");
+                    }
+                    logger.info(`[EmailService] Gmail Relay redirected (${initialResponse.status}), re-POSTing to redirect URL`);
+                    finalResponse = await fetch(redirectUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: payload,
+                        redirect: "follow",
+                    });
+                } else {
+                    finalResponse = initialResponse;
+                }
+
+                if (finalResponse.ok) {
+                    const respText = await finalResponse.text();
+                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${to}. Response: ${respText}`);
                     return true;
                 } else {
-                    const errBody = await response.text();
+                    const errBody = await finalResponse.text();
                     logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${to}`);
                     this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
                 }
@@ -416,18 +442,38 @@ class EmailService {
             let failed = 0;
             for (const recipient of to) {
                 try {
-                    const response = await fetch(gmailRelayUrl, {
+                    const payload = JSON.stringify({
+                        to: recipient,
+                        subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
+                        text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
+                        html,
+                    });
+
+                    const initialResponse = await fetch(gmailRelayUrl, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            to: recipient,
-                            subject: `Invitation: ${meetingTitle} - ${formattedDate}`,
-                            text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
-                            html,
-                        }),
-                        redirect: "follow",
+                        body: payload,
+                        redirect: "manual",
                     });
-                    if (response.ok) sent++;
+
+                    let finalResponse: Response;
+                    if (initialResponse.status >= 300 && initialResponse.status < 400) {
+                        const redirectUrl = initialResponse.headers.get("location");
+                        if (redirectUrl) {
+                            finalResponse = await fetch(redirectUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: payload,
+                                redirect: "follow",
+                            });
+                        } else {
+                            finalResponse = initialResponse;
+                        }
+                    } else {
+                        finalResponse = initialResponse;
+                    }
+
+                    if (finalResponse.ok) sent++;
                     else failed++;
                 } catch {
                     failed++;
