@@ -71,7 +71,7 @@ export function useMeetingRecorder({
       // 2. Mix audio tracks: Combine Display Audio + Local Microphone Audio
       let finalAudioTrack: MediaStreamTrack | null = null;
       const displayAudioTracks = displayStream.getAudioTracks();
-      const localAudioTracks = localStream ? localStream.getAudioTracks() : [];
+      const localAudioTracks = localStream?.getAudioTracks() ?? [];
 
       if (displayAudioTracks.length > 0 || localAudioTracks.length > 0) {
         const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -197,8 +197,9 @@ export function useMeetingRecorder({
    * Stops the active recording.
    */
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current?.state && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
+    const state = mediaRecorderRef.current?.state;
+    if (state && state !== "inactive") {
+      mediaRecorderRef.current?.stop();
     }
   }, []);
 

@@ -66,8 +66,14 @@ const gracefulShutdown = async (signal: string) => {
 };
 
 process.on("SIGTERM", () => {
-    void gracefulShutdown("SIGTERM");
+    void gracefulShutdown("SIGTERM").catch((err) => {
+        logger.error({ err }, "[Shutdown] Error in SIGTERM handler");
+        process.exit(1);
+    });
 });
 process.on("SIGINT", () => {
-    void gracefulShutdown("SIGINT");
+    void gracefulShutdown("SIGINT").catch((err) => {
+        logger.error({ err }, "[Shutdown] Error in SIGINT handler");
+        process.exit(1);
+    });
 });

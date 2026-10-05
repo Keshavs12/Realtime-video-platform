@@ -356,7 +356,7 @@ export default function SignupPage() {
               <div className={styles.otpGrid}>
                 {otp.map((digit, idx) => (
                   <input
-                    key={`otp-slot-${idx}`}
+                    key={["otp_digit_1", "otp_digit_2", "otp_digit_3", "otp_digit_4", "otp_digit_5", "otp_digit_6"][idx]}
                     ref={(el) => {
                       inputRefs.current[idx] = el;
                     }}

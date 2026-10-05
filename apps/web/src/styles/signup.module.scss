@@ -208,7 +208,7 @@
   button {
     background: none;
     border: none;
-    color: #818cf8;
+    color: #a5b4fc;
     cursor: pointer;
     font-size: 0.75rem;
     text-decoration: underline;
@@ -303,7 +303,7 @@
   }
 
   &:disabled {
-    color: #64748b;
+    color: #94a3b8;
     cursor: not-allowed;
   }
 }
@@ -312,7 +312,7 @@
   width: 100%;
   padding: 0.75rem;
   background: transparent;
-  color: #94a3b8;
+  color: #cbd5e1;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   font-size: 0.95rem;

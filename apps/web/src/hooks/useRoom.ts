@@ -182,6 +182,52 @@ const updatePeerDetails = (
       : p
   );
 
+const toggleRaisedHandUser = (
+  prev: HandRaisedUser[],
+  socketId: string,
+  userId: string,
+  name: string,
+  isRaised: boolean
+): HandRaisedUser[] => {
+  if (!isRaised) {
+    return prev.filter((h) => h.socketId !== socketId);
+  }
+  if (prev.some((h) => h.socketId === socketId)) {
+    return prev;
+  }
+  return [...prev, { socketId, userId, name }];
+};
+
+const removeHandRaisedBySocket = (prev: HandRaisedUser[], socketId: string): HandRaisedUser[] =>
+  prev.filter((h) => h.socketId !== socketId);
+
+const removeReactionById = (prev: FloatingReaction[], id: string): FloatingReaction[] =>
+  prev.filter((r) => r.id !== id);
+
+const updatePeerDisplayName = <T extends { socketId: string; name?: string }>(
+  items: T[],
+  socketId: string,
+  newName: string
+): T[] => items.map((item) => (item.socketId === socketId ? { ...item, name: newName } : item));
+
+const updatePresenceOnSignaling = (
+  list: PresenceUser[],
+  fromSocketId: string,
+  peerUserId?: string,
+  peerName?: string
+): PresenceUser[] =>
+  list.map((p) => {
+    if (p.socketId === fromSocketId || (peerUserId && p.userId === peerUserId)) {
+      return {
+        ...p,
+        name: peerName || p.name,
+        userId: peerUserId || p.userId,
+      };
+    }
+    return p;
+  });
+
+
 /**
  * Custom React hook for WebRTC multi-peer video rooms and signaling.
  * Handles local media stream, Socket.IO connections, WebRTC peer connections, and presence list.
@@ -501,14 +547,7 @@ export const useRoom = (
         socket.on(
           "peer-hand-toggled",
           ({ socketId, userId: uId, name: uName, isRaised }: { socketId: string; userId: string; name: string; isRaised: boolean }) => {
-            setRaisedHands((prev) => {
-              if (isRaised) {
-                if (prev.some((h) => h.socketId === socketId)) return prev;
-                return [...prev, { socketId, userId: uId, name: uName }];
-              } else {
-                return prev.filter((h) => h.socketId !== socketId);
-              }
-            });
+            setRaisedHands((prev) => toggleRaisedHandUser(prev, socketId, uId, uName, isRaised));
           }
         );
 
@@ -516,17 +555,13 @@ export const useRoom = (
           playReactionPop();
           setReactions((prev) => [...prev, reaction]);
           setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+            setReactions((prev) => removeReactionById(prev, reaction.id));
           }, 3500);
         });
 
         socket.on("user-name-updated", ({ socketId, name: newName }: { socketId: string; name: string }) => {
-          setPeers((prev) =>
-            prev.map((p) => (p.socketId === socketId ? { ...p, name: newName } : p))
-          );
-          setPresenceList((prev) =>
-            prev.map((u) => (u.socketId === socketId ? { ...u, name: newName } : u))
-          );
+          setPeers((prev) => updatePeerDisplayName(prev, socketId, newName));
+          setPresenceList((prev) => updatePeerDisplayName(prev, socketId, newName));
         });
 
         socket.on("peer-screen-share", ({ socketId, isSharing }: { socketId: string; isSharing: boolean }) => {
@@ -594,7 +629,7 @@ export const useRoom = (
           // Remove from presence list
           setPresenceList((prev) => removePeerFromList(prev, socketId, userId));
           // Remove from hand raise queue and screen sharing set if present
-          setRaisedHands((prev) => prev.filter((h) => h.socketId !== socketId));
+          setRaisedHands((prev) => removeHandRaisedBySocket(prev, socketId));
           setScreenSharingPeers((prev) => {
             const next = new Set(prev);
             next.delete(socketId);
@@ -629,13 +664,7 @@ export const useRoom = (
             }
             if (offerUserId || offerName) {
               setPeers((prev) => updatePeerDetails(prev, from, offerUserId, offerName));
-              setPresenceList((prev) =>
-                prev.map((p) =>
-                  p.socketId === from || (offerUserId && p.userId === offerUserId)
-                    ? { ...p, name: offerName || p.name, userId: offerUserId || p.userId }
-                    : p
-                )
-              );
+              setPresenceList((prev) => updatePresenceOnSignaling(prev, from, offerUserId, offerName));
             }
             const peerConnection = createPeerConnection(from, stream, offerUserId, offerName);
             await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -682,13 +711,7 @@ export const useRoom = (
 
               if (ansUserId || ansName) {
                 setPeers((prev) => updatePeerDetails(prev, from, ansUserId, ansName));
-                setPresenceList((prev) =>
-                  prev.map((p) =>
-                    p.socketId === from || (ansUserId && p.userId === ansUserId)
-                      ? { ...p, name: ansName || p.name, userId: ansUserId || p.userId }
-                      : p
-                  )
-                );
+                setPresenceList((prev) => updatePresenceOnSignaling(prev, from, ansUserId, ansName));
               }
             }
           }

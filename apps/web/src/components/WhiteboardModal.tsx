@@ -863,7 +863,7 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
 
             <div className={styles.bottomInfoBar}>
               <span>✨ Real-time collaboration synced over Socket.IO</span>
-              <span>•</span>
+              {" • "}
               <span>{elementCount} elements</span>
             </div>
           </div>

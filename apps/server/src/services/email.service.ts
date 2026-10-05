@@ -28,11 +28,16 @@ class EmailService {
             // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
             const openAngle = rawUser.indexOf("<");
             const closeAngle = rawUser.indexOf(">", openAngle);
-            const angleEmail = openAngle !== -1 && closeAngle > openAngle ? rawUser.slice(openAngle + 1, closeAngle).trim() : null;
-            const emailMatch = EMAIL_REGEX.exec(rawUser);
-            user = (angleEmail || (emailMatch ? emailMatch[0] : rawUser))
-                .trim()
-                .replace(/^["']|["']$/g, "");
+            let extractedUser = rawUser;
+            if (openAngle !== -1 && closeAngle > openAngle) {
+                extractedUser = rawUser.slice(openAngle + 1, closeAngle);
+            } else {
+                const emailMatch = EMAIL_REGEX.exec(rawUser);
+                if (emailMatch) {
+                    extractedUser = emailMatch[0];
+                }
+            }
+            user = extractedUser.trim().replace(/^["']|["']$/g, "");
         }
 
         const pass = rawPass ? rawPass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "") : "";
@@ -67,7 +72,7 @@ class EmailService {
             // On cloud platforms (Render, AWS, DigitalOcean), port 587 is much more reliable than 465 (which is often blocked)
             const port = rawPort || 587;
             const secure = port === 465;
-            const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
+            const isGmail = host.includes("gmail") || user.includes("gmail.com") || user.includes("antiersolutions.com");
 
             const smtpConfig: any = {
                 host: isGmail ? "smtp.gmail.com" : host,

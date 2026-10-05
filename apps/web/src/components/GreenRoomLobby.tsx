@@ -27,6 +27,158 @@ interface GreenRoomLobbyProps {
   onCancel: () => void;
 }
 
+interface PreviewPanelProps {
+  readonly isVideoMuted: boolean;
+  readonly isAudioMuted: boolean;
+  readonly videoRef: React.RefObject<HTMLVideoElement | null>;
+  readonly toggleAudio: () => void;
+  readonly toggleVideo: () => void;
+  readonly displayName: string;
+  readonly audioStatusText: string;
+  readonly micVolume: number;
+}
+
+function PreviewPanel({
+  isVideoMuted,
+  isAudioMuted,
+  videoRef,
+  toggleAudio,
+  toggleVideo,
+  displayName,
+  audioStatusText,
+  micVolume,
+}: Readonly<PreviewPanelProps>) {
+  return (
+    <div className={styles.previewColumn}>
+      <div className={styles.previewFrame}>
+        {isVideoMuted ? (
+          <div className={styles.avatarFallback}>
+            <div className={styles.avatarInitial}>
+              {(displayName || "G")[0].toUpperCase()}
+            </div>
+            <span className={styles.avatarLabel}>{displayName} (Camera is off)</span>
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={styles.previewVideo}
+          />
+        )}
+
+        <div className={styles.floatingControls}>
+          <button
+            type="button"
+            className={`${styles.previewCtrlBtn} ${isAudioMuted ? styles.muted : ""}`}
+            onClick={toggleAudio}
+            title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
+          >
+            {isAudioMuted ? "🔇" : "🎤"}
+          </button>
+          <button
+            type="button"
+            className={`${styles.previewCtrlBtn} ${isVideoMuted ? styles.muted : ""}`}
+            onClick={toggleVideo}
+            title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
+          >
+            {isVideoMuted ? "🚫" : "📹"}
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.vuMeterBox}>
+        <div className={styles.vuHeader}>
+          <span className={styles.vuTitle}>
+            <span>🎙️</span>
+            <span>Microphone Level</span>
+          </span>
+          <span
+            className={`${styles.vuStatus} ${
+              isAudioMuted ? styles.muted : styles.active
+            }`}
+          >
+            {audioStatusText}
+          </span>
+        </div>
+        <div className={styles.vuMeterTrack}>
+          <div
+            className={styles.vuMeterBar}
+            style={{
+              width: `${isAudioMuted ? 0 : Math.min(100, micVolume)}%`,
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface DeviceSelectorProps {
+  readonly videoDevices: MediaDeviceOption[];
+  readonly audioDevices: MediaDeviceOption[];
+  readonly selectedVideoDeviceId: string;
+  readonly selectedAudioDeviceId: string;
+  readonly switchCamera: (deviceId: string) => void;
+  readonly switchMicrophone: (deviceId: string) => void;
+}
+
+function DeviceSelector({
+  videoDevices,
+  audioDevices,
+  selectedVideoDeviceId,
+  selectedAudioDeviceId,
+  switchCamera,
+  switchMicrophone,
+}: Readonly<DeviceSelectorProps>) {
+  return (
+    <div className={styles.deviceSelectGroup}>
+      <div className={styles.deviceField}>
+        <label htmlFor="camera-select">Camera</label>
+        <select
+          id="camera-select"
+          className={styles.selectDropdown}
+          value={selectedVideoDeviceId}
+          onChange={(e) => switchCamera(e.target.value)}
+          disabled={videoDevices.length === 0}
+        >
+          {videoDevices.length === 0 ? (
+            <option value="">No camera available</option>
+          ) : (
+            videoDevices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || "Camera"}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+
+      <div className={styles.deviceField}>
+        <label htmlFor="mic-select">Microphone</label>
+        <select
+          id="mic-select"
+          className={styles.selectDropdown}
+          value={selectedAudioDeviceId}
+          onChange={(e) => switchMicrophone(e.target.value)}
+          disabled={audioDevices.length === 0}
+        >
+          {audioDevices.length === 0 ? (
+            <option value="">No microphone available</option>
+          ) : (
+            audioDevices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || "Microphone"}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 export function GreenRoomLobby({
   roomId,
   userName,
@@ -71,12 +223,15 @@ export function GreenRoomLobby({
   }, [localStream, isVideoMuted]);
 
   const handleCopyLink = () => {
-    void navigator.clipboard.writeText(roomId);
+    navigator.clipboard.writeText(roomId).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayName = isGuest ? (enteredName.trim() || guestName.trim() || "Guest") : (userName || "You");
+  let displayName = userName || "You";
+  if (isGuest) {
+    displayName = enteredName.trim() || guestName.trim() || "Guest";
+  }
 
   const handleJoinClick = (e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -103,72 +258,16 @@ export function GreenRoomLobby({
   return (
     <div className={styles.lobbyContainer}>
       <div className={styles.lobbyCard}>
-        {/* Left Column: Camera Preview + Live Mic VU Meter */}
-        <div className={styles.previewColumn}>
-          <div className={styles.previewFrame}>
-            {isVideoMuted ? (
-              <div className={styles.avatarFallback}>
-                <div className={styles.avatarInitial}>
-                  {(displayName || "G")[0].toUpperCase()}
-                </div>
-                <span className={styles.avatarLabel}>{displayName} (Camera is off)</span>
-              </div>
-            ) : (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className={styles.previewVideo}
-              />
-            )}
-
-            {/* Quick Floating Mute Toggles */}
-            <div className={styles.floatingControls}>
-              <button
-                type="button"
-                className={`${styles.previewCtrlBtn} ${isAudioMuted ? styles.muted : ""}`}
-                onClick={toggleAudio}
-                title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
-              >
-                {isAudioMuted ? "🔇" : "🎤"}
-              </button>
-              <button
-                type="button"
-                className={`${styles.previewCtrlBtn} ${isVideoMuted ? styles.muted : ""}`}
-                onClick={toggleVideo}
-                title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
-              >
-                {isVideoMuted ? "🚫" : "📹"}
-              </button>
-            </div>
-          </div>
-
-          {/* Live Mic VU Meter */}
-          <div className={styles.vuMeterBox}>
-            <div className={styles.vuHeader}>
-              <span className={styles.vuTitle}>
-                <span>🎙️</span>
-                <span>Microphone Level</span>
-              </span>
-              <span
-                className={`${styles.vuStatus} ${
-                  isAudioMuted ? styles.muted : styles.active
-                }`}
-              >
-                {audioStatusText}
-              </span>
-            </div>
-            <div className={styles.vuMeterTrack}>
-              <div
-                className={styles.vuMeterBar}
-                style={{
-                  width: `${isAudioMuted ? 0 : Math.min(100, micVolume)}%`,
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        <PreviewPanel
+          isVideoMuted={isVideoMuted}
+          isAudioMuted={isAudioMuted}
+          videoRef={videoRef}
+          toggleAudio={toggleAudio}
+          toggleVideo={toggleVideo}
+          displayName={displayName}
+          audioStatusText={audioStatusText}
+          micVolume={micVolume}
+        />
 
         {/* Right Column: Meeting Info, Device Selectors & Join Action */}
         <div className={styles.configColumn}>
@@ -249,50 +348,14 @@ export function GreenRoomLobby({
             </div>
           )}
 
-          {/* Hardware Device Selection */}
-          <div className={styles.deviceSelectGroup}>
-            <div className={styles.deviceField}>
-              <label htmlFor="camera-select">Camera</label>
-              <select
-                id="camera-select"
-                className={styles.selectDropdown}
-                value={selectedVideoDeviceId}
-                onChange={(e) => switchCamera(e.target.value)}
-                disabled={videoDevices.length === 0}
-              >
-                {videoDevices.length === 0 ? (
-                  <option value="">No camera available</option>
-                ) : (
-                  videoDevices.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || "Camera"}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-
-            <div className={styles.deviceField}>
-              <label htmlFor="mic-select">Microphone</label>
-              <select
-                id="mic-select"
-                className={styles.selectDropdown}
-                value={selectedAudioDeviceId}
-                onChange={(e) => switchMicrophone(e.target.value)}
-                disabled={audioDevices.length === 0}
-              >
-                {audioDevices.length === 0 ? (
-                  <option value="">No microphone available</option>
-                ) : (
-                  audioDevices.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || "Microphone"}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
+          <DeviceSelector
+            videoDevices={videoDevices}
+            audioDevices={audioDevices}
+            selectedVideoDeviceId={selectedVideoDeviceId}
+            selectedAudioDeviceId={selectedAudioDeviceId}
+            switchCamera={switchCamera}
+            switchMicrophone={switchMicrophone}
+          />
 
           {isMediaUnavailable && (
             <div
