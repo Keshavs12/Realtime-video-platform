@@ -99,7 +99,7 @@ export default function SignupPage() {
       inputRefs.current[nextFocus]?.focus();
 
       if (digits.length === 6) {
-        triggerVerification(newOtp.join(""));
+        void triggerVerification(newOtp.join(""));
       }
       return;
     }
@@ -117,7 +117,7 @@ export default function SignupPage() {
 
     // Auto-trigger verification when 6th digit is entered
     if (newOtp.every((d) => d !== "")) {
-      triggerVerification(newOtp.join(""));
+      void triggerVerification(newOtp.join(""));
     }
   };
 

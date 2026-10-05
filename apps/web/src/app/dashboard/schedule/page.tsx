@@ -12,6 +12,8 @@ import {
   ScheduledMeetingItem,
 } from "@/services/schedule.service";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
 export default function SchedulePage() {
   const router = useRouter();
   const [meetings, setMeetings] = useState<ScheduledMeetingItem[] | null>(null);
@@ -61,7 +63,7 @@ export default function SchedulePage() {
     const trimmed = inviteeInput.trim().toLowerCase();
     if (!trimmed) return;
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    if (!EMAIL_REGEX.test(trimmed)) {
       alert("Please enter a valid email address.");
       return;
     }
@@ -89,9 +91,9 @@ export default function SchedulePage() {
     if (!title.trim() || !scheduledAt) return;
 
     // Auto-add any email that's typed but not yet added via "+ Add"
-    let finalInvitees = [...invitees];
+    const finalInvitees = [...invitees];
     const pendingEmail = inviteeInput.trim().toLowerCase();
-    if (pendingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pendingEmail)) {
+    if (pendingEmail && EMAIL_REGEX.test(pendingEmail)) {
       if (!finalInvitees.includes(pendingEmail)) {
         finalInvitees.push(pendingEmail);
       }
@@ -125,7 +127,7 @@ export default function SchedulePage() {
       setDescription("");
       setInvitees([]);
       setShowModal(false);
-      loadMeetings();
+      void loadMeetings();
     } catch (err: unknown) {
       const errorMsg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
@@ -172,7 +174,7 @@ export default function SchedulePage() {
   // Copy Meeting URL
   const handleCopyLink = (m: ScheduledMeetingItem) => {
     const fullUrl = `${window.location.origin}/dashboard/room/${m.roomCode}`;
-    navigator.clipboard.writeText(fullUrl);
+    void navigator.clipboard.writeText(fullUrl);
     setCopiedId(m.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -320,10 +322,24 @@ export default function SchedulePage() {
 
         {/* Schedule Modal */}
         {showModal && (
-          <div className={styles.modalOverlay} onClick={() => setShowModal(false)}>
-            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <div
+            role="presentation"
+            className={styles.modalOverlay}
+            onClick={() => setShowModal(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setShowModal(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="schedule-modal-title"
+              className={styles.modalContent}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
               <div className={styles.modalHeader}>
-                <h3>Schedule a Video Meeting</h3>
+                <h3 id="schedule-modal-title">Schedule a Video Meeting</h3>
                 <button
                   type="button"
                   className={styles.closeBtn}

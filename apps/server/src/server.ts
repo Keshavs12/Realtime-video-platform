@@ -35,7 +35,7 @@ const gracefulShutdown = async (signal: string) => {
     try {
         // 1. Close Socket.IO connections cleanly
         await new Promise<void>((resolve) => {
-            io.close(() => {
+            void io.close(() => {
                 logger.info("[Shutdown] Socket.IO server closed.");
                 resolve();
             });
@@ -65,5 +65,9 @@ const gracefulShutdown = async (signal: string) => {
     }
 };
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => {
+    void gracefulShutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+    void gracefulShutdown("SIGINT");
+});

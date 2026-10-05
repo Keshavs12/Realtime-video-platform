@@ -278,7 +278,7 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
     const { name, email, password } = data;
 
     // Prune stale expired records in the background
-    cleanupExpiredOtps();
+    void cleanupExpiredOtps();
 
     const existingUser = await prisma.user.findUnique({
         where: { email },
@@ -357,7 +357,7 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
 };
 
 export const resendSignupOtp = async (email: string) => {
-    cleanupExpiredOtps();
+    void cleanupExpiredOtps();
 
     const existingOtp = await prisma.emailOtp.findUnique({
         where: { email },
@@ -418,7 +418,7 @@ export const resendSignupOtp = async (email: string) => {
 };
 
 export const verifySignupOtp = async (email: string, otp: string) => {
-    cleanupExpiredOtps();
+    void cleanupExpiredOtps();
 
     const record = await prisma.emailOtp.findUnique({
         where: { email },

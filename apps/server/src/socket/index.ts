@@ -264,7 +264,7 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.roomDbId = room.id;
             socket.data.isHost = isHost;
 
-            socket.join(roomId);
+            await socket.join(roomId);
             if (!socket.data.isGuest) {
                 try {
                     await prisma.roomParticipant.create({
@@ -362,7 +362,7 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             if (roomId && userId) {
                 console.log(`🚪 User ${userId} leaving room: ${roomId}`);
-                socket.leave(roomId);
+                await socket.leave(roomId);
 
                 // Broadcast user-left to others in the room
                 socket.to(roomId).emit("user-left", {

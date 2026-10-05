@@ -40,7 +40,7 @@ function RecordingCard({
   useEffect(() => {
     const url = URL.createObjectURL(recording.blob);
     let isMounted = true;
-    Promise.resolve().then(() => {
+    void Promise.resolve().then(() => {
       if (isMounted) {
         setVideoUrl(url);
       }
@@ -53,7 +53,19 @@ function RecordingCard({
 
   return (
     <div className={styles.recordingCard}>
-      <div className={styles.thumbnailWrapper} onClick={() => onPlay(recording)}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Play recording ${recording.roomCode}`}
+        className={styles.thumbnailWrapper}
+        onClick={() => onPlay(recording)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onPlay(recording);
+          }
+        }}
+      >
         {videoUrl ? (
           <video
             src={`${videoUrl}#t=0.5`}
@@ -147,7 +159,7 @@ export default function MyVideosPage() {
     let isMounted = true;
     if (activePlayerRec?.blob) {
       const url = URL.createObjectURL(activePlayerRec.blob);
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setPlayerVideoUrl(url);
         }
@@ -157,7 +169,7 @@ export default function MyVideosPage() {
         URL.revokeObjectURL(url);
       };
     } else {
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setPlayerVideoUrl(null);
         }
@@ -328,13 +340,24 @@ export default function MyVideosPage() {
       {/* Modal Video Player */}
       {activePlayerRec && playerVideoUrl && (
         <div
+          role="presentation"
           className={styles.playerModalOverlay}
           onClick={() => setActivePlayerRec(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setActivePlayerRec(null);
+          }}
         >
-          <div className={styles.playerModal} onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="player-modal-title"
+            className={styles.playerModal}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className={styles.playerModalHeader}>
               <div>
-                <h3>{activePlayerRec.title}</h3>
+                <h3 id="player-modal-title">{activePlayerRec.title}</h3>
                 <span className={styles.playerModalMeta}>
                   {formatDate(activePlayerRec.recordedAt)} •{" "}
                   {formatDuration(activePlayerRec.durationSeconds)} •{" "}

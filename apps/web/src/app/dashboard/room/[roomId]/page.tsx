@@ -56,9 +56,9 @@ const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFeedProps
       }
     };
 
-    playVideo();
+    void playVideo();
 
-    const handleTrackEvent = () => playVideo();
+    const handleTrackEvent = () => void playVideo();
     stream.getTracks().forEach((track) => {
       track.addEventListener("unmute", handleTrackEvent);
     });
@@ -204,7 +204,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
   const handleCopyMeetingLink = () => {
     if (typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(window.location.href);
+      void navigator.clipboard.writeText(window.location.href);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     }
@@ -232,7 +232,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     let isMounted = true;
     if (lastSavedRecording?.blob) {
       const url = URL.createObjectURL(lastSavedRecording.blob);
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setRecordVideoUrl(url);
         }
@@ -242,7 +242,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         URL.revokeObjectURL(url);
       };
     } else {
-      Promise.resolve().then(() => {
+      void Promise.resolve().then(() => {
         if (isMounted) {
           setRecordVideoUrl(null);
         }
@@ -1148,13 +1148,27 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
 
       {/* Post-Recording Completion Modal */}
       {showRecordModal && lastSavedRecording && (
-        <div className={styles.recordingModalOverlay} onClick={() => setShowRecordModal(false)}>
-          <div className={styles.recordingModal} onClick={(e) => e.stopPropagation()}>
+        <div
+          role="presentation"
+          className={styles.recordingModalOverlay}
+          onClick={() => setShowRecordModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowRecordModal(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recording-saved-modal-title"
+            className={styles.recordingModal}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className={styles.recordingModalHeader}>
               <div className={styles.modalTitleBox}>
                 <span className={styles.modalTitleIcon}>🎉</span>
                 <div>
-                  <h3>Meeting Recording Saved!</h3>
+                  <h3 id="recording-saved-modal-title">Meeting Recording Saved!</h3>
                   <p>Saved locally in your browser studio (Zero cloud cost, instant access)</p>
                 </div>
               </div>

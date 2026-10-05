@@ -22,9 +22,11 @@ class EmailService {
         let user = "";
         if (rawUser) {
             // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
-            const angleMatch = rawUser.match(/<([^>]+)>/);
-            const emailRegexMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-            user = (angleMatch ? angleMatch[1] : (emailRegexMatch ? emailRegexMatch[0] : rawUser))
+            const openAngle = rawUser.indexOf("<");
+            const closeAngle = rawUser.indexOf(">", openAngle);
+            const angleEmail = openAngle !== -1 && closeAngle > openAngle ? rawUser.slice(openAngle + 1, closeAngle).trim() : null;
+            const emailMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/);
+            user = (angleEmail || (emailMatch ? emailMatch[0] : rawUser))
                 .trim()
                 .replace(/^["']|["']$/g, "");
         }
