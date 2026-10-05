@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import Redis from "ioredis";
-import { allowedOrigins, isOriginAllowed } from "../config/cors";
+import { isOriginAllowed } from "../config/cors";
 import { prisma } from "../config/prisma";
 import { verifyAccessToken } from "../utils/jwt";
 
@@ -142,8 +142,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
 
             next();
-        } catch (err) {
-            // If token is invalid or expired, allow as Guest instead of rejecting
+        } catch (_err) {
+            // Token verification failed or expired; fall back gracefully to guest session without crashing
             const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
             socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
             socket.data.name = guestName.trim() || "Guest";
@@ -233,16 +233,19 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             // Evict any existing stale sockets for the same userId in this room
             const existingSockets = await io.in(roomId).fetchSockets();
-            for (const s of existingSockets) {
-                if (s.data.userId === userId && s.id !== socket.id) {
-                    console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
-                    s.leave(roomId);
-                    socket.to(roomId).emit("user-left", {
-                        socketId: s.id,
-                        userId,
-                    });
-                    await closeOpenParticipation(roomId, userId);
-                }
+            const staleSockets = existingSockets.filter((s) => s.data.userId === userId && s.id !== socket.id);
+            if (staleSockets.length > 0) {
+                await Promise.all(
+                    staleSockets.map(async (s) => {
+                        console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
+                        await s.leave(roomId);
+                        socket.to(roomId).emit("user-left", {
+                            socketId: s.id,
+                            userId,
+                        });
+                        await closeOpenParticipation(roomId, userId);
+                    })
+                );
             }
 
             // Enforce room capacity limit (Full Mesh WebRTC cannot exceed 8 peers)
@@ -264,7 +267,7 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.roomDbId = room.id;
             socket.data.isHost = isHost;
 
-            socket.join(roomId);
+            await socket.join(roomId);
             if (!socket.data.isGuest) {
                 try {
                     await prisma.roomParticipant.create({
@@ -362,7 +365,7 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             if (roomId && userId) {
                 console.log(`🚪 User ${userId} leaving room: ${roomId}`);
-                socket.leave(roomId);
+                await socket.leave(roomId);
 
                 // Broadcast user-left to others in the room
                 socket.to(roomId).emit("user-left", {

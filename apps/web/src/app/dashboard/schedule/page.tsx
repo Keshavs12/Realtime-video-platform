@@ -12,6 +12,8 @@ import {
   ScheduledMeetingItem,
 } from "@/services/schedule.service";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
 export default function SchedulePage() {
   const router = useRouter();
   const [meetings, setMeetings] = useState<ScheduledMeetingItem[] | null>(null);
@@ -61,7 +63,7 @@ export default function SchedulePage() {
     const trimmed = inviteeInput.trim().toLowerCase();
     if (!trimmed) return;
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    if (!EMAIL_REGEX.test(trimmed)) {
       alert("Please enter a valid email address.");
       return;
     }
@@ -89,9 +91,9 @@ export default function SchedulePage() {
     if (!title.trim() || !scheduledAt) return;
 
     // Auto-add any email that's typed but not yet added via "+ Add"
-    let finalInvitees = [...invitees];
+    const finalInvitees = [...invitees];
     const pendingEmail = inviteeInput.trim().toLowerCase();
-    if (pendingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pendingEmail)) {
+    if (pendingEmail && EMAIL_REGEX.test(pendingEmail)) {
       if (!finalInvitees.includes(pendingEmail)) {
         finalInvitees.push(pendingEmail);
       }
@@ -125,7 +127,7 @@ export default function SchedulePage() {
       setDescription("");
       setInvitees([]);
       setShowModal(false);
-      loadMeetings();
+      void loadMeetings();
     } catch (err: unknown) {
       const errorMsg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
@@ -172,9 +174,131 @@ export default function SchedulePage() {
   // Copy Meeting URL
   const handleCopyLink = (m: ScheduledMeetingItem) => {
     const fullUrl = `${window.location.origin}/dashboard/room/${m.roomCode}`;
-    navigator.clipboard.writeText(fullUrl);
+    void navigator.clipboard.writeText(fullUrl);
     setCopiedId(m.id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const renderMeetingsContent = () => {
+    if (meetings === null) {
+      return (
+        <p style={{ color: "#94a3b8", padding: "2rem 0", textAlign: "center" }}>
+          Loading scheduled meetings…
+        </p>
+      );
+    }
+    if (meetings.length === 0) {
+      return (
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIcon}>📅</div>
+          <h3>No upcoming meetings scheduled</h3>
+          <p>
+            Click <strong>&quot;Schedule New Meeting&quot;</strong> above to select a date, time, and invite
+            participants with direct email invitations!
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className={styles.meetingsGrid}>
+        {meetings.map((m) => {
+          const dateObj = new Date(m.scheduledAt);
+          const monthStr = dateObj.toLocaleString("en-US", { month: "short" });
+          const dayStr = dateObj.getDate();
+          const timeStr = dateObj.toLocaleString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          });
+
+          return (
+            <div key={m.id} className={styles.meetingCard}>
+              <div className={styles.cardLeft}>
+                {/* Date Block */}
+                <div className={styles.dateBlock}>
+                  <span className={styles.dateMonth}>{monthStr}</span>
+                  <span className={styles.dateDay}>{dayStr}</span>
+                </div>
+
+                <div className={styles.cardInfo}>
+                  <div className={styles.cardTitleRow}>
+                    <h4 className={styles.cardTitle}>{m.title}</h4>
+                    {m.isHost ? (
+                      <span className={styles.hostBadge}>👑 Hosted by You</span>
+                    ) : (
+                      <span className={styles.guestBadge}>
+                        👤 Hosted by {m.host?.name || "Host"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className={styles.cardMetaRow}>
+                    <span>⏰ {timeStr} ({m.durationMinutes} min)</span>
+                    <span>🔑 Room: {m.roomCode}</span>
+                  </div>
+
+                  {m.description && <p className={styles.cardDesc}>{m.description}</p>}
+
+                  {m.inviteeList.length > 0 && (
+                    <div className={styles.inviteesSummary}>
+                      <span>✉️</span>
+                      <span>
+                        {m.inviteeList.length} invitee{m.inviteeList.length > 1 ? "s" : ""}:{" "}
+                        {m.inviteeList.slice(0, 3).join(", ")}
+                        {m.inviteeList.length > 3 ? ` +${m.inviteeList.length - 3} more` : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className={styles.cardActions}>
+                <button
+                  type="button"
+                  className={styles.startBtn}
+                  onClick={() => router.push(`/dashboard/room/${m.roomCode}`)}
+                >
+                  <span>🚀</span>
+                  <span>{m.isHost ? "Start Meeting" : "Join Meeting"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.copyBtn}
+                  onClick={() => handleCopyLink(m)}
+                  title="Copy meeting invitation link"
+                >
+                  {copiedId === m.id ? "✓ Copied" : "📋 Link"}
+                </button>
+
+                {m.isHost && m.inviteeList.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.reminderBtn}
+                    onClick={() => handleSendReminder(m.id)}
+                    disabled={remindingId === m.id}
+                    title="Send email reminders to invitees"
+                  >
+                    {remindingId === m.id ? "Sending…" : "🔔 Remind"}
+                  </button>
+                )}
+
+                {m.isHost && (
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={() => handleDelete(m.id)}
+                    title="Cancel this scheduled meeting"
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -204,126 +328,28 @@ export default function SchedulePage() {
         )}
 
         {/* Meetings List */}
-        {meetings === null ? (
-          <p style={{ color: "#94a3b8", padding: "2rem 0", textAlign: "center" }}>
-            Loading scheduled meetings…
-          </p>
-        ) : meetings.length === 0 ? (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>📅</div>
-            <h3>No upcoming meetings scheduled</h3>
-            <p>
-              Click <strong>&quot;Schedule New Meeting&quot;</strong> above to select a date, time, and invite
-              participants with direct email invitations!
-            </p>
-          </div>
-        ) : (
-          <div className={styles.meetingsGrid}>
-            {meetings.map((m) => {
-              const dateObj = new Date(m.scheduledAt);
-              const monthStr = dateObj.toLocaleString("en-US", { month: "short" });
-              const dayStr = dateObj.getDate();
-              const timeStr = dateObj.toLocaleString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              });
-
-              return (
-                <div key={m.id} className={styles.meetingCard}>
-                  <div className={styles.cardLeft}>
-                    {/* Date Block */}
-                    <div className={styles.dateBlock}>
-                      <span className={styles.dateMonth}>{monthStr}</span>
-                      <span className={styles.dateDay}>{dayStr}</span>
-                    </div>
-
-                    <div className={styles.cardInfo}>
-                      <div className={styles.cardTitleRow}>
-                        <h4 className={styles.cardTitle}>{m.title}</h4>
-                        {m.isHost ? (
-                          <span className={styles.hostBadge}>👑 Hosted by You</span>
-                        ) : (
-                          <span className={styles.guestBadge}>
-                            👤 Hosted by {m.host?.name || "Host"}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className={styles.cardMetaRow}>
-                        <span>⏰ {timeStr} ({m.durationMinutes} min)</span>
-                        <span>🔑 Room: {m.roomCode}</span>
-                      </div>
-
-                      {m.description && <p className={styles.cardDesc}>{m.description}</p>}
-
-                      {m.inviteeList.length > 0 && (
-                        <div className={styles.inviteesSummary}>
-                          <span>✉️</span>
-                          <span>
-                            {m.inviteeList.length} invitee{m.inviteeList.length > 1 ? "s" : ""}:{" "}
-                            {m.inviteeList.slice(0, 3).join(", ")}
-                            {m.inviteeList.length > 3 ? ` +${m.inviteeList.length - 3} more` : ""}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className={styles.cardActions}>
-                    <button
-                      type="button"
-                      className={styles.startBtn}
-                      onClick={() => router.push(`/dashboard/room/${m.roomCode}`)}
-                    >
-                      <span>🚀</span>
-                      <span>{m.isHost ? "Start Meeting" : "Join Meeting"}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className={styles.copyBtn}
-                      onClick={() => handleCopyLink(m)}
-                      title="Copy meeting invitation link"
-                    >
-                      {copiedId === m.id ? "✓ Copied" : "📋 Link"}
-                    </button>
-
-                    {m.isHost && m.inviteeList.length > 0 && (
-                      <button
-                        type="button"
-                        className={styles.reminderBtn}
-                        onClick={() => handleSendReminder(m.id)}
-                        disabled={remindingId === m.id}
-                        title="Send email reminders to invitees"
-                      >
-                        {remindingId === m.id ? "Sending…" : "🔔 Remind"}
-                      </button>
-                    )}
-
-                    {m.isHost && (
-                      <button
-                        type="button"
-                        className={styles.deleteBtn}
-                        onClick={() => handleDelete(m.id)}
-                        title="Cancel this scheduled meeting"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {renderMeetingsContent()}
 
         {/* Schedule Modal */}
         {showModal && (
-          <div className={styles.modalOverlay} onClick={() => setShowModal(false)}>
-            <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <div
+            role="presentation"
+            className={styles.modalOverlay}
+            onClick={() => setShowModal(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setShowModal(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="schedule-modal-title"
+              className={styles.modalContent}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
               <div className={styles.modalHeader}>
-                <h3>Schedule a Video Meeting</h3>
+                <h3 id="schedule-modal-title">Schedule a Video Meeting</h3>
                 <button
                   type="button"
                   className={styles.closeBtn}
@@ -434,11 +460,11 @@ export default function SchedulePage() {
                   disabled={isSubmitting || !title.trim() || !scheduledAt}
                   className={styles.submitBtn}
                 >
-                  {isSubmitting
-                    ? "Scheduling & Sending Invites…"
-                    : `✉️ Schedule & Send Invites ${
-                        invitees.length > 0 ? `(${invitees.length})` : ""
-                      }`}
+                  {(() => {
+                    if (isSubmitting) return "Scheduling & Sending Invites…";
+                    if (invitees.length > 0) return `✉️ Schedule & Send Invites (${invitees.length})`;
+                    return "✉️ Schedule & Send Invites";
+                  })()}
                 </button>
               </form>
             </div>

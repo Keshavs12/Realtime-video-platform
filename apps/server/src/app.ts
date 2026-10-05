@@ -7,7 +7,7 @@ import { logger } from "./utils/logger";
 import cookieParser from "cookie-parser";
 import { prisma } from "./config/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { allowedOrigins, corsOriginDelegate } from "./config/cors";
+import { corsOriginDelegate } from "./config/cors";
 import { emailService } from "./services/email.service";
 
 import crypto from "node:crypto";

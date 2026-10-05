@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }: Readonly<Props>) => {
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
 useEffect(() => {
-  initializeAuth();
+  void initializeAuth();
 }, []);
 
 

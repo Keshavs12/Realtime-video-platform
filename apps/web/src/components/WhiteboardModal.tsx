@@ -40,7 +40,6 @@ interface WhiteboardModalProps {
   onClose: () => void;
   socket: Socket | null;
   roomId: string;
-  isHost?: boolean;
 }
 
 const PRESET_COLORS = [
@@ -60,6 +59,125 @@ const STROKE_SIZES = [
   { label: "Bold", size: 8 },
   { label: "Marker", size: 16 },
 ];
+
+function drawInitialDot(
+  ctx: CanvasRenderingContext2D,
+  normX: number,
+  normY: number,
+  width: number,
+  height: number,
+  scaledSize: number,
+  tool: WhiteboardTool,
+  color: string
+) {
+  ctx.save();
+  if (tool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "rgba(0,0,0,1)";
+    ctx.beginPath();
+    ctx.arc(normX * width, normY * height, scaledSize * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = tool === "highlighter" ? 0.35 : 1.0;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(
+      normX * width,
+      normY * height,
+      (tool === "highlighter" ? scaledSize * 1.25 : scaledSize) / 2,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function renderFreehandStep(
+  ctx: CanvasRenderingContext2D,
+  prev: WhiteboardPoint,
+  curr: WhiteboardPoint,
+  width: number,
+  height: number,
+  scaledSize: number,
+  tool: WhiteboardTool,
+  color: string
+) {
+  ctx.save();
+  if (tool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = "rgba(0,0,0,1)";
+    ctx.lineWidth = scaledSize * 3;
+  } else if (tool === "highlighter") {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = scaledSize * 2.5;
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1.0;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = scaledSize;
+  }
+
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(prev.x * width, prev.y * height);
+  ctx.lineTo(curr.x * width, curr.y * height);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function renderShapePreview(
+  prevCtx: CanvasRenderingContext2D,
+  start: WhiteboardPoint,
+  curr: WhiteboardPoint,
+  width: number,
+  height: number,
+  scaledSize: number,
+  tool: WhiteboardTool,
+  color: string
+) {
+  prevCtx.clearRect(0, 0, width, height);
+  prevCtx.save();
+  prevCtx.strokeStyle = color;
+  prevCtx.lineWidth = scaledSize;
+  prevCtx.lineCap = "round";
+  prevCtx.lineJoin = "round";
+
+  if (tool === "line") {
+    prevCtx.beginPath();
+    prevCtx.moveTo(start.x * width, start.y * height);
+    prevCtx.lineTo(curr.x * width, curr.y * height);
+    prevCtx.stroke();
+  } else if (tool === "rect") {
+    const x = Math.min(start.x, curr.x) * width;
+    const y = Math.min(start.y, curr.y) * height;
+    const w = Math.abs(curr.x - start.x) * width;
+    const h = Math.abs(curr.y - start.y) * height;
+    prevCtx.strokeRect(x, y, w, h);
+  } else if (tool === "circle") {
+    const centerX = ((start.x + curr.x) / 2) * width;
+    const centerY = ((start.y + curr.y) / 2) * height;
+    const radiusX = (Math.abs(curr.x - start.x) * width) / 2;
+    const radiusY = (Math.abs(curr.y - start.y) * height) / 2;
+    prevCtx.beginPath();
+    prevCtx.ellipse(
+      centerX,
+      centerY,
+      Math.max(1, radiusX),
+      Math.max(1, radiusY),
+      0,
+      0,
+      2 * Math.PI
+    );
+    prevCtx.stroke();
+  }
+
+  prevCtx.restore();
+}
 
 export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
   isOpen,
@@ -326,32 +444,11 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     if (selectedTool === "pen" || selectedTool === "highlighter" || selectedTool === "eraser") {
       currentPathPointsRef.current = [{ x: normX, y: normY }];
 
-      // Draw initial dot for quick taps
       const mainCanvas = mainCanvasRef.current;
-      if (mainCanvas) {
-        const ctx = mainCanvas.getContext("2d");
-        if (ctx) {
-          const width = rect.width;
-          const height = rect.height;
-          const scaledSize = Math.max(1, selectedSize * (width / 1200));
-
-          ctx.save();
-          if (selectedTool === "eraser") {
-            ctx.globalCompositeOperation = "destination-out";
-            ctx.fillStyle = "rgba(0,0,0,1)";
-            ctx.beginPath();
-            ctx.arc(normX * width, normY * height, scaledSize * 1.5, 0, Math.PI * 2);
-            ctx.fill();
-          } else {
-            ctx.globalCompositeOperation = "source-over";
-            ctx.globalAlpha = selectedTool === "highlighter" ? 0.35 : 1.0;
-            ctx.fillStyle = selectedColor;
-            ctx.beginPath();
-            ctx.arc(normX * width, normY * height, (selectedTool === "highlighter" ? scaledSize * 1.25 : scaledSize) / 2, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          ctx.restore();
-        }
+      const ctx = mainCanvas?.getContext("2d");
+      if (ctx) {
+        const scaledSize = Math.max(1, selectedSize * (rect.width / 1200));
+        drawInitialDot(ctx, normX, normY, rect.width, rect.height, scaledSize, selectedTool, selectedColor);
       }
     }
   };
@@ -375,34 +472,10 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
 
     if (selectedTool === "pen" || selectedTool === "highlighter" || selectedTool === "eraser") {
       const mainCanvas = mainCanvasRef.current;
-      if (!mainCanvas) return;
-      const ctx = mainCanvas.getContext("2d");
+      const ctx = mainCanvas?.getContext("2d");
       if (!ctx) return;
 
-      ctx.save();
-      if (selectedTool === "eraser") {
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-        ctx.lineWidth = scaledSize * 3;
-      } else if (selectedTool === "highlighter") {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = 0.35;
-        ctx.strokeStyle = selectedColor;
-        ctx.lineWidth = scaledSize * 2.5;
-      } else {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = 1.0;
-        ctx.strokeStyle = selectedColor;
-        ctx.lineWidth = scaledSize;
-      }
-
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      ctx.moveTo(prev.x * width, prev.y * height);
-      ctx.lineTo(normX * width, normY * height);
-      ctx.stroke();
-      ctx.restore();
+      renderFreehandStep(ctx, prev, { x: normX, y: normY }, width, height, scaledSize, selectedTool, selectedColor);
 
       // Broadcast live stroke step to other peers
       if (socket) {
@@ -420,39 +493,9 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
       currentPathPointsRef.current.push({ x: normX, y: normY });
       prevPointRef.current = { x: normX, y: normY };
     } else {
-      // Shape Preview (Line, Rect, Circle) on the overlay preview canvas
       const prevCtx = canvas.getContext("2d");
       if (!prevCtx) return;
-
-      prevCtx.clearRect(0, 0, width, height);
-      prevCtx.save();
-      prevCtx.strokeStyle = selectedColor;
-      prevCtx.lineWidth = scaledSize;
-      prevCtx.lineCap = "round";
-      prevCtx.lineJoin = "round";
-
-      if (selectedTool === "line") {
-        prevCtx.beginPath();
-        prevCtx.moveTo(start.x * width, start.y * height);
-        prevCtx.lineTo(normX * width, normY * height);
-        prevCtx.stroke();
-      } else if (selectedTool === "rect") {
-        const x = Math.min(start.x, normX) * width;
-        const y = Math.min(start.y, normY) * height;
-        const w = Math.abs(normX - start.x) * width;
-        const h = Math.abs(normY - start.y) * height;
-        prevCtx.strokeRect(x, y, w, h);
-      } else if (selectedTool === "circle") {
-        const centerX = ((start.x + normX) / 2) * width;
-        const centerY = ((start.y + normY) / 2) * height;
-        const radiusX = Math.abs(normX - start.x) * width / 2;
-        const radiusY = Math.abs(normY - start.y) * height / 2;
-        prevCtx.beginPath();
-        prevCtx.ellipse(centerX, centerY, Math.max(1, radiusX), Math.max(1, radiusY), 0, 0, 2 * Math.PI);
-        prevCtx.stroke();
-      }
-
-      prevCtx.restore();
+      renderShapePreview(prevCtx, start, { x: normX, y: normY }, width, height, scaledSize, selectedTool, selectedColor);
     }
   };
 
@@ -611,14 +654,27 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     a.download = `whiteboard-${roomId}-${Date.now()}.png`;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className={styles.whiteboardOverlay} onClick={onClose}>
-      <div className={styles.whiteboardModal} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={styles.whiteboardOverlay}
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+      role="presentation"
+    >
+      <div
+        className={styles.whiteboardModal}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Collaborative Whiteboard"
+      >
         {/* Header Bar */}
         <header className={styles.whiteboardHeader}>
           <div className={styles.headerLeft}>
@@ -626,7 +682,7 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
             <span className={styles.roomBadge}>Room: {roomId}</span>
             <span className={styles.syncIndicator}>
               <span className={styles.pulseDot} />
-              Live Synced
+              {" "}Live Synced
             </span>
           </div>
 
