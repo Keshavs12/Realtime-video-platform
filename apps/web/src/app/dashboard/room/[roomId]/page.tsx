@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useRoom } from "@/hooks/useRoom";
 import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
+import { useSpeechCaptions } from "@/hooks/useSpeechCaptions";
 import { formatDuration } from "@/lib/videoStorage";
 import { GreenRoomLobby } from "@/components/GreenRoomLobby";
 import { WhiteboardModal } from "@/components/WhiteboardModal";
@@ -15,12 +16,14 @@ import {
   RoomFullScreen,
   RoomLockedScreen,
   KickedFromRoomScreen,
+  WaitingForHostScreen,
 } from "./components/RoomStatusScreens";
 import { RoomHeader } from "./components/RoomHeader";
 import { RoomVideoStage } from "./components/RoomVideoStage";
 import { RoomControlBar } from "./components/RoomControlBar";
-import { RoomSidebar } from "./components/RoomSidebar";
+import { RoomSidebar, SidebarTabType } from "./components/RoomSidebar";
 import { RecordingCompletionModal } from "./components/RecordingCompletionModal";
+import { MeetingRecapModal } from "./components/MeetingRecapModal";
 
 export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId: string }> }>) {
   const { roomId } = use(params);
@@ -72,6 +75,21 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     hostMutePeer,
     hostMuteAll,
     hostKickPeer,
+    // Real-Time Polls & Notes
+    polls,
+    createPoll,
+    votePoll,
+    sharedNotes,
+    notesUpdatedBy,
+    updateSharedNotes,
+    // Waiting Room Controls
+    isWaitingForAdmission,
+    isWaitingRoomEnabled,
+    waitingGuestsQueue,
+    waitingRoomPendingMessage,
+    toggleWaitingRoom,
+    hostAdmitGuest,
+    hostDenyGuest,
   } = useRoom(roomId, user, guestName);
 
   const [chatInput, setChatInput] = useState("");
@@ -101,9 +119,17 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     return () => clearInterval(interval);
   }, [hasJoinedLobby]);
 
+  // AI Closed Captions Hook
+  const { isCaptionsEnabled, toggleCaptions, currentCaption, transcriptHistory } = useSpeechCaptions(
+    localDisplayName,
+    isAudioMuted
+  );
+  const [showRecapModal, setShowRecapModal] = useState(false);
+  const [isBackgroundBlur, setIsBackgroundBlur] = useState(false);
+
   // Collapsible sidebar & tabs
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"people" | "chat" | "host">("chat");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTabType>("chat");
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleCopyMeetingLink = () => {
@@ -114,7 +140,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     }
   };
 
-  const handleToggleSidebarTab = (tab: "people" | "chat" | "host") => {
+  const handleToggleSidebarTab = (tab: SidebarTabType) => {
     if (isSidebarOpen && sidebarTab === tab) {
       setIsSidebarOpen(false);
     } else {
@@ -256,6 +282,15 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     return <KickedFromRoomScreen onReturn={() => router.replace("/dashboard")} />;
   }
 
+  if (isWaitingForAdmission) {
+    return (
+      <WaitingForHostScreen
+        message={waitingRoomPendingMessage}
+        onCancel={handleLeave}
+      />
+    );
+  }
+
   if (!hasJoinedLobby) {
     return (
       <GreenRoomLobby
@@ -309,6 +344,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         participantCount={presenceList.length + 1}
         unreadCount={unreadCount}
         isHost={isHost}
+        onOpenRecap={() => setShowRecapModal(true)}
       />
 
       <RoomVideoStage
@@ -332,6 +368,9 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         reactions={reactions}
         onCopyMeetingLink={handleCopyMeetingLink}
         copiedLink={copiedLink}
+        currentCaption={currentCaption}
+        isCaptionsEnabled={isCaptionsEnabled}
+        isBackgroundBlur={isBackgroundBlur}
       />
 
       <RoomControlBar
@@ -343,6 +382,10 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         isLocalHandRaised={isLocalHandRaised}
         showReactionsPicker={showReactionsPicker}
         isLowBandwidthMode={isLowBandwidthMode}
+        isCaptionsEnabled={isCaptionsEnabled}
+        onToggleCaptions={toggleCaptions}
+        isBackgroundBlur={isBackgroundBlur}
+        onToggleBackgroundBlur={() => setIsBackgroundBlur((prev) => !prev)}
         isSidebarOpen={isSidebarOpen}
         videoDevices={videoDevices}
         audioDevices={audioDevices}
@@ -395,6 +438,18 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
           onChatInputChange={setChatInput}
           onSendMessage={handleSendMessage}
           unreadCount={unreadCount}
+          roomId={roomId}
+          polls={polls}
+          onCreatePoll={createPoll}
+          onVotePoll={votePoll}
+          sharedNotes={sharedNotes}
+          notesUpdatedBy={notesUpdatedBy}
+          onUpdateSharedNotes={updateSharedNotes}
+          isWaitingRoomEnabled={isWaitingRoomEnabled}
+          waitingGuestsQueue={waitingGuestsQueue}
+          onToggleWaitingRoom={toggleWaitingRoom}
+          onHostAdmitGuest={hostAdmitGuest}
+          onHostDenyGuest={hostDenyGuest}
         />
       )}
 
@@ -416,6 +471,18 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         onClose={() => setShowWhiteboard(false)}
         socket={socket}
         roomId={roomId}
+      />
+
+      <MeetingRecapModal
+        isOpen={showRecapModal}
+        onClose={() => setShowRecapModal(false)}
+        roomId={roomId}
+        durationSeconds={callDurationSeconds}
+        formatDuration={formatDuration}
+        presenceList={presenceList}
+        peers={peers}
+        messages={messages}
+        transcriptHistory={transcriptHistory}
       />
     </div>
   );

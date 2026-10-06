@@ -71,6 +71,28 @@ export interface FloatingReaction {
   fromSocketId: string;
 }
 
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+export interface PollItem {
+  id: string;
+  question: string;
+  creatorName: string;
+  options: PollOption[];
+  voters?: Record<string, string>;
+  createdAt?: number;
+}
+
+export interface WaitingGuest {
+  socketId: string;
+  userId: string;
+  name: string;
+  requestedAt: number;
+}
+
 export interface MediaDeviceOption {
   deviceId: string;
   label: string;
@@ -303,6 +325,18 @@ export const useRoom = (
       setReactions((prev) => removeReactionById(prev, id));
     }, 3500);
   }, []);
+
+  // Real-Time Multiplayer Polls & Shared Notes
+  const [polls, setPolls] = useState<PollItem[]>([]);
+  const [sharedNotes, setSharedNotes] = useState<string>("");
+  const [notesUpdatedBy, setNotesUpdatedBy] = useState<string | null>(null);
+
+  // Host Waiting Room (Lobby Knock-to-Join)
+  const [isWaitingForAdmission, setIsWaitingForAdmission] = useState(false);
+  const [isWaitingRoomEnabled, setIsWaitingRoomEnabled] = useState(false);
+  const [waitingGuestsQueue, setWaitingGuestsQueue] = useState<WaitingGuest[]>([]);
+  const [waitingRoomPendingMessage, setWaitingRoomPendingMessage] = useState<string | null>(null);
+
   const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -440,14 +474,20 @@ export const useRoom = (
       }
 
       try {
-        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        return await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
       } catch (err: any) {
         console.warn("Camera+mic access failed, attempting fallback:", err?.name, err?.message);
 
         let audioStream: MediaStream | null = null;
         try {
           if (navigator.mediaDevices?.getUserMedia) {
-            audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+            audioStream = await navigator.mediaDevices.getUserMedia({
+              video: false,
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            });
           }
         } catch (audioErr) {
           console.warn("Audio-only access also unavailable:", audioErr);
@@ -591,6 +631,65 @@ export const useRoom = (
           setMessages(
             history.map((m) => ({ ...m, isLocal: m.userId === effectiveUserId }))
           );
+        });
+
+        // Real-Time Waiting Room Listeners
+        socket.on("waiting-room-pending", ({ message }: { message: string }) => {
+          setIsWaitingForAdmission(true);
+          setWaitingRoomPendingMessage(message || "Waiting for host to admit you...");
+        });
+
+        socket.on("admitted-by-host", () => {
+          setIsWaitingForAdmission(false);
+          setWaitingRoomPendingMessage(null);
+          socket.emit("join-room", { roomId, name: effectiveName });
+        });
+
+        socket.on("denied-by-host", ({ message }: { message: string }) => {
+          setIsWaitingForAdmission(false);
+          setKickedFromRoom(true);
+          setHostNotification(message || "Your request to join was declined by the host.");
+        });
+
+        socket.on(
+          "waiting-queue-update",
+          ({ queue, isWaitingRoomEnabled: isEnabled }: { queue: WaitingGuest[]; isWaitingRoomEnabled: boolean }) => {
+            setWaitingGuestsQueue(queue || []);
+            setIsWaitingRoomEnabled(Boolean(isEnabled));
+          }
+        );
+
+        socket.on("waiting-room-status-changed", ({ isEnabled }: { isEnabled: boolean }) => {
+          setIsWaitingRoomEnabled(Boolean(isEnabled));
+        });
+
+        socket.on("waiting-guest-knock", (guest: WaitingGuest) => {
+          setWaitingGuestsQueue((prev) => [...prev.filter((g) => g.socketId !== guest.socketId), guest]);
+          setHostNotification(`🔔 ${guest.name || "A guest"} is waiting to enter the room`);
+          setTimeout(() => setHostNotification(null), 6000);
+        });
+
+        // Real-Time Multiplayer Polls Listeners
+        socket.on("room-polls-history", ({ polls: incomingPolls }: { polls: PollItem[] }) => {
+          setPolls(incomingPolls || []);
+        });
+
+        socket.on("poll-created", (newPoll: PollItem) => {
+          setPolls((prev) => [newPoll, ...prev.filter((p) => p.id !== newPoll.id)]);
+        });
+
+        socket.on("poll-updated", (updatedPoll: PollItem) => {
+          setPolls((prev) => prev.map((p) => (p.id === updatedPoll.id ? updatedPoll : p)));
+        });
+
+        // Real-Time Shared Meeting Notes Listeners
+        socket.on("notes-history", ({ notes }: { notes: string }) => {
+          if (notes) setSharedNotes(notes);
+        });
+
+        socket.on("notes-updated", ({ notes, updatedBy }: { notes: string; updatedBy: string }) => {
+          setSharedNotes(notes);
+          setNotesUpdatedBy(updatedBy);
         });
 
         // 3. Handle Room users & Presence
@@ -1162,7 +1261,14 @@ export const useRoom = (
     const constraints: MediaStreamConstraints =
       kind === "video"
         ? { video: { deviceId: { exact: deviceId } } }
-        : { audio: { deviceId: { exact: deviceId } } };
+        : {
+            audio: {
+              deviceId: { exact: deviceId },
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          };
 
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack =
@@ -1378,6 +1484,48 @@ export const useRoom = (
     });
   };
 
+  // Real-Time Polls Actions
+  const createPoll = useCallback((question: string, options: string[]) => {
+    if (socketRef.current) {
+      socketRef.current.emit("poll-create", { question, options });
+    }
+  }, []);
+
+  const votePoll = useCallback((pollId: string, optionId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("poll-vote", { pollId, optionId });
+    }
+  }, []);
+
+  // Real-Time Shared Notes Actions
+  const updateSharedNotes = useCallback((notes: string) => {
+    setSharedNotes(notes);
+    if (socketRef.current) {
+      socketRef.current.emit("notes-update", { notes });
+    }
+  }, []);
+
+  // Host Waiting Room Actions
+  const toggleWaitingRoom = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.emit("toggle-waiting-room");
+    }
+  }, []);
+
+  const hostAdmitGuest = useCallback((targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("host-admit-peer", { targetSocketId });
+      setWaitingGuestsQueue((prev) => prev.filter((g) => g.socketId !== targetSocketId));
+    }
+  }, []);
+
+  const hostDenyGuest = useCallback((targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("host-deny-peer", { targetSocketId });
+      setWaitingGuestsQueue((prev) => prev.filter((g) => g.socketId !== targetSocketId));
+    }
+  }, []);
+
   return {
     socket: socketInstance,
     localStream,
@@ -1420,5 +1568,20 @@ export const useRoom = (
     hostMutePeer,
     hostMuteAll,
     hostKickPeer,
+    // Real-Time Polls & Notes
+    polls,
+    createPoll,
+    votePoll,
+    sharedNotes,
+    notesUpdatedBy,
+    updateSharedNotes,
+    // Waiting Room Controls
+    isWaitingForAdmission,
+    isWaitingRoomEnabled,
+    waitingGuestsQueue,
+    waitingRoomPendingMessage,
+    toggleWaitingRoom,
+    hostAdmitGuest,
+    hostDenyGuest,
   };
 };
