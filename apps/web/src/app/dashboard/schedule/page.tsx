@@ -2,6 +2,26 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Calendar,
+  CalendarPlus,
+  Clock,
+  Key,
+  Users,
+  Mail,
+  Send,
+  Copy,
+  Check,
+  Trash2,
+  Crown,
+  User,
+  X,
+  Bell,
+  Video,
+  Loader2,
+  Sparkles,
+  Download,
+} from "lucide-react";
 import dashboardStyles from "@/styles/dashboard.module.scss";
 import styles from "@/styles/schedule.module.scss";
 import {
@@ -12,7 +32,7 @@ import {
   ScheduledMeetingItem,
 } from "@/services/schedule.service";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
 
 export default function SchedulePage() {
   const router = useRouter();
@@ -58,6 +78,15 @@ export default function SchedulePage() {
       });
   }, []);
 
+  useEffect(() => {
+    if (!showModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowModal(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showModal]);
+
   // Invitee management
   const handleAddInvitee = () => {
     const trimmed = inviteeInput.trim().toLowerCase();
@@ -90,7 +119,6 @@ export default function SchedulePage() {
     e.preventDefault();
     if (!title.trim() || !scheduledAt) return;
 
-    // Auto-add any email that's typed but not yet added via "+ Add"
     const finalInvitees = [...invitees];
     const pendingEmail = inviteeInput.trim().toLowerCase();
     if (pendingEmail && EMAIL_REGEX.test(pendingEmail)) {
@@ -115,10 +143,10 @@ export default function SchedulePage() {
 
       setFeedback({
         type: "success",
-        text: `🎉 Meeting scheduled! ${
+        text: `Meeting scheduled successfully! ${
           res.data.emailsSent > 0
-            ? `Email invitations sent to ${res.data.emailsSent} recipient(s).`
-            : "Room created and ready."
+            ? `Email invitations dispatched to ${res.data.emailsSent} recipient(s).`
+            : "Meeting room is ready."
         }`,
       });
 
@@ -161,7 +189,7 @@ export default function SchedulePage() {
       const res = await sendMeetingReminders(id);
       setFeedback({
         type: "success",
-        text: `🔔 Email reminders dispatched to ${res.data.sent} participant(s).`,
+        text: `Email reminders sent to ${res.data.sent} participant(s).`,
       });
     } catch (err) {
       console.error("Failed to send reminders:", err);
@@ -179,22 +207,78 @@ export default function SchedulePage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleAddToGoogleCalendar = (m: ScheduledMeetingItem) => {
+    const startDate = new Date(m.scheduledAt);
+    const endDate = new Date(startDate.getTime() + m.durationMinutes * 60000);
+    const formatGCalDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    const meetingUrl = `${window.location.origin}/dashboard/room/${m.roomCode}`;
+    const text = m.title;
+    const details = `${m.description || "SuperCall Video Meeting"}\n\nJoin Meeting: ${meetingUrl}`;
+    const dates = `${formatGCalDate(startDate)}/${formatGCalDate(endDate)}`;
+
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+      text
+    )}&dates=${dates}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(meetingUrl)}`;
+
+    window.open(url, "_blank");
+  };
+
+  const handleDownloadIcs = (m: ScheduledMeetingItem) => {
+    const startDate = new Date(m.scheduledAt);
+    const endDate = new Date(startDate.getTime() + m.durationMinutes * 60000);
+    const formatIcsDate = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    const meetingUrl = `${window.location.origin}/dashboard/room/${m.roomCode}`;
+
+    const icsContent = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//SuperCall//Realtime Video Platform//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      `UID:${m.id}@supercall.io`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(startDate)}`,
+      `DTEND:${formatIcsDate(endDate)}`,
+      `SUMMARY:${m.title}`,
+      `DESCRIPTION:${(m.description || "SuperCall Meeting").replace(/\n/g, "\\n")} Join call: ${meetingUrl}`,
+      `LOCATION:${meetingUrl}`,
+      "STATUS:CONFIRMED",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const blob = new Blob([icsContent], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${m.title.replace(/[^a-zA-Z0-9]/g, "-")}-invite.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+
   const renderMeetingsContent = () => {
     if (meetings === null) {
       return (
-        <p style={{ color: "#94a3b8", padding: "2rem 0", textAlign: "center" }}>
-          Loading scheduled meetings…
-        </p>
+        <div style={{ color: "#94a3b8", padding: "3rem 0", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+          <Loader2 size={18} className="animate-spin" />
+          <span>Loading scheduled meetings…</span>
+        </div>
       );
     }
     if (meetings.length === 0) {
       return (
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>📅</div>
+          <div className={styles.emptyIcon}>
+            <Calendar size={36} style={{ color: "#818cf8" }} />
+          </div>
           <h3>No upcoming meetings scheduled</h3>
           <p>
-            Click <strong>&quot;Schedule New Meeting&quot;</strong> above to select a date, time, and invite
-            participants with direct email invitations!
+            Click <strong>&quot;Schedule New Meeting&quot;</strong> above to set a date, time, and dispatch
+            automated email invitations with room access links!
           </p>
         </div>
       );
@@ -223,24 +307,34 @@ export default function SchedulePage() {
                   <div className={styles.cardTitleRow}>
                     <h4 className={styles.cardTitle}>{m.title}</h4>
                     {m.isHost ? (
-                      <span className={styles.hostBadge}>👑 Hosted by You</span>
+                      <span className={styles.hostBadge}>
+                        <Crown size={12} style={{ color: "#fbbf24" }} />
+                        <span>Hosted by You</span>
+                      </span>
                     ) : (
                       <span className={styles.guestBadge}>
-                        👤 Hosted by {m.host?.name || "Host"}
+                        <User size={12} />
+                        <span>Hosted by {m.host?.name || "Host"}</span>
                       </span>
                     )}
                   </div>
 
                   <div className={styles.cardMetaRow}>
-                    <span>⏰ {timeStr} ({m.durationMinutes} min)</span>
-                    <span>🔑 Room: {m.roomCode}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <Clock size={12} />
+                      <span>{timeStr} ({m.durationMinutes} min)</span>
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <Key size={12} />
+                      <span>Room: {m.roomCode}</span>
+                    </span>
                   </div>
 
                   {m.description && <p className={styles.cardDesc}>{m.description}</p>}
 
                   {m.inviteeList.length > 0 && (
                     <div className={styles.inviteesSummary}>
-                      <span>✉️</span>
+                      <Mail size={13} style={{ color: "#818cf8" }} />
                       <span>
                         {m.inviteeList.length} invitee{m.inviteeList.length > 1 ? "s" : ""}:{" "}
                         {m.inviteeList.slice(0, 3).join(", ")}
@@ -258,8 +352,8 @@ export default function SchedulePage() {
                   className={styles.startBtn}
                   onClick={() => router.push(`/dashboard/room/${m.roomCode}`)}
                 >
-                  <span>🚀</span>
-                  <span>{m.isHost ? "Start Meeting" : "Join Meeting"}</span>
+                  <Video size={14} />
+                  <span>{m.isHost ? "Start Call" : "Join Call"}</span>
                 </button>
 
                 <button
@@ -268,7 +362,37 @@ export default function SchedulePage() {
                   onClick={() => handleCopyLink(m)}
                   title="Copy meeting invitation link"
                 >
-                  {copiedId === m.id ? "✓ Copied" : "📋 Link"}
+                  {copiedId === m.id ? (
+                    <>
+                      <Check size={14} style={{ color: "#34d399" }} />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} />
+                      <span>Link</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.copyBtn}
+                  onClick={() => handleAddToGoogleCalendar(m)}
+                  title="Add to Google Calendar"
+                >
+                  <Calendar size={13} style={{ color: "#4285F4" }} />
+                  <span>Google Cal</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.copyBtn}
+                  onClick={() => handleDownloadIcs(m)}
+                  title="Download .ics Calendar Invite"
+                >
+                  <Download size={13} />
+                  <span>.ics</span>
                 </button>
 
                 {m.isHost && m.inviteeList.length > 0 && (
@@ -279,7 +403,8 @@ export default function SchedulePage() {
                     disabled={remindingId === m.id}
                     title="Send email reminders to invitees"
                   >
-                    {remindingId === m.id ? "Sending…" : "🔔 Remind"}
+                    <Bell size={13} />
+                    <span>{remindingId === m.id ? "Sending…" : "Remind"}</span>
                   </button>
                 )}
 
@@ -290,7 +415,7 @@ export default function SchedulePage() {
                     onClick={() => handleDelete(m.id)}
                     title="Cancel this scheduled meeting"
                   >
-                    🗑️
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
@@ -308,14 +433,14 @@ export default function SchedulePage() {
         <div className={styles.topBar}>
           <div className={styles.titleBox}>
             <h2>Scheduled Meetings &amp; Invites</h2>
-            <p>Plan upcoming video calls, send email invitations via Nodemailer, and manage schedules.</p>
+            <p>Plan upcoming video calls, dispatch automated email invitations, and manage your team agenda.</p>
           </div>
           <button
             type="button"
             className={styles.scheduleNewBtn}
             onClick={() => setShowModal(true)}
           >
-            <span>📅</span>
+            <CalendarPlus size={16} />
             <span>Schedule New Meeting</span>
           </button>
         </div>
@@ -332,30 +457,31 @@ export default function SchedulePage() {
 
         {/* Schedule Modal */}
         {showModal && (
-          <div
-            role="presentation"
-            className={styles.modalOverlay}
-            onClick={() => setShowModal(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setShowModal(false);
-            }}
-          >
-            <div
-              role="dialog"
+          <div className={styles.modalOverlay}>
+            <button
+              type="button"
+              className={styles.modalBackdrop}
+              onClick={() => setShowModal(false)}
+              aria-label="Close schedule modal"
+              tabIndex={-1}
+            />
+            <dialog
+              open
               aria-modal="true"
               aria-labelledby="schedule-modal-title"
               className={styles.modalContent}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
             >
               <div className={styles.modalHeader}>
-                <h3 id="schedule-modal-title">Schedule a Video Meeting</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Calendar size={18} style={{ color: "#818cf8" }} />
+                  <h3 id="schedule-modal-title">Schedule a Video Meeting</h3>
+                </div>
                 <button
                   type="button"
                   className={styles.closeBtn}
                   onClick={() => setShowModal(false)}
                 >
-                  ✕
+                  <X size={18} />
                 </button>
               </div>
 
@@ -366,7 +492,7 @@ export default function SchedulePage() {
                     id="meeting-title"
                     type="text"
                     required
-                    placeholder="e.g. Weekly Team Standup"
+                    placeholder="e.g. Weekly Product & Architecture Sync"
                     className={styles.input}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -377,7 +503,7 @@ export default function SchedulePage() {
                   <label htmlFor="meeting-desc">Description (Optional)</label>
                   <textarea
                     id="meeting-desc"
-                    placeholder="Agenda, notes, or discussion points…"
+                    placeholder="Meeting agenda, discussion points, or preparation links…"
                     className={styles.textarea}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -447,7 +573,7 @@ export default function SchedulePage() {
                             className={styles.chipRemoveBtn}
                             onClick={() => handleRemoveInvitee(email)}
                           >
-                            ✕
+                            <X size={12} />
                           </button>
                         </span>
                       ))}
@@ -462,12 +588,12 @@ export default function SchedulePage() {
                 >
                   {(() => {
                     if (isSubmitting) return "Scheduling & Sending Invites…";
-                    if (invitees.length > 0) return `✉️ Schedule & Send Invites (${invitees.length})`;
-                    return "✉️ Schedule & Send Invites";
+                    if (invitees.length > 0) return `Schedule & Send Invites (${invitees.length})`;
+                    return "Schedule & Create Room";
                   })()}
                 </button>
               </form>
-            </div>
+            </dialog>
           </div>
         )}
       </div>

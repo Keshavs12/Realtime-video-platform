@@ -35,3 +35,22 @@ export const getDashboardStats = async () => {
   const response = await api.get("/rooms/stats");
   return response.data.data as DashboardStats;
 };
+
+export interface MeetingSummaryData {
+  executiveSummary: string;
+  keyDecisions: string[];
+  actionItems: { task: string; assignee: string }[];
+  discussionTopics: string[];
+  generatedBy: "gemini" | "heuristic";
+}
+
+export const summarizeMeeting = async (payload: {
+  roomId: string;
+  transcriptHistory?: { speaker: string; text: string; timestamp: number }[];
+  messages?: { name?: string; message: string; at: number }[];
+  durationSeconds?: number;
+}) => {
+  const response = await api.post("/rooms/summarize", payload);
+  return response.data.data as MeetingSummaryData;
+};
+

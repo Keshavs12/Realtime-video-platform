@@ -12,8 +12,7 @@ export const signupSchema = z.object({
         .string()
         .min(3, "Name must be at least 3 characters"),
 
-    email: z
-        .email("Invalid email address"),
+    email: z.email("Invalid email address"),
 
     password: z
         .string()

@@ -60,9 +60,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background-color: rgba(59, 130, 246, 0.15);
+  background-color: #172554;
   border: 1px solid rgba(59, 130, 246, 0.35);
-  color: #93c5fd;
+  color: #bfdbfe;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.84rem;
   font-weight: 700;
@@ -72,18 +72,18 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(59, 130, 246, 0.22);
+    background: #1e3a8a;
     border-color: rgba(59, 130, 246, 0.5);
   }
 }
 
 .securityBadge {
   font-size: 0.75rem;
-  color: #10b981;
+  color: #6ee7b7;
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background-color: rgba(16, 185, 129, 0.15);
+  background-color: #064e3b;
   border: 1px solid rgba(16, 185, 129, 0.3);
   padding: 3px 8px;
   border-radius: 6px;
@@ -104,11 +104,11 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: #ffffff;
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: #1e293b;
   padding: 4px 10px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -121,9 +121,9 @@
 }
 
 .headerIconBtn {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
+  color: #ffffff;
   padding: 6px 12px;
   border-radius: 10px;
   font-size: 0.82rem;
@@ -135,14 +135,14 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.14);
+    background: #334155;
     color: #ffffff;
   }
 
   &.active {
-    background: rgba(59, 130, 246, 0.2);
+    background: #1e3a8a;
     border-color: rgba(59, 130, 246, 0.4);
-    color: #60a5fa;
+    color: #bfdbfe;
   }
 }
 
@@ -384,7 +384,7 @@
   position: absolute;
   top: 14px;
   left: 14px;
-  background: rgba(99, 102, 241, 0.92);
+  background: #4f46e5;
   backdrop-filter: blur(8px);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -401,7 +401,7 @@
   box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
 
   &:hover {
-    background: #4f46e5;
+    background: #4338ca;
     transform: translateY(-1px);
   }
 }
@@ -524,7 +524,7 @@
   height: 48px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -541,7 +541,7 @@
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: #334155;
     transform: scale(1.08);
   }
 
@@ -550,44 +550,44 @@
   }
 
   &.active {
-    background: #ef4444;
-    border-color: #f87171;
+    background: #dc2626;
+    border-color: #ef4444;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 16px rgba(220, 38, 38, 0.45);
 
     &:hover {
-      background: #dc2626;
+      background: #b91c1c;
     }
   }
 
   &.handRaised {
-    background: #f59e0b;
-    border-color: #fbbf24;
+    background: #b45309;
+    border-color: #d97706;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(245, 158, 11, 0.55);
+    box-shadow: 0 0 16px rgba(180, 83, 9, 0.55);
 
     &:hover {
-      background: #d97706;
+      background: #92400e;
     }
   }
 
   &.recordingActive {
-    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+    background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
     color: #ffffff !important;
-    box-shadow: 0 0 18px rgba(239, 68, 68, 0.7) !important;
+    box-shadow: 0 0 18px rgba(220, 38, 38, 0.7) !important;
     animation: recPulse 1.8s infinite ease-in-out;
   }
 
   &.leave {
-    background: #ef4444;
-    border-color: #ef4444;
+    background: #dc2626;
+    border-color: #dc2626;
     color: #ffffff;
     width: 54px;
     border-radius: 9999px;
 
     &:hover {
-      background: #dc2626;
-      box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+      background: #b91c1c;
+      box-shadow: 0 0 20px rgba(220, 38, 38, 0.6);
     }
   }
 }
@@ -754,7 +754,7 @@
 }
 
 .unreadBadge {
-  background: #ef4444;
+  background: #dc2626;
   color: #ffffff;
   font-size: 0.7rem;
   font-weight: 700;
@@ -788,24 +788,24 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: #334155;
     border-radius: 3px;
   }
 }
 
 .chatMessage {
-  background: rgba(255, 255, 255, 0.05);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   padding: 8px 12px;
   font-size: 0.82rem;
-  color: #f1f5f9;
+  color: #f8fafc;
   max-width: 88%;
   line-height: 1.4;
 
   &.own {
-    background: linear-gradient(135deg, rgba(79, 70, 229, 0.25), rgba(59, 130, 246, 0.25));
-    border-color: rgba(59, 130, 246, 0.4);
+    background: #1e1b4b;
+    border-color: #4338ca;
     align-self: flex-end;
   }
 }
@@ -911,12 +911,12 @@
   }
 
   &.locked {
-    background-color: rgba(239, 68, 68, 0.25);
-    border-color: rgba(239, 68, 68, 0.5);
-    color: #fca5a5;
+    background-color: #450a0a;
+    border-color: #ef4444;
+    color: #fecaca;
 
     &:hover {
-      background: rgba(239, 68, 68, 0.35);
+      background: #7f1d1d;
     }
   }
 }
@@ -937,9 +937,9 @@
 }
 
 .hostBadgeSmall {
-  background-color: rgba(234, 179, 8, 0.25);
-  border: 1px solid rgba(234, 179, 8, 0.4);
-  color: #fde047;
+  background-color: #422006;
+  border: 1px solid #ca8a04;
+  color: #fef08a;
   font-size: 0.68rem;
   font-weight: 700;
   padding: 2px 6px;
@@ -950,14 +950,14 @@
   position: absolute;
   top: 12px;
   left: 86px;
-  background: #f59e0b;
+  background: #b45309;
   color: #ffffff;
   padding: 3px 8px;
   border-radius: 8px;
   font-size: 0.72rem;
   font-weight: 700;
   z-index: 6;
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 12px rgba(180, 83, 9, 0.6);
   animation: handPulse 1.2s infinite alternate ease-in-out;
 }
 
@@ -980,14 +980,14 @@
   position: absolute;
   bottom: 12px;
   right: 12px;
-  background: rgba(59, 130, 246, 0.9);
+  background: #1d4ed8;
   color: #ffffff;
   padding: 3px 8px;
   border-radius: 8px;
   font-size: 0.72rem;
   font-weight: 700;
   z-index: 6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.4);
 }
 
 .hostPeerButtons {
@@ -1072,21 +1072,21 @@
 }
 
 .recMiniButton {
-  background: rgba(255, 255, 255, 0.1);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  color: white;
+  color: #ffffff;
   padding: 2px 6px;
   border-radius: 6px;
   font-size: 0.72rem;
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: #334155;
   }
 }
 
 .recStopButton {
-  background: rgba(239, 68, 68, 0.2);
+  background: #450a0a;
   border: 1px solid rgba(239, 68, 68, 0.5);
   color: #fca5a5;
   padding: 2px 8px;
@@ -1096,8 +1096,8 @@
   cursor: pointer;
 
   &:hover {
-    background: #ef4444;
-    color: white;
+    background: #dc2626;
+    color: #ffffff;
   }
 }
 
@@ -1106,7 +1106,7 @@
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(239, 68, 68, 0.95);
+  background: #b91c1c;
   backdrop-filter: blur(10px);
   color: #ffffff;
   padding: 8px 20px;
@@ -1114,7 +1114,7 @@
   font-size: 0.85rem;
   font-weight: 700;
   z-index: 45;
-  box-shadow: 0 6px 25px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 6px 25px rgba(185, 28, 28, 0.4);
 }
 
 .lowBandwidthBanner {
@@ -1271,7 +1271,7 @@
 }
 
 .returnButton {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
   color: #ffffff;
   border: none;
   padding: 10px 22px;
@@ -1283,7 +1283,7 @@
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4);
   }
 }
 
@@ -1302,7 +1302,22 @@
   padding: 1rem;
 }
 
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  border: none;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  z-index: 0;
+}
+
 .recordingModal {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: inherit;
   background: #0f172a;
   border: 1px solid rgba(59, 130, 246, 0.35);
   box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(59, 130, 246, 0.2);
@@ -1360,9 +1375,9 @@
 }
 
 .modalCloseBtn {
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #94a3b8;
+  color: #cbd5e1;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -1372,7 +1387,7 @@
   justify-content: center;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: #334155;
     color: #ffffff;
   }
 }
@@ -1398,7 +1413,7 @@
 }
 
 .metaCard {
-  background: rgba(255, 255, 255, 0.04);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 0.75rem 1rem;
@@ -1409,7 +1424,7 @@
 
 .metaLabel {
   font-size: 0.72rem;
-  color: #64748b;
+  color: #94a3b8;
   text-transform: uppercase;
   font-weight: 700;
 }
@@ -1427,24 +1442,24 @@
 }
 
 .downloadRecBtn {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  color: #ffffff;
   border: none;
   border-radius: 12px;
   padding: 0.85rem;
   font-size: 0.92rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 4px 15px rgba(29, 78, 216, 0.35);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 6px 20px rgba(29, 78, 216, 0.5);
   }
 }
 
 .viewStudioBtn {
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #f1f5f9;
   border-radius: 12px;
@@ -1454,7 +1469,7 @@
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: #334155;
   }
 }
 

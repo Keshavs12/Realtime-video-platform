@@ -7,7 +7,9 @@ interface SendOtpOptions {
     otp: string;
 }
 
-const sanitizeLog = (val: string): string => val.replace(/[\r\n\t]/g, "");
+const sanitizeLog = (val: string): string => (val ? String(val).replace(/[\r\n\t]/g, "") : "");
+
+const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 
 class EmailService {
     private transporter: Transporter | null = null;
@@ -26,11 +28,16 @@ class EmailService {
             // Extract pure email address even if user entered `"SuperCall" <keshav.sharma@antiersolutions.com>`
             const openAngle = rawUser.indexOf("<");
             const closeAngle = rawUser.indexOf(">", openAngle);
-            const angleEmail = openAngle !== -1 && closeAngle > openAngle ? rawUser.slice(openAngle + 1, closeAngle).trim() : null;
-            const emailMatch = rawUser.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/);
-            user = (angleEmail || (emailMatch ? emailMatch[0] : rawUser))
-                .trim()
-                .replace(/^["']|["']$/g, "");
+            let extractedUser = rawUser;
+            if (openAngle !== -1 && closeAngle > openAngle) {
+                extractedUser = rawUser.slice(openAngle + 1, closeAngle);
+            } else {
+                const emailMatch = EMAIL_REGEX.exec(rawUser);
+                if (emailMatch) {
+                    extractedUser = emailMatch[0];
+                }
+            }
+            user = extractedUser.trim().replace(/^["']|["']$/g, "");
         }
 
         const pass = rawPass ? rawPass.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, "") : "";
@@ -65,7 +72,7 @@ class EmailService {
             // On cloud platforms (Render, AWS, DigitalOcean), port 587 is much more reliable than 465 (which is often blocked)
             const port = rawPort || 587;
             const secure = port === 465;
-            const isGmail = host.includes("gmail") || Boolean(user && (user.includes("gmail.com") || user.includes("antiersolutions.com")));
+            const isGmail = host.includes("gmail") || user.includes("gmail.com") || user.includes("antiersolutions.com");
 
             const smtpConfig: any = {
                 host: isGmail ? "smtp.gmail.com" : host,
@@ -88,17 +95,8 @@ class EmailService {
         return this.transporter;
     }
 
-    /**
-     * Sends an OTP verification email to the user.
-     */
-    async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
-        this.lastErrorMessage = null;
-        const { user } = this.getCleanCredentials();
-        const rawFrom = process.env.EMAIL_FROM;
-        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
-        const sender = cleanFrom || `"SuperCall" <${user || "support@supercall.com"}>`;
-
-        const html = `
+    private buildOtpEmailHtml(name: string, otp: string): string {
+        return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -135,181 +133,207 @@ class EmailService {
 </body>
 </html>
 `;
+    }
 
-        // 1. Brevo HTTP REST API (Port 443 HTTPS - Delivers to ANY recipient including yopmail, 300 free/day)
+    private async sendOtpViaBrevo(to: string, name: string, otp: string, html: string, defaultUser: string): Promise<boolean> {
         const brevoApiKey = process.env.BREVO_API_KEY?.trim();
-        if (brevoApiKey) {
-            try {
-                const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || user || "support@supercall.com";
-                const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-                    method: "POST",
-                    headers: {
-                        "api-key": brevoApiKey,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    body: JSON.stringify({
-                        sender: {
-                            name: "SuperCall",
-                            email: brevoSenderEmail,
-                        },
-                        to: [{ email: to, name }],
-                        subject: `${otp} is your SuperCall verification code`,
-                        htmlContent: html,
-                    }),
-                });
+        if (!brevoApiKey) return false;
 
-                if (response.ok) {
-                    logger.info(`[EmailService] Verification OTP successfully sent via Brevo API to ${to}`);
-                    return true;
-                } else {
-                    const errBody = await response.text();
-                    logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${to}`);
-                    this.lastErrorMessage = `Brevo delivery failed: ${errBody}`;
-                }
-            } catch (err: any) {
-                logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${to}`);
-                this.lastErrorMessage = `Brevo request error: ${err.message}`;
-            }
-        }
-
-        // 2. Gmail HTTPS Relay (Port 443 HTTPS - Sends from personal Gmail via Google Apps Script Webhook)
-        // Google Apps Script returns a 302 redirect on POST. When `redirect: "follow"` is used,
-        // the fetch API converts the POST to a GET (per HTTP spec), dropping the request body.
-        // Fix: manually follow the redirect by capturing the Location header, then re-POST to it.
-        const gmailRelayUrl = process.env.GMAIL_RELAY_URL?.trim();
-        if (gmailRelayUrl) {
-            try {
-                const payload = JSON.stringify({
-                    to,
+        try {
+            const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL?.trim() || defaultUser || "support@supercall.com";
+            const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                method: "POST",
+                headers: {
+                    "api-key": brevoApiKey,
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({
+                    sender: { name: "SuperCall", email: brevoSenderEmail },
+                    to: [{ email: to, name }],
                     subject: `${otp} is your SuperCall verification code`,
-                    text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
-                    html,
-                });
+                    htmlContent: html,
+                }),
+            });
 
-                // Step 1: POST without following redirect to capture the 302 Location header
-                const initialResponse = await fetch(gmailRelayUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: payload,
-                    redirect: "manual",
-                });
-
-                let finalResponse: Response;
-
-                if (initialResponse.status >= 300 && initialResponse.status < 400) {
-                    // Got a redirect — re-POST the body to the redirect URL
-                    const redirectUrl = initialResponse.headers.get("location");
-                    if (!redirectUrl) {
-                        throw new Error("Gmail Relay returned redirect but no Location header");
-                    }
-                    logger.info(`[EmailService] Gmail Relay redirected (${initialResponse.status}), re-POSTing to redirect URL`);
-                    finalResponse = await fetch(redirectUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: payload,
-                        redirect: "follow",
-                    });
-                } else {
-                    finalResponse = initialResponse;
-                }
-
-                const safeTo = sanitizeLog(to);
-                if (finalResponse.ok) {
-                    const respText = sanitizeLog(await finalResponse.text());
-                    logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${safeTo}. Response: ${respText}`);
-                    return true;
-                } else {
-                    const errBody = await finalResponse.text();
-                    logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${safeTo}`);
-                    this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
-                }
-            } catch (err: any) {
-                const safeTo = sanitizeLog(to);
-                logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${safeTo}`);
-                this.lastErrorMessage = `Gmail Relay error: ${err.message}`;
-            }
-        }
-
-        // 3. Resend HTTP REST API (Port 443 HTTPS)
-        const resendApiKey = process.env.RESEND_API_KEY?.trim();
-        if (resendApiKey) {
-            try {
-                // Do not fallback to cleanFrom if it has an unverified domain; Resend requires onboarding@resend.dev unless RESEND_FROM is configured
-                const resendFrom = process.env.RESEND_FROM?.trim() || "SuperCall <onboarding@resend.dev>";
-                const response = await fetch("https://api.resend.com/emails", {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${resendApiKey}`,
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        from: resendFrom,
-                        to: [to],
-                        subject: `${otp} is your SuperCall verification code`,
-                        html,
-                    }),
-                });
-
-                if (response.ok) {
-                    logger.info(`[EmailService] Verification OTP successfully sent via Resend API to ${to}`);
-                    return true;
-                } else {
-                    const errBody = await response.text();
-                    logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${to}`);
-                    if (!this.lastErrorMessage) {
-                        try {
-                            const parsed = JSON.parse(errBody);
-                            this.lastErrorMessage = parsed.message || errBody;
-                        } catch {
-                            this.lastErrorMessage = errBody;
-                        }
-                    }
-                }
-            } catch (err: any) {
-                logger.error({ err: err.message }, `[EmailService] Resend API request error for ${to}`);
-                this.lastErrorMessage = `Resend error: ${err.message}`;
-            }
-        }
-
-        // 4. SMTP Transport (Gmail / Custom SMTP)
-        const transporter = this.getTransporter();
-        if (transporter) {
-            try {
-                await transporter.sendMail({
-                    from: sender,
-                    to,
-                    subject: `${otp} is your SuperCall verification code`,
-                    text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
-                    html,
-                });
-                logger.info(`[EmailService] Verification OTP successfully sent to ${to}`);
+            const safeTo = sanitizeLog(to);
+            if (response.ok) {
+                logger.info(`[EmailService] Verification OTP successfully sent via Brevo API to ${safeTo}`);
                 return true;
-            } catch (error: any) {
-                logger.error(
-                    { err: error.message, code: error.code, response: error.response },
-                    `[EmailService] SMTP delivery failed for ${to}`
-                );
-                if (!this.lastErrorMessage) {
-                    this.lastErrorMessage = error.message || "SMTP connection failed";
-                }
-                logger.warn(
-                    `\n=======================================================\n` +
-                    `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${to} (${name}): ${otp}\n` +
-                    `Render Free Tier blocks outbound SMTP ports 25, 465, and 587.\n` +
-                    `To send real emails on Render, add RESEND_API_KEY or BREVO_API_KEY to Render Environment Variables.\n` +
-                    `Expires in 10 minutes.\n` +
-                    `=======================================================\n`
-                );
-                return false;
             }
+            const errBody = await response.text();
+            logger.error({ err: errBody }, `[EmailService] Brevo API delivery failed for ${safeTo}`);
+            this.lastErrorMessage = `Brevo delivery failed: ${errBody}`;
+            return false;
+        } catch (err: any) {
+            const safeTo = sanitizeLog(to);
+            logger.error({ err: err.message }, `[EmailService] Brevo API request error for ${safeTo}`);
+            this.lastErrorMessage = `Brevo request error: ${err.message}`;
+            return false;
         }
+    }
+
+    private async sendOtpViaGmailRelay(to: string, name: string, otp: string, html: string): Promise<boolean> {
+        const gmailRelayUrl = process.env.GMAIL_RELAY_URL?.trim();
+        if (!gmailRelayUrl) return false;
+
+        const safeTo = sanitizeLog(to);
+        try {
+            const payload = JSON.stringify({
+                to,
+                subject: `${otp} is your SuperCall verification code`,
+                text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                html,
+            });
+
+            const initialResponse = await fetch(gmailRelayUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+                redirect: "manual",
+            });
+
+            const isRedirect = initialResponse.status >= 300 && initialResponse.status < 400;
+            const redirectUrl = isRedirect ? initialResponse.headers.get("location") : null;
+            if (isRedirect && !redirectUrl) {
+                throw new Error("Gmail Relay returned redirect but no Location header");
+            }
+
+            const finalResponse = redirectUrl
+                ? await fetch(redirectUrl, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: payload,
+                      redirect: "follow",
+                  })
+                : initialResponse;
+
+            if (finalResponse.ok) {
+                const respText = sanitizeLog(await finalResponse.text());
+                logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${safeTo}. Response: ${respText}`);
+                return true;
+            }
+            const errBody = await finalResponse.text();
+            logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${safeTo}`);
+            this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
+            return false;
+        } catch (err: any) {
+            logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${safeTo}`);
+            this.lastErrorMessage = `Gmail Relay error: ${err.message}`;
+            return false;
+        }
+    }
+
+    private parseErrorMessage(rawError: string): string {
+        try {
+            const parsed = JSON.parse(rawError);
+            return parsed.message || rawError;
+        } catch {
+            return rawError;
+        }
+    }
+
+    private async sendOtpViaResend(to: string, otp: string, html: string): Promise<boolean> {
+        const resendApiKey = process.env.RESEND_API_KEY?.trim();
+        if (!resendApiKey) return false;
+
+        try {
+            const resendFrom = process.env.RESEND_FROM?.trim() || "SuperCall <onboarding@resend.dev>";
+            const response = await fetch("https://api.resend.com/emails", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${resendApiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    from: resendFrom,
+                    to: [to],
+                    subject: `${otp} is your SuperCall verification code`,
+                    html,
+                }),
+            });
+
+            const safeTo = sanitizeLog(to);
+            if (response.ok) {
+                logger.info(`[EmailService] Verification OTP successfully sent via Resend API to ${safeTo}`);
+                return true;
+            }
+            const errBody = await response.text();
+            logger.error({ err: errBody }, `[EmailService] Resend API delivery failed for ${safeTo}`);
+            if (!this.lastErrorMessage) {
+                this.lastErrorMessage = this.parseErrorMessage(errBody);
+            }
+            return false;
+        } catch (err: any) {
+            const safeTo = sanitizeLog(to);
+            logger.error({ err: err.message }, `[EmailService] Resend API request error for ${safeTo}`);
+            this.lastErrorMessage = `Resend error: ${err.message}`;
+            return false;
+        }
+    }
+
+    private async sendOtpViaSmtp(to: string, name: string, otp: string, html: string, sender: string): Promise<boolean> {
+        const transporter = this.getTransporter();
+        if (!transporter) return false;
+
+        const safeTo = sanitizeLog(to);
+        const safeName = sanitizeLog(name);
+        const safeOtp = sanitizeLog(otp);
+
+        try {
+            await transporter.sendMail({
+                from: sender,
+                to,
+                subject: `${otp} is your SuperCall verification code`,
+                text: `Hi ${name}, your SuperCall verification code is ${otp}. It expires in 10 minutes.`,
+                html,
+            });
+            logger.info(`[EmailService] Verification OTP successfully sent to ${safeTo}`);
+            return true;
+        } catch (error: any) {
+            logger.error(
+                { err: error.message, code: error.code, response: error.response },
+                `[EmailService] SMTP delivery failed for ${safeTo}`
+            );
+            if (!this.lastErrorMessage) {
+                this.lastErrorMessage = error.message || "SMTP connection failed";
+            }
+            logger.warn(
+                `\n=======================================================\n` +
+                `📧 [RENDER CLOUD SMTP NOTICE] OTP for ${safeTo} (${safeName}): ${safeOtp}\n` +
+                `Render Free Tier blocks outbound SMTP ports 25, 465, and 587.\n` +
+                `To send real emails on Render, add RESEND_API_KEY or BREVO_API_KEY to Render Environment Variables.\n` +
+                `Expires in 10 minutes.\n` +
+                `=======================================================\n`
+            );
+            return false;
+        }
+    }
+
+    /**
+     * Sends an OTP verification email to the user.
+     */
+    async sendSignupOtp({ to, name, otp }: SendOtpOptions): Promise<boolean> {
+        this.lastErrorMessage = null;
+        const { user } = this.getCleanCredentials();
+        const rawFrom = process.env.EMAIL_FROM;
+        const cleanFrom = rawFrom ? rawFrom.trim().replace(/^["']|["']$/g, "") : "";
+        const sender = cleanFrom || `"SuperCall" <${user || "support@supercall.com"}>`;
+        const html = this.buildOtpEmailHtml(name, otp);
+
+        if (await this.sendOtpViaBrevo(to, name, otp, html, user)) return true;
+        if (await this.sendOtpViaGmailRelay(to, name, otp, html)) return true;
+        if (await this.sendOtpViaResend(to, otp, html)) return true;
+        if (await this.sendOtpViaSmtp(to, name, otp, html, sender)) return true;
 
         // Fallback when neither Resend, Brevo, nor SMTP is configured
         this.lastErrorMessage = "No email provider configured (configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS).";
+        const safeTo = sanitizeLog(to);
+        const safeName = sanitizeLog(name);
+        const safeOtp = sanitizeLog(otp);
         logger.warn(
             `\n=======================================================\n` +
-            `📧 [DEV SIMULATION] OTP for ${to} (${name}): ${otp}\n` +
+            `📧 [DEV SIMULATION] OTP for ${safeTo} (${safeName}): ${safeOtp}\n` +
             `Expires in 15 minutes.\n` +
             `Configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
             `=======================================================\n`
@@ -525,11 +549,14 @@ class EmailService {
 
         if (!transporter) {
             const safeRecipients = to.map(sanitizeLog).join(", ");
+            const safeTitle = sanitizeLog(meetingTitle);
+            const safeDate = sanitizeLog(formattedDate);
+            const safeUrl = sanitizeLog(meetingUrl);
             logger.warn(
                 `\n=======================================================\n` +
                 `📧 [DEV SIMULATION] Meeting Invite for ${safeRecipients}\n` +
-                `Title: ${meetingTitle} | Date: ${formattedDate}\n` +
-                `Join Link: ${meetingUrl}\n` +
+                `Title: ${safeTitle} | Date: ${safeDate}\n` +
+                `Join Link: ${safeUrl}\n` +
                 `=======================================================\n`
             );
             return { sent: to.length, failed: 0 };
@@ -541,6 +568,7 @@ class EmailService {
         await Promise.all(
             to.map(async (recipient) => {
                 const safeRecipient = sanitizeLog(recipient);
+                const safeRoomCode = sanitizeLog(roomCode);
                 try {
                     await transporter.sendMail({
                         from: sender,
@@ -549,7 +577,7 @@ class EmailService {
                         text: `You have been invited to a video meeting by ${hostName}.\nTitle: ${meetingTitle}\nWhen: ${formattedDate} (${durationMinutes} mins)\nRoom ID: ${roomCode}\nJoin here: ${meetingUrl}`,
                         html,
                     });
-                    logger.info(`[EmailService] Meeting invite sent to ${safeRecipient} for room ${roomCode}`);
+                    logger.info(`[EmailService] Meeting invite sent to ${safeRecipient} for room ${safeRoomCode}`);
                     sent++;
                 } catch (err: any) {
                     logger.error({ err: err.message }, `[EmailService] Failed to send meeting invite to ${safeRecipient}`);

@@ -35,13 +35,13 @@ const stripTrailingSlashes = (url: string): string => {
     return result;
 };
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
 
 export const resolveAppUrl = (clientOrigin?: string): string => {
     const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
 
-    // 1. If an explicit clientOrigin was sent that is NOT localhost (e.g. domain, tunnel, public IP)
-    if (clientOrigin && !clientOrigin.includes("localhost") && !clientOrigin.includes("127.0.0.1")) {
+    const isLocalhost = clientOrigin?.includes("localhost") || clientOrigin?.includes("127.0.0.1");
+    if (clientOrigin && !isLocalhost) {
         return stripTrailingSlashes(clientOrigin);
     }
 

@@ -51,6 +51,34 @@ export interface WhiteboardElement {
 // In-memory whiteboard elements history per room (up to 2000 elements)
 const roomWhiteboardHistory = new Map<string, WhiteboardElement[]>();
 
+export interface PollOption {
+    id: string;
+    text: string;
+    votes: number;
+}
+
+export interface PollItem {
+    id: string;
+    question: string;
+    creatorName: string;
+    options: PollOption[];
+    voters?: Record<string, string>; // userId -> optionId
+    createdAt: number;
+}
+
+export interface WaitingGuest {
+    socketId: string;
+    userId: string;
+    name: string;
+    requestedAt: number;
+}
+
+// In-memory polls, shared notes, and waiting room state per room
+const roomPolls = new Map<string, PollItem[]>();
+const roomNotes = new Map<string, string>();
+const waitingRooms = new Set<string>();
+const roomWaitingQueues = new Map<string, WaitingGuest[]>();
+
 
 /**
  * Initializes and configures the Socket.IO server.
@@ -142,8 +170,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
 
             next();
-        } catch (_err) {
-            // Token verification failed or expired; fall back gracefully to guest session without crashing
+        } catch (err) {
+            console.warn("Token verification failed or expired; falling back gracefully to guest session:", err);
             const guestName = (socket.handshake.auth?.guestName as string) || "Guest";
             socket.data.userId = `guest-${crypto.randomUUID().slice(0, 8)}`;
             socket.data.name = guestName.trim() || "Guest";
@@ -176,6 +204,102 @@ export const initSocketServer = (server: HttpServer): Server => {
     // Set of currently locked rooms (in-memory, synchronized across sockets)
     const lockedRooms = new Set<string>();
 
+    const resolveJoinUserName = async (
+        socket: any,
+        userId: string,
+        payloadName?: string
+    ): Promise<string | undefined> => {
+        if (!socket.data.name && payloadName) {
+            socket.data.name = payloadName;
+        }
+        let name = socket.data.name as string | undefined;
+        if (!name && userId) {
+            try {
+                const dbUser = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true },
+                });
+                if (dbUser?.name) {
+                    name = dbUser.name;
+                    socket.data.name = dbUser.name;
+                }
+            } catch (dbErr) {
+                console.error("Failed to load user name on join-room:", dbErr);
+            }
+        }
+        return name;
+    };
+
+    const evictStaleSockets = async (
+        targetIo: Server,
+        currentSocket: any,
+        roomId: string,
+        userId: string
+    ) => {
+        const existingSockets = await targetIo.in(roomId).fetchSockets();
+        const staleSockets = existingSockets.filter((s) => s.data.userId === userId && s.id !== currentSocket.id);
+        if (staleSockets.length > 0) {
+            await Promise.all(
+                staleSockets.map(async (s) => {
+                    console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
+                    s.leave(roomId);
+                    currentSocket.to(roomId).emit("user-left", {
+                        socketId: s.id,
+                        userId,
+                    });
+                    await closeOpenParticipation(roomId, userId);
+                })
+            );
+        }
+    };
+
+    const getRoomPeerUsers = async (
+        targetIo: Server,
+        roomId: string,
+        currentSocketId: string,
+        currentUserId: string
+    ) => {
+        const sockets = await targetIo.in(roomId).fetchSockets();
+        const seenUsers = new Set<string>();
+        const usersInRoom: { socketId: string; userId: string; name?: string; isHost?: boolean }[] = [];
+
+        for (const s of sockets) {
+            const peerUserId = s.data.userId as string;
+            if (s.id !== currentSocketId && peerUserId && peerUserId !== currentUserId && !seenUsers.has(peerUserId)) {
+                seenUsers.add(peerUserId);
+                usersInRoom.push({
+                    socketId: s.id,
+                    userId: peerUserId,
+                    name: s.data.name as string | undefined,
+                    isHost: s.data.isHost as boolean | undefined,
+                });
+            }
+        }
+        return usersInRoom;
+    };
+
+    const replayChatHistory = async (targetSocket: any, roomDbId: string) => {
+        try {
+            const history = await prisma.chatMessage.findMany({
+                where: { roomId: roomDbId },
+                orderBy: { createdAt: "asc" },
+                take: 200,
+                include: { user: { select: { name: true } } },
+            });
+
+            targetSocket.emit("chat-history", {
+                messages: history.map((m) => ({
+                    userId: m.userId,
+                    name: m.user.name,
+                    message: m.message,
+                    at: m.createdAt.getTime(),
+                })),
+            });
+        } catch (err) {
+            console.error("Failed to load chat history:", err);
+        }
+    };
+
     // Register event handlers
     io.on("connection", (socket) => {
         console.log(`🔌 Client connected: ${socket.id}`);
@@ -185,25 +309,7 @@ export const initSocketServer = (server: HttpServer): Server => {
             const { roomId } = payload;
             const userId = socket.data.userId as string;
 
-            if (!socket.data.name && payload?.name) {
-                socket.data.name = payload.name;
-            }
-
-            let name = socket.data.name as string | undefined;
-            if (!name && userId) {
-                try {
-                    const dbUser = await prisma.user.findUnique({
-                        where: { id: userId },
-                        select: { name: true },
-                    });
-                    if (dbUser?.name) {
-                        name = dbUser.name;
-                        socket.data.name = dbUser.name;
-                    }
-                } catch (dbErr) {
-                    console.error("Failed to load user name on join-room:", dbErr);
-                }
-            }
+            const name = await resolveJoinUserName(socket, userId, payload?.name);
 
             if (!userId) {
                 console.warn(`⚠️ Rejected join-room: unauthenticated socket ${socket.id}`);
@@ -211,7 +317,6 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            // The room must already exist (created via POST /api/v1/rooms)
             const room = await prisma.room.findUnique({ where: { code: roomId } });
             if (!room) {
                 console.warn(`⚠️ Rejected join-room for unknown room code: ${roomId}`);
@@ -220,8 +325,6 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
 
             const isHost = room.hostId === userId;
-
-            // Check if room is locked by the host (non-host participants cannot join a locked room)
             if (lockedRooms.has(roomId) && !isHost) {
                 console.warn(`🔒 Rejected join-room: room ${roomId} is locked by host`);
                 socket.emit("room-locked", {
@@ -231,24 +334,50 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            // Evict any existing stale sockets for the same userId in this room
-            const existingSockets = await io.in(roomId).fetchSockets();
-            const staleSockets = existingSockets.filter((s) => s.data.userId === userId && s.id !== socket.id);
-            if (staleSockets.length > 0) {
-                await Promise.all(
-                    staleSockets.map(async (s) => {
-                        console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
-                        await s.leave(roomId);
-                        socket.to(roomId).emit("user-left", {
-                            socketId: s.id,
-                            userId,
+            // Waiting Room check (Google Meet / Zoom Knock-to-Join)
+            if (waitingRooms.has(roomId) && !isHost && !socket.data.isAdmitted) {
+                let queue = roomWaitingQueues.get(roomId);
+                if (!queue) {
+                    queue = [];
+                    roomWaitingQueues.set(roomId, queue);
+                }
+                const existingIdx = queue.findIndex((g) => g.userId === userId || g.socketId === socket.id);
+                const guestEntry: WaitingGuest = {
+                    socketId: socket.id,
+                    userId,
+                    name: name || "Guest",
+                    requestedAt: Date.now(),
+                };
+                if (existingIdx >= 0) {
+                    queue[existingIdx] = guestEntry;
+                } else {
+                    queue.push(guestEntry);
+                }
+
+                socket.data.roomId = roomId;
+                socket.data.isGuestWaiting = true;
+
+                socket.emit("waiting-room-pending", {
+                    roomId,
+                    message: "Waiting for the host to admit you to the meeting...",
+                });
+
+                // Notify all hosts in room
+                const socketsInRoom = await io.in(roomId).fetchSockets();
+                socketsInRoom
+                    .filter((s) => s.data.isHost)
+                    .forEach((hostSocket) => {
+                        hostSocket.emit("waiting-queue-update", {
+                            queue,
+                            isWaitingRoomEnabled: true,
                         });
-                        await closeOpenParticipation(roomId, userId);
-                    })
-                );
+                        hostSocket.emit("waiting-guest-knock", guestEntry);
+                    });
+                return;
             }
 
-            // Enforce room capacity limit (Full Mesh WebRTC cannot exceed 8 peers)
+            await evictStaleSockets(io, socket, roomId, userId);
+
             const MAX_ROOM_CAPACITY = 8;
             const activeSockets = await io.in(roomId).fetchSockets();
             const activeUsers = new Set(activeSockets.map((s) => s.data.userId).filter(Boolean));
@@ -262,7 +391,6 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            // Store information on socket.data for cleanup on disconnect
             socket.data.roomId = roomId;
             socket.data.roomDbId = room.id;
             socket.data.isHost = isHost;
@@ -279,7 +407,6 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
             console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${roomId}`);
 
-            // Send room metadata (host status and lock status) to the joiner
             socket.emit("room-info", {
                 roomId,
                 isHost,
@@ -287,7 +414,6 @@ export const initSocketServer = (server: HttpServer): Server => {
                 hostId: room.hostId,
             });
 
-            // Broadcast to other users in the room
             socket.to(roomId).emit("user-joined", {
                 socketId: socket.id,
                 userId,
@@ -295,50 +421,30 @@ export const initSocketServer = (server: HttpServer): Server => {
                 isHost,
             });
 
-            // Fetch other sockets in the room for presence tracking
-            const sockets = await io.in(roomId).fetchSockets();
-            const seenUsers = new Set<string>();
-            const usersInRoom: { socketId: string; userId: string; name?: string; isHost?: boolean }[] = [];
-
-            for (const s of sockets) {
-                const peerUserId = s.data.userId as string;
-                if (s.id !== socket.id && peerUserId && peerUserId !== userId && !seenUsers.has(peerUserId)) {
-                    seenUsers.add(peerUserId);
-                    usersInRoom.push({
-                        socketId: s.id,
-                        userId: peerUserId,
-                        name: s.data.name as string | undefined,
-                        isHost: s.data.isHost as boolean | undefined,
-                    });
-                }
-            }
-
-            // Return current list of users to the joiner
+            const usersInRoom = await getRoomPeerUsers(io, roomId, socket.id, userId);
             socket.emit("room-users", {
                 roomId,
                 users: usersInRoom,
             });
 
-            // Replay persisted chat history so a page refresh (or a fresh
-            // join) doesn't lose prior messages in this room.
-            try {
-                const history = await prisma.chatMessage.findMany({
-                    where: { roomId: room.id },
-                    orderBy: { createdAt: "asc" },
-                    take: 200,
-                    include: { user: { select: { name: true } } },
-                });
+            await replayChatHistory(socket, room.id);
 
-                socket.emit("chat-history", {
-                    messages: history.map((m) => ({
-                        userId: m.userId,
-                        name: m.user.name,
-                        message: m.message,
-                        at: m.createdAt.getTime(),
-                    })),
+            // Replay polls history
+            socket.emit("room-polls-history", {
+                polls: roomPolls.get(roomId) || [],
+            });
+
+            // Replay shared meeting notes
+            socket.emit("notes-history", {
+                notes: roomNotes.get(roomId) || "",
+            });
+
+            // If host, send current waiting room queue
+            if (isHost) {
+                socket.emit("waiting-queue-update", {
+                    queue: roomWaitingQueues.get(roomId) || [],
+                    isWaitingRoomEnabled: waitingRooms.has(roomId),
                 });
-            } catch (err) {
-                console.error("Failed to load chat history:", err);
             }
         });
 
@@ -393,7 +499,7 @@ export const initSocketServer = (server: HttpServer): Server => {
         };
 
         socket.on("leave-room", () => {
-            handleLeaveRoom().catch((err) => console.error("Error handling leave-room:", err));
+            void handleLeaveRoom().catch((err) => console.error("Error handling leave-room:", err));
         });
 
         // Rate limiting helper using sliding window per socket
@@ -683,10 +789,132 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.emit("whiteboard-history", { elements: history });
         });
 
+        // 3h. Waiting Room Controls
+        socket.on("toggle-waiting-room", () => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the host can toggle the waiting room" });
+                return;
+            }
+            if (waitingRooms.has(roomId)) {
+                waitingRooms.delete(roomId);
+            } else {
+                waitingRooms.add(roomId);
+            }
+            const isEnabled = waitingRooms.has(roomId);
+            io.to(roomId).emit("waiting-room-status-changed", { roomId, isEnabled });
+        });
+
+        socket.on("host-admit-peer", async (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) return;
+            const { targetSocketId } = payload;
+            if (!targetSocketId) return;
+
+            let queue = roomWaitingQueues.get(roomId) || [];
+            queue = queue.filter((g) => g.socketId !== targetSocketId);
+            roomWaitingQueues.set(roomId, queue);
+
+            const hostSockets = (await io.in(roomId).fetchSockets()).filter((s) => s.data.isHost);
+            hostSockets.forEach((h) => h.emit("waiting-queue-update", { queue, isWaitingRoomEnabled: true }));
+
+            const allSockets = await io.fetchSockets();
+            const targetSocket = allSockets.find((s) => s.id === targetSocketId);
+            if (targetSocket) {
+                targetSocket.data.isAdmitted = true;
+                targetSocket.emit("admitted-by-host", { roomId });
+            }
+        });
+
+        socket.on("host-deny-peer", async (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) return;
+            const { targetSocketId } = payload;
+            if (!targetSocketId) return;
+
+            let queue = roomWaitingQueues.get(roomId) || [];
+            queue = queue.filter((g) => g.socketId !== targetSocketId);
+            roomWaitingQueues.set(roomId, queue);
+
+            const hostSockets = (await io.in(roomId).fetchSockets()).filter((s) => s.data.isHost);
+            hostSockets.forEach((h) => h.emit("waiting-queue-update", { queue, isWaitingRoomEnabled: true }));
+
+            const allSockets = await io.fetchSockets();
+            const targetSocket = allSockets.find((s) => s.id === targetSocketId);
+            if (targetSocket) {
+                targetSocket.emit("denied-by-host", {
+                    roomId,
+                    message: "The host has declined your request to join the meeting.",
+                });
+            }
+        });
+
+        // 3i. Interactive In-Meeting Polls
+        socket.on("poll-create", (payload: { question: string; options: string[] }) => {
+            const { roomId, name } = socket.data;
+            if (!roomId || !payload?.question || !Array.isArray(payload.options)) return;
+            const validOptions = payload.options.map((o: string) => String(o).trim()).filter(Boolean);
+            if (validOptions.length < 2) return;
+
+            const newPoll: PollItem = {
+                id: `poll-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`,
+                question: payload.question.trim(),
+                creatorName: name || "Participant",
+                options: validOptions.map((text: string, idx: number) => ({
+                    id: `opt-${idx + 1}`,
+                    text,
+                    votes: 0,
+                })),
+                voters: {},
+                createdAt: Date.now(),
+            };
+
+            let polls = roomPolls.get(roomId);
+            if (!polls) {
+                polls = [];
+                roomPolls.set(roomId, polls);
+            }
+            polls.unshift(newPoll);
+            if (polls.length > 50) polls.pop();
+
+            io.to(roomId).emit("poll-created", newPoll);
+        });
+
+        socket.on("poll-vote", (payload: { pollId: string; optionId: string }) => {
+            const { roomId, userId } = socket.data;
+            if (!roomId || !payload?.pollId || !payload?.optionId) return;
+
+            const polls = roomPolls.get(roomId);
+            if (!polls) return;
+            const poll = polls.find((p) => p.id === payload.pollId);
+            if (!poll) return;
+
+            if (!poll.voters) poll.voters = {};
+            poll.voters[userId] = payload.optionId;
+
+            // Recalculate votes
+            poll.options.forEach((opt) => {
+                opt.votes = Object.values(poll.voters || {}).filter((v) => v === opt.id).length;
+            });
+
+            io.to(roomId).emit("poll-updated", poll);
+        });
+
+        // 3j. Collaborative Live Meeting Notes
+        socket.on("notes-update", (payload: { notes: string }) => {
+            const { roomId, name } = socket.data;
+            if (!roomId || typeof payload?.notes !== "string") return;
+            roomNotes.set(roomId, payload.notes);
+            socket.to(roomId).emit("notes-updated", {
+                notes: payload.notes,
+                updatedBy: name || "Participant",
+            });
+        });
+
         // 4. Disconnect
         socket.on("disconnect", () => {
             console.log(`🔌 Client disconnected: ${socket.id}`);
-            handleLeaveRoom().catch((err) => console.error("Error handling disconnect cleanup:", err));
+            void handleLeaveRoom().catch((err) => console.error("Error handling disconnect cleanup:", err));
         });
     });
 

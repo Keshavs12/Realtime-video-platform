@@ -192,12 +192,12 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: #1e1b4b;
+  border: 1px solid #4338ca;
   border-radius: 9999px;
   padding: 0.35rem 0.85rem;
   font-size: 0.85rem;
-  color: #c7d2fe;
+  color: #e0e7ff;
   margin: 0 auto 1.5rem auto;
 
   strong {
@@ -208,7 +208,7 @@
   button {
     background: none;
     border: none;
-    color: #818cf8;
+    color: #a5b4fc;
     cursor: pointer;
     font-size: 0.75rem;
     text-decoration: underline;
@@ -303,7 +303,7 @@
   }
 
   &:disabled {
-    color: #64748b;
+    color: #94a3b8;
     cursor: not-allowed;
   }
 }
@@ -312,7 +312,7 @@
   width: 100%;
   padding: 0.75rem;
   background: transparent;
-  color: #94a3b8;
+  color: #cbd5e1;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   font-size: 0.95rem;
@@ -322,20 +322,20 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: #1e293b;
     color: #ffffff;
     border-color: rgba(255, 255, 255, 0.2);
   }
 }
 
 .devBanner {
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px dashed rgba(245, 158, 11, 0.5);
+  background: #422006;
+  border: 1px dashed #ca8a04;
   border-radius: 12px;
   padding: 0.75rem 1rem;
   margin-bottom: 1.25rem;
   font-size: 0.88rem;
-  color: #fbbf24;
+  color: #fef08a;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -345,8 +345,8 @@
   user-select: none;
 
   &:hover {
-    background: rgba(245, 158, 11, 0.25);
-    border-color: #f59e0b;
+    background: #713f12;
+    border-color: #eab308;
     transform: translateY(-1px);
   }
 

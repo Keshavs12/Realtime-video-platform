@@ -102,7 +102,7 @@
   width: 86px;
   height: 86px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #3b82f6 50%, #06b6d4 100%);
+  background: linear-gradient(135deg, #4338ca 0%, #1d4ed8 50%, #0369a1 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -141,7 +141,7 @@
   height: 44px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  background: #1e293b;
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -151,18 +151,18 @@
   transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: #334155;
     transform: scale(1.08);
   }
 
   &.muted {
-    background: #ef4444;
-    border-color: #f87171;
+    background: #dc2626;
+    border-color: #ef4444;
     color: #ffffff;
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 16px rgba(220, 38, 38, 0.45);
 
     &:hover {
-      background: #dc2626;
+      background: #b91c1c;
     }
   }
 }
@@ -268,7 +268,7 @@
 
 .roomLabel {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #94a3b8;
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -278,9 +278,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(59, 130, 246, 0.15);
+  background: #172554;
   border: 1px solid rgba(59, 130, 246, 0.35);
-  color: #93c5fd;
+  color: #bfdbfe;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88rem;
   font-weight: 700;
@@ -290,7 +290,7 @@
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(59, 130, 246, 0.25);
+    background: #1e3a8a;
     border-color: rgba(59, 130, 246, 0.5);
     transform: translateY(-1px);
   }
@@ -396,7 +396,7 @@
 .cancelButton {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #94a3b8;
+  color: #cbd5e1;
   border-radius: 14px;
   padding: 0.8rem 1rem;
   font-size: 0.9rem;
@@ -407,6 +407,6 @@
   &:hover {
     color: #ffffff;
     border-color: rgba(255, 255, 255, 0.25);
-    background: rgba(255, 255, 255, 0.05);
+    background: #1e293b;
   }
 }

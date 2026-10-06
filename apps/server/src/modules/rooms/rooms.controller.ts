@@ -46,3 +46,20 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
         data: stats,
     });
 });
+
+export const summarizeMeeting = asyncHandler(async (req, res) => {
+    const { roomId, transcriptHistory, messages, durationSeconds } = req.body;
+
+    const summary = await roomsService.summarizeMeeting({
+        roomId: String(roomId || "Meeting"),
+        transcriptHistory: Array.isArray(transcriptHistory) ? transcriptHistory : [],
+        messages: Array.isArray(messages) ? messages : [],
+        durationSeconds: Number(durationSeconds) || 0,
+    });
+
+    res.status(200).json({
+        success: true,
+        data: summary,
+    });
+});
+
