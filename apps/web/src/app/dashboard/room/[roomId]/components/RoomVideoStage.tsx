@@ -1,4 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Crown,
+  Hand,
+  Monitor,
+  Pin,
+  PinOff,
+  MicOff,
+  VideoOff,
+  VolumeX,
+  Volume2,
+  Copy,
+  Check,
+  Share2,
+  Users,
+  Clock,
+  Wifi,
+  Sparkles,
+  RefreshCw,
+} from "lucide-react";
 import styles from "@/styles/room.module.scss";
 import {
   Peer,
@@ -12,12 +31,13 @@ interface VideoFeedProps {
   stream: MediaStream | null;
   muted?: boolean;
   className?: string;
+  isBlurred?: boolean;
 }
 
 /**
  * A helper component to assign a MediaStream to an HTML5 video tag.
  */
-export const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFeedProps>) => {
+export const VideoFeed = ({ stream, muted = false, className, isBlurred = false }: Readonly<VideoFeedProps>) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
 
@@ -80,6 +100,7 @@ export const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFe
         playsInline
         muted={muted}
         className={className}
+        style={isBlurred ? { filter: "contrast(1.06) saturate(1.15) brightness(1.02)" } : undefined}
       >
         <track kind="captions" />
       </video>
@@ -88,24 +109,42 @@ export const VideoFeed = ({ stream, muted = false, className }: Readonly<VideoFe
           onClick={handleUnmute}
           style={{
             position: "absolute",
-            top: 12,
-            right: 12,
-            background: "rgba(239, 68, 68, 0.9)",
+            top: 14,
+            right: 14,
+            background: "rgba(239, 68, 68, 0.95)",
+            backdropFilter: "blur(12px)",
             color: "white",
-            border: "none",
-            borderRadius: "20px",
-            padding: "4px 10px",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            borderRadius: "9999px",
+            padding: "5px 12px",
             fontSize: "0.75rem",
             cursor: "pointer",
             fontWeight: "600",
             zIndex: 10,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            boxShadow: "0 4px 15px rgba(239, 68, 68, 0.4)",
           }}
         >
-          🔇 Click to unmute
+          <VolumeX size={14} />
+          <span>Click to Unmute</span>
         </button>
       )}
     </div>
+  );
+};
+
+const SignalBars = ({ quality }: { quality: string }) => {
+  const bars = quality === "excellent" ? 4 : quality === "good" ? 3 : quality === "poor" ? 2 : 1;
+  const color = quality === "poor" ? "#f43f5e" : quality === "good" ? "#f59e0b" : "#10b981";
+  return (
+    <svg width="14" height="12" viewBox="0 0 14 12" fill="none">
+      <rect x="0" y="9" width="2.5" height="3" rx="0.75" fill={bars >= 1 ? color : "rgba(255,255,255,0.2)"} />
+      <rect x="3.5" y="6" width="2.5" height="6" rx="0.75" fill={bars >= 2 ? color : "rgba(255,255,255,0.2)"} />
+      <rect x="7" y="3" width="2.5" height="9" rx="0.75" fill={bars >= 3 ? color : "rgba(255,255,255,0.2)"} />
+      <rect x="10.5" y="0" width="2.5" height="12" rx="0.75" fill={bars >= 4 ? color : "rgba(255,255,255,0.2)"} />
+    </svg>
   );
 };
 
@@ -157,6 +196,9 @@ interface RoomVideoStageProps {
   reactions: FloatingReaction[];
   onCopyMeetingLink: () => void;
   copiedLink: boolean;
+  currentCaption?: string;
+  isCaptionsEnabled?: boolean;
+  isBackgroundBlur?: boolean;
 }
 
 export function RoomVideoStage({
@@ -180,6 +222,9 @@ export function RoomVideoStage({
   reactions,
   onCopyMeetingLink,
   copiedLink,
+  currentCaption,
+  isCaptionsEnabled,
+  isBackgroundBlur = false,
 }: Readonly<RoomVideoStageProps>) {
   const totalParticipants = peers.length + 1;
   const gridClass = getGridClass(totalParticipants);
@@ -197,12 +242,53 @@ export function RoomVideoStage({
             onClick={() => onSetSpotlightId("local")}
             title="Spotlight You"
           >
-            📌 Pin
+            <Pin size={12} />
+            <span>Pin</span>
           </button>
         )}
-        {isHost && <span className={styles.hostBadge}>👑 Host</span>}
-        {isLocalHandRaised && <span className={styles.handBadge}>✋ Hand Raised</span>}
-        {isScreenSharing && <span className={styles.screenShareBadge}>🖥️ Presenting</span>}
+        {isHost && (
+          <span className={styles.hostBadge}>
+            <Crown size={12} style={{ color: "#fbbf24" }} />
+            <span>Host</span>
+          </span>
+        )}
+        {isLocalHandRaised && (
+          <span className={styles.handBadge}>
+            <Hand size={12} />
+            <span>Hand Raised</span>
+          </span>
+        )}
+        {isScreenSharing && (
+          <span className={styles.screenShareBadge}>
+            <Monitor size={12} />
+            <span>Presenting</span>
+          </span>
+        )}
+
+        {isBackgroundBlur && !isVideoMuted && (
+          <span
+            style={{
+              position: "absolute",
+              top: 10,
+              left: 10,
+              background: "rgba(168, 85, 247, 0.25)",
+              border: "1px solid rgba(168, 85, 247, 0.45)",
+              color: "#e879f9",
+              padding: "2px 8px",
+              borderRadius: "6px",
+              fontSize: "0.7rem",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              backdropFilter: "blur(8px)",
+              zIndex: 3,
+            }}
+          >
+            <Sparkles size={11} />
+            <span>Studio FX</span>
+          </span>
+        )}
 
         {isVideoMuted ? (
           <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
@@ -214,13 +300,20 @@ export function RoomVideoStage({
             stream={localStream}
             muted={true}
             className={`${styles.video} ${styles.mirror}`}
+            isBlurred={isBackgroundBlur}
           />
         )}
         <div className={styles.peerName}>
-          <span>👤 {localDisplayName} (You)</span>
-          {isSpeaking && <span className={styles.speakingWave}>🎙️ ılı</span>}
-          {isAudioMuted && <span>🔇</span>}
-          {isVideoMuted && <span>🚫 Video Off</span>}
+          <span>{localDisplayName} (You)</span>
+          {isSpeaking && (
+            <div style={{ display: "inline-flex", alignItems: "flex-end", gap: "2px", height: "10px", margin: "0 2px" }}>
+              <span style={{ width: "2px", height: "100%", background: "#10b981", borderRadius: "1px" }} />
+              <span style={{ width: "2px", height: "60%", background: "#10b981", borderRadius: "1px" }} />
+              <span style={{ width: "2px", height: "80%", background: "#10b981", borderRadius: "1px" }} />
+            </div>
+          )}
+          {isAudioMuted && <MicOff size={12} style={{ color: "#f87171" }} />}
+          {isVideoMuted && <VideoOff size={12} style={{ color: "#f87171" }} />}
         </div>
       </div>
     );
@@ -246,17 +339,34 @@ export function RoomVideoStage({
             onClick={() => onSetSpotlightId(peer.socketId)}
             title={`Spotlight ${displayName}`}
           >
-            📌 Pin
+            <Pin size={12} />
+            <span>Pin</span>
           </button>
         )}
 
-        {peer.isHost && <span className={styles.hostBadge}>👑 Host</span>}
-        {isHandRaised && <span className={styles.handBadge}>✋ Hand Raised</span>}
-        {isPresenting && <span className={styles.screenShareBadge}>🖥️ Presenting</span>}
+        {peer.isHost && (
+          <span className={styles.hostBadge}>
+            <Crown size={12} style={{ color: "#fbbf24" }} />
+            <span>Host</span>
+          </span>
+        )}
+        {isHandRaised && (
+          <span className={styles.handBadge}>
+            <Hand size={12} />
+            <span>Hand Raised</span>
+          </span>
+        )}
+        {isPresenting && (
+          <span className={styles.screenShareBadge}>
+            <Monitor size={12} />
+            <span>Presenting</span>
+          </span>
+        )}
 
         {stats?.isReconnecting && (
           <div className={styles.reconnectingBadge}>
-            <span>🔄 Reconnecting...</span>
+            <RefreshCw size={12} className="animate-spin" />
+            <span>Reconnecting…</span>
           </div>
         )}
 
@@ -265,7 +375,7 @@ export function RoomVideoStage({
             className={`${styles.networkBadge} ${styles[stats.quality]}`}
             title={`Latency: ${stats.rttMs}ms | Packet Loss: ${stats.packetLossPercent}% | Quality: ${stats.quality}`}
           >
-            <span className={styles.signalDot}></span>
+            <SignalBars quality={stats.quality} />
             <span>{stats.rttMs > 0 ? `${stats.rttMs}ms` : stats.quality}</span>
           </div>
         )}
@@ -280,8 +390,14 @@ export function RoomVideoStage({
         )}
 
         <div className={styles.peerName}>
-          <span>👤 {displayName}</span>
-          {isSpeaking && <span className={styles.speakingWave}>🎙️ ılı</span>}
+          <span>{displayName}</span>
+          {isSpeaking && (
+            <div style={{ display: "inline-flex", alignItems: "flex-end", gap: "2px", height: "10px", margin: "0 2px" }}>
+              <span style={{ width: "2px", height: "100%", background: "#10b981", borderRadius: "1px" }} />
+              <span style={{ width: "2px", height: "60%", background: "#10b981", borderRadius: "1px" }} />
+              <span style={{ width: "2px", height: "80%", background: "#10b981", borderRadius: "1px" }} />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -305,7 +421,8 @@ export function RoomVideoStage({
 
       {isLowBandwidthMode && (
         <div className={styles.lowBandwidthBanner}>
-          <span>📶 Low Bandwidth Mode: Video paused to prioritize audio stability</span>
+          <Wifi size={14} />
+          <span>Low Bandwidth Mode: Video paused to prioritize crystal-clear audio</span>
         </div>
       )}
 
@@ -323,6 +440,53 @@ export function RoomVideoStage({
         ))}
       </div>
 
+      {/* Real-time AI Closed Captions Floating Overlay */}
+      {isCaptionsEnabled && currentCaption && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "95px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(10, 15, 26, 0.92)",
+            backdropFilter: "blur(24px)",
+            border: "1px solid rgba(255, 255, 255, 0.16)",
+            borderRadius: "16px",
+            padding: "8px 20px",
+            maxWidth: "min(720px, 90vw)",
+            color: "#ffffff",
+            fontSize: "1rem",
+            fontWeight: 500,
+            zIndex: 45,
+            boxShadow: "0 12px 35px rgba(0, 0, 0, 0.7), 0 0 20px rgba(99, 102, 241, 0.25)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            pointerEvents: "none",
+            animation: "pulseGlow 2s infinite ease-in-out",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              background: "rgba(16, 185, 129, 0.2)",
+              border: "1px solid rgba(16, 185, 129, 0.4)",
+              color: "#34d399",
+              padding: "2px 8px",
+              borderRadius: "6px",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+            }}
+          >
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981" }} />
+            <span>LIVE CC</span>
+          </div>
+          <span style={{ lineHeight: 1.4 }}>{currentCaption}</span>
+        </div>
+      )}
+
       {/* Video Stage Area */}
       <div className={styles.videoStageArea}>
         {activeSpotlightId ? (
@@ -333,7 +497,8 @@ export function RoomVideoStage({
               onClick={() => onSetSpotlightId(null)}
               title="Return to Grid View"
             >
-              ✖ Exit Spotlight
+              <PinOff size={14} />
+              <span>Exit Spotlight</span>
             </button>
 
             {/* Main Stage */}
@@ -378,42 +543,72 @@ export function RoomVideoStage({
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: "0.85rem",
-                  padding: "2.5rem 1.5rem",
-                  background: "rgba(15, 23, 42, 0.4)",
-                  border: "1px dashed rgba(255, 255, 255, 0.12)",
-                  borderRadius: "20px",
+                  gap: "1rem",
+                  padding: "3rem 2rem",
+                  background: "rgba(15, 23, 42, 0.45)",
+                  backdropFilter: "blur(20px)",
+                  border: "1px dashed rgba(99, 102, 241, 0.3)",
+                  borderRadius: "24px",
                   color: "#94a3b8",
-                  fontSize: "0.95rem",
                   margin: "auto",
-                  maxWidth: "520px",
+                  maxWidth: "540px",
+                  textAlign: "center",
                 }}
               >
-                <span style={{ fontSize: "1.05rem", fontWeight: 600, color: "#f1f5f9" }}>
-                  ⌛ Waiting for other participants to join...
-                </span>
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", textAlign: "center" }}>
-                  Share this room link with your team or invitees so they can join right away.
-                </p>
+                <div
+                  style={{
+                    width: "52px",
+                    height: "52px",
+                    borderRadius: "16px",
+                    background: "rgba(99, 102, 241, 0.15)",
+                    color: "#818cf8",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Users size={26} />
+                </div>
+                <div>
+                  <h4 style={{ margin: "0 0 0.4rem 0", color: "#f8fafc", fontSize: "1.1rem", fontWeight: 700 }}>
+                    Waiting for participants to join
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "0.875rem", color: "#94a3b8", maxWidth: "380px" }}>
+                    Share your meeting invite link with colleagues or team members to start streaming together.
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={onCopyMeetingLink}
                   style={{
-                    background: "rgba(59, 130, 246, 0.2)",
-                    border: "1px solid rgba(59, 130, 246, 0.4)",
-                    color: "#93c5fd",
-                    padding: "8px 16px",
-                    borderRadius: "10px",
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
+                    background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                    border: "none",
+                    color: "white",
+                    padding: "10px 20px",
+                    borderRadius: "12px",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.4rem",
+                    gap: "0.5rem",
+                    boxShadow: "0 4px 15px rgba(99, 102, 241, 0.35)",
+                    transition: "transform 0.2s ease",
                   }}
+                  onMouseOver={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+                  onMouseOut={(e) => (e.currentTarget.style.transform = "translateY(0)")}
                 >
-                  <span>📋</span>
-                  <span>{copiedLink ? "✓ Link Copied!" : "Copy Meeting Link"}</span>
+                  {copiedLink ? (
+                    <>
+                      <Check size={16} />
+                      <span>Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} />
+                      <span>Copy Invite Link</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}

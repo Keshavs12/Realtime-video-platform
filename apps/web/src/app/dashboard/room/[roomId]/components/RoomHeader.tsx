@@ -1,5 +1,20 @@
 import React from "react";
+import {
+  Lock,
+  Copy,
+  Check,
+  Clock,
+  Circle,
+  Play,
+  Pause,
+  Square,
+  Users,
+  MessageSquare,
+  Crown,
+  Sparkles,
+} from "lucide-react";
 import styles from "@/styles/room.module.scss";
+import type { SidebarTabType } from "./RoomSidebar";
 
 interface RoomHeaderProps {
   roomId: string;
@@ -14,11 +29,12 @@ interface RoomHeaderProps {
   onPauseRecording: () => void;
   onStopRecording: () => void;
   isSidebarOpen: boolean;
-  sidebarTab: "people" | "chat" | "host";
-  onToggleSidebarTab: (tab: "people" | "chat" | "host") => void;
+  sidebarTab: SidebarTabType;
+  onToggleSidebarTab: (tab: SidebarTabType) => void;
   participantCount: number;
   unreadCount: number;
   isHost: boolean;
+  onOpenRecap?: () => void;
 }
 
 export function RoomHeader({
@@ -39,6 +55,7 @@ export function RoomHeader({
   participantCount,
   unreadCount,
   isHost,
+  onOpenRecap,
 }: Readonly<RoomHeaderProps>) {
   return (
     <header className={styles.topHeaderBar}>
@@ -50,19 +67,26 @@ export function RoomHeader({
           title="Click to copy meeting link"
         >
           <span>{roomId}</span>
-          <span>{copiedLink ? "✓ Copied" : "📋"}</span>
+          {copiedLink ? (
+            <Check size={14} style={{ color: "#34d399" }} />
+          ) : (
+            <Copy size={14} />
+          )}
         </button>
-        <span className={styles.securityBadge}>🔒 Mesh Encrypted</span>
+        <span className={styles.securityBadge}>
+          <Lock size={12} />
+          <span>Mesh Encrypted</span>
+        </span>
       </div>
 
       <div className={styles.headerCenter}>
         <div className={styles.callTimer}>
-          <span>⏱️</span>
+          <Clock size={14} style={{ color: "#94a3b8" }} />
           <span>{formatDuration(callDurationSeconds)}</span>
         </div>
         {isRecording && (
           <div className={styles.recordingBadge} style={{ position: "static" }}>
-            <span className={`${styles.recDot} ${isPaused ? styles.pausedDot : ""}`}></span>
+            <span className={`${styles.recDot} ${isPaused ? styles.pausedDot : ""}`} />
             <span className={styles.recText}>
               {isPaused ? "PAUSED" : "REC"} {formatDuration(recordingSeconds)}
             </span>
@@ -72,7 +96,7 @@ export function RoomHeader({
               onClick={isPaused ? onResumeRecording : onPauseRecording}
               title={isPaused ? "Resume Recording" : "Pause Recording"}
             >
-              {isPaused ? "▶️" : "⏸️"}
+              {isPaused ? <Play size={12} /> : <Pause size={12} />}
             </button>
             <button
               type="button"
@@ -80,20 +104,37 @@ export function RoomHeader({
               onClick={onStopRecording}
               title="Stop and Save Recording"
             >
-              ⏹️
+              <Square size={12} />
             </button>
           </div>
         )}
       </div>
 
       <div className={styles.headerRight}>
+        {onOpenRecap && (
+          <button
+            type="button"
+            className={styles.headerIconBtn}
+            onClick={onOpenRecap}
+            title="Meeting Intelligence & Recap"
+            style={{
+              background: "rgba(99, 102, 241, 0.15)",
+              borderColor: "rgba(99, 102, 241, 0.35)",
+              color: "#a5b4fc",
+            }}
+          >
+            <Sparkles size={14} style={{ color: "#c084fc" }} />
+            <span>Recap</span>
+          </button>
+        )}
+
         <button
           type="button"
           className={`${styles.headerIconBtn} ${isSidebarOpen && sidebarTab === "people" ? styles.active : ""}`}
           onClick={() => onToggleSidebarTab("people")}
           title="Participants"
         >
-          <span>👥</span>
+          <Users size={16} />
           <span>{participantCount}</span>
         </button>
 
@@ -103,7 +144,7 @@ export function RoomHeader({
           onClick={() => onToggleSidebarTab("chat")}
           title="In-call Chat"
         >
-          <span>💬</span>
+          <MessageSquare size={16} />
           <span>Chat</span>
           {unreadCount > 0 && <span className={styles.unreadBadge}>{unreadCount}</span>}
         </button>
@@ -115,7 +156,7 @@ export function RoomHeader({
             onClick={() => onToggleSidebarTab("host")}
             title="Host Controls"
           >
-            <span>👑</span>
+            <Crown size={16} style={{ color: "#fbbf24" }} />
             <span>Host</span>
           </button>
         )}

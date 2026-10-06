@@ -102,3 +102,131 @@ export const getDashboardStats = async (userId: string) => {
         totalParticipants: hostedParticipants.length,
     };
 };
+
+export interface SummarizeMeetingInput {
+    roomId: string;
+    transcriptHistory?: { speaker: string; text: string; timestamp: number }[];
+    messages?: { name?: string; message: string; at: number }[];
+    durationSeconds?: number;
+}
+
+export interface MeetingSummaryOutput {
+    executiveSummary: string;
+    keyDecisions: string[];
+    actionItems: { task: string; assignee: string }[];
+    discussionTopics: string[];
+    generatedBy: "gemini" | "heuristic";
+}
+
+export const summarizeMeeting = async (input: SummarizeMeetingInput): Promise<MeetingSummaryOutput> => {
+    const transcript = input.transcriptHistory || [];
+    const messages = input.messages || [];
+    const duration = input.durationSeconds || 0;
+
+    const fullTranscriptText = transcript
+        .map((t) => `[${t.speaker}]: ${t.text}`)
+        .join("\n");
+    const fullChatText = messages
+        .map((m) => `[${m.name || "Participant"}]: ${m.message}`)
+        .join("\n");
+
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+
+    if (geminiApiKey && (transcript.length > 0 || messages.length > 0)) {
+        try {
+            const prompt = `You are an expert AI meeting executive assistant. Analyze this meeting transcript and in-call chat log from meeting "${input.roomId}" (Duration: ${Math.round(duration / 60)} minutes).
+Provide a structured executive briefing in strict JSON format:
+{
+  "executiveSummary": "A concise 2-3 sentence executive summary of the meeting goals, discussions, and outcomes.",
+  "keyDecisions": ["List of key decisions made during the call"],
+  "actionItems": [
+    { "task": "Specific task to complete", "assignee": "Name of person responsible or 'Team'" }
+  ],
+  "discussionTopics": ["Key topic 1", "Key topic 2"]
+}
+
+TRANSCRIPT:
+${fullTranscriptText || "No voice transcript recorded."}
+
+CHAT LOG:
+${fullChatText || "No chat messages recorded."}
+
+Return ONLY valid JSON.`;
+
+            const res = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                    }),
+                }
+            );
+
+            if (res.ok) {
+                const data = (await res.json()) as any;
+                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+                const parsed = JSON.parse(cleanJson);
+                return {
+                    executiveSummary: parsed.executiveSummary || "Meeting successfully concluded.",
+                    keyDecisions: Array.isArray(parsed.keyDecisions) ? parsed.keyDecisions : [],
+                    actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+                    discussionTopics: Array.isArray(parsed.discussionTopics) ? parsed.discussionTopics : [],
+                    generatedBy: "gemini",
+                };
+            }
+        } catch (err) {
+            console.warn("Gemini API call failed or timed out, falling back to local heuristic summarizer:", err);
+        }
+    }
+
+    // Smart Local Heuristic Summarizer (Runs offline without any dependencies)
+    const speakers = Array.from(new Set(transcript.map((t) => t.speaker)));
+    const decisions: string[] = [];
+    const actionItems: { task: string; assignee: string }[] = [];
+
+    const actionRegex = /(?:need to|will|should|action item|todo|must|please|follow up with|assign|work on)\s+([^.!?]+)/i;
+    const decisionRegex = /(?:agreed|decided|approved|confirmed|concluded|consensus|resolved)\s+([^.!?]+)/i;
+
+    for (const item of transcript) {
+        const actionMatch = item.text.match(actionRegex);
+        if (actionMatch?.[1]) {
+            actionItems.push({
+                task: actionMatch[1].trim(),
+                assignee: item.speaker || "Team",
+            });
+        }
+
+        const decisionMatch = item.text.match(decisionRegex);
+        if (decisionMatch?.[1]) {
+            decisions.push(decisionMatch[1].trim());
+        }
+    }
+
+    if (decisions.length === 0) {
+        decisions.push("Team aligned on discussed roadmap and next steps.");
+    }
+    if (actionItems.length === 0) {
+        actionItems.push({
+            task: "Review meeting recap and shared notes before next session",
+            assignee: speakers[0] || "All Participants",
+        });
+    }
+
+    const durationMin = Math.max(1, Math.round(duration / 60));
+    const execSummary =
+        transcript.length > 0
+            ? `The session ran for ${durationMin} minute${durationMin > 1 ? "s" : ""} with ${speakers.length || 1} active speaker(s). Main discussions focused on collaboration, delivery items, and team synchronization.`
+            : `Meeting ${input.roomId} concluded after ${durationMin} minute${durationMin > 1 ? "s" : ""}. Participants synchronized on project goals and shared updates.`;
+
+    return {
+        executiveSummary: execSummary,
+        keyDecisions: decisions.slice(0, 5),
+        actionItems: actionItems.slice(0, 6),
+        discussionTopics: speakers.length > 0 ? speakers.map((s) => `${s}'s updates`) : ["Project sync", "Action planning"],
+        generatedBy: "heuristic",
+    };
+};
+
