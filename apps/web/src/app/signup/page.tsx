@@ -85,21 +85,15 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const res = await sendSignupOtp({
+      await sendSignupOtp({
         name: cleanName,
         email: cleanEmail,
         password: cleanPassword,
       });
-      const data = res?.data?.data;
       setFormData((prev) => ({ ...prev, name: cleanName, email: cleanEmail }));
       setPhase("otp");
       setCountdown(60);
-      if (data?.devOtp && !data?.emailDelivered) {
-        setSuccess(`Verification code: ${data.devOtp}`);
-        setOtp(data.devOtp.split(""));
-      } else {
-        setSuccess("A 6-digit verification code has been sent to your email!");
-      }
+      setSuccess("A 6-digit verification code has been sent to your email!");
     } catch (err: any) {
       console.log(err, "ERR");
       setError(
@@ -179,16 +173,10 @@ export default function SignupPage() {
 
     try {
       const cleanEmail = formData.email.trim().toLowerCase();
-      const res = await resendSignupOtp(cleanEmail);
-      const data = res?.data?.data;
+      await resendSignupOtp(cleanEmail);
       setCountdown(60);
-      if (data?.devOtp && !data?.emailDelivered) {
-        setSuccess(`New verification code: ${data.devOtp}`);
-        setOtp(data.devOtp.split(""));
-      } else {
-        setOtp(["", "", "", "", "", ""]);
-        setSuccess("A new 6-digit verification code has been sent!");
-      }
+      setOtp(["", "", "", "", "", ""]);
+      setSuccess("A new 6-digit verification code has been sent to your email!");
       inputRefs.current[0]?.focus();
     } catch (err: any) {
       setError(

@@ -361,12 +361,10 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name, otp });
 
-    const strictEmail = process.env.REQUIRE_STRICT_EMAIL === "true";
-
-    if (!emailSent && process.env.NODE_ENV === "production" && strictEmail) {
+    if (!emailSent && process.env.NODE_ENV === "production") {
         if (!emailService.isConfigured()) {
             throw new AppError(
-                "Email service is not configured on the backend server. Please configure your email provider (Brevo, Resend, or SMTP).",
+                "Email service is not configured on the backend server. Please configure GMAIL_RELAY_URL or RESEND_API_KEY in Render Environment Variables.",
                 503
             );
         }
@@ -383,7 +381,6 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
         email,
         expiresInSeconds,
         emailDelivered: emailSent,
-        ...(!emailSent ? { devOtp: otp } : {}),
     };
 };
 
@@ -426,12 +423,10 @@ export const resendSignupOtp = async (rawEmail: string) => {
 
     const emailSent = await emailService.sendSignupOtp({ to: email, name: existingOtp.name, otp });
 
-    const strictEmail = process.env.REQUIRE_STRICT_EMAIL === "true";
-
-    if (!emailSent && process.env.NODE_ENV === "production" && strictEmail) {
+    if (!emailSent && process.env.NODE_ENV === "production") {
         if (!emailService.isConfigured()) {
             throw new AppError(
-                "Email service is not configured on the backend server. Please configure your email provider (Brevo, Resend, or SMTP).",
+                "Email service is not configured on the backend server. Please configure GMAIL_RELAY_URL or RESEND_API_KEY in Render Environment Variables.",
                 503
             );
         }
@@ -448,7 +443,6 @@ export const resendSignupOtp = async (rawEmail: string) => {
         email,
         expiresInSeconds,
         emailDelivered: emailSent,
-        ...(!emailSent ? { devOtp: otp } : {}),
     };
 };
 
