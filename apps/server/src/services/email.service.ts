@@ -186,36 +186,37 @@ class EmailService {
                 html,
             });
 
-            const initialResponse = await fetch(gmailRelayUrl, {
+            let response = await fetch(gmailRelayUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "text/plain;charset=utf-8" },
                 body: payload,
-                redirect: "manual",
+                redirect: "follow",
             });
 
-            const isRedirect = initialResponse.status >= 300 && initialResponse.status < 400;
-            const redirectUrl = isRedirect ? initialResponse.headers.get("location") : null;
-            if (isRedirect && !redirectUrl) {
-                throw new Error("Gmail Relay returned redirect but no Location header");
+            // Fallback if client did not auto-follow
+            if (response.status >= 300 && response.status < 400) {
+                const redirectUrl = response.headers.get("location");
+                if (redirectUrl) {
+                    response = await fetch(redirectUrl, { method: "GET" });
+                }
             }
 
-            const finalResponse = redirectUrl
-                ? await fetch(redirectUrl, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: payload,
-                      redirect: "follow",
-                  })
-                : initialResponse;
+            const respText = await response.text();
 
-            if (finalResponse.ok) {
-                const respText = sanitizeLog(await finalResponse.text());
-                logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${safeTo}. Response: ${respText}`);
+            if (respText.includes("ServiceLogin") || respText.includes("Page not found") || respText.includes("accounts.google.com")) {
+                const authErr = "Google Apps Script requires Google Login. Please deploy with 'Who has access: Anyone' using a personal @gmail.com account.";
+                logger.error(`[EmailService] Gmail Relay permission error: ${authErr}`);
+                this.lastErrorMessage = authErr;
+                return false;
+            }
+
+            if (response.ok) {
+                logger.info(`[EmailService] Verification OTP successfully sent via Gmail Relay to ${safeTo}. Response: ${sanitizeLog(respText)}`);
                 return true;
             }
-            const errBody = await finalResponse.text();
-            logger.error({ err: errBody }, `[EmailService] Gmail Relay delivery failed for ${safeTo}`);
-            this.lastErrorMessage = `Gmail Relay failed: ${errBody}`;
+
+            logger.error({ err: respText }, `[EmailService] Gmail Relay delivery failed for ${safeTo}`);
+            this.lastErrorMessage = `Gmail Relay failed: ${respText.slice(0, 150)}`;
             return false;
         } catch (err: any) {
             logger.error({ err: err.message }, `[EmailService] Gmail Relay request error for ${safeTo}`);
@@ -326,8 +327,10 @@ class EmailService {
         if (await this.sendOtpViaResend(to, otp, html)) return true;
         if (await this.sendOtpViaSmtp(to, name, otp, html, sender)) return true;
 
-        // Fallback when neither Resend, Brevo, nor SMTP is configured
-        this.lastErrorMessage = "No email provider configured (configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS).";
+        // Fallback when neither Resend, Brevo, Gmail Relay, nor SMTP is configured
+        if (!this.lastErrorMessage) {
+            this.lastErrorMessage = "No email provider configured or active (please configure GMAIL_RELAY_URL or RESEND_API_KEY in Render Environment Variables).";
+        }
         const safeTo = sanitizeLog(to);
         const safeName = sanitizeLog(name);
         const safeOtp = sanitizeLog(otp);
@@ -335,7 +338,7 @@ class EmailService {
             `\n=======================================================\n` +
             `📧 [DEV SIMULATION] OTP for ${safeTo} (${safeName}): ${safeOtp}\n` +
             `Expires in 15 minutes.\n` +
-            `Configure BREVO_API_KEY, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
+            `Configure GMAIL_RELAY_URL, RESEND_API_KEY, or EMAIL_USER/EMAIL_PASS to send real emails.\n` +
             `=======================================================\n`
         );
         return false;
@@ -482,31 +485,21 @@ class EmailService {
                             html,
                         });
 
-                        const initialResponse = await fetch(gmailRelayUrl, {
+                        let response = await fetch(gmailRelayUrl, {
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
+                            headers: { "Content-Type": "text/plain;charset=utf-8" },
                             body: payload,
-                            redirect: "manual",
+                            redirect: "follow",
                         });
 
-                        let finalResponse: Response;
-                        if (initialResponse.status >= 300 && initialResponse.status < 400) {
-                            const redirectUrl = initialResponse.headers.get("location");
+                        if (response.status >= 300 && response.status < 400) {
+                            const redirectUrl = response.headers.get("location");
                             if (redirectUrl) {
-                                finalResponse = await fetch(redirectUrl, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: payload,
-                                    redirect: "follow",
-                                });
-                            } else {
-                                finalResponse = initialResponse;
+                                response = await fetch(redirectUrl, { method: "GET" });
                             }
-                        } else {
-                            finalResponse = initialResponse;
                         }
 
-                        if (finalResponse.ok) sent++;
+                        if (response.ok) sent++;
                         else failed++;
                     } catch {
                         failed++;
