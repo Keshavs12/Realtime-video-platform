@@ -13,10 +13,13 @@
  * --------------------------------------------------------------------------
  */
 import { Router } from "express";
-import { createRoom, checkRoomExists, getRoomHistory, getDashboardStats } from "./rooms.controller";
+import { createRoom, checkRoomExists, getRoomHistory, getDashboardStats, summarizeMeeting } from "./rooms.controller";
 import { authenticate } from "../auth/auth.middleware";
 
 const roomsRouter = Router();
+
+// Public / In-call meeting summary endpoint (allows guests or authenticated users)
+roomsRouter.post("/summarize", summarizeMeeting);
 
 roomsRouter.use(authenticate);
 

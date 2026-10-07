@@ -1,6 +1,20 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  Users,
+  Copy,
+  Check,
+  AlertCircle,
+  LogIn,
+  Camera,
+  ArrowRight,
+  ShieldCheck,
+} from "lucide-react";
 import styles from "@/styles/greenRoom.module.scss";
 import { useMicMeter } from "@/hooks/useMicMeter";
 import type { MediaDeviceOption } from "@/hooks/useRoom";
@@ -75,7 +89,7 @@ function PreviewPanel({
             onClick={toggleAudio}
             title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
           >
-            {isAudioMuted ? "🔇" : "🎤"}
+            {isAudioMuted ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
           <button
             type="button"
@@ -83,15 +97,15 @@ function PreviewPanel({
             onClick={toggleVideo}
             title={isVideoMuted ? "Turn Camera On" : "Turn Camera Off"}
           >
-            {isVideoMuted ? "🚫" : "📹"}
+            {isVideoMuted ? <VideoOff size={18} /> : <Video size={18} />}
           </button>
         </div>
       </div>
 
       <div className={styles.vuMeterBox}>
         <div className={styles.vuHeader}>
-          <span className={styles.vuTitle}>
-            <span>🎙️</span>
+          <span className={styles.vuTitle} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <Mic size={14} style={{ color: "#818cf8" }} />
             <span>Microphone Level</span>
           </span>
           <span
@@ -135,7 +149,10 @@ function DeviceSelector({
   return (
     <div className={styles.deviceSelectGroup}>
       <div className={styles.deviceField}>
-        <label htmlFor="camera-select">Camera</label>
+        <label htmlFor="camera-select" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <Camera size={13} />
+          <span>Camera</span>
+        </label>
         <select
           id="camera-select"
           className={styles.selectDropdown}
@@ -156,7 +173,10 @@ function DeviceSelector({
       </div>
 
       <div className={styles.deviceField}>
-        <label htmlFor="mic-select">Microphone</label>
+        <label htmlFor="mic-select" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <Mic size={13} />
+          <span>Microphone</span>
+        </label>
         <select
           id="mic-select"
           className={styles.selectDropdown}
@@ -275,7 +295,7 @@ export function GreenRoomLobby({
             <h2>Ready to Join?</h2>
             <p>
               {isGuest
-                ? "Enter your name and check your setup before joining the meeting."
+                ? "Enter your name and test your camera & audio before entering the room."
                 : `Joining as ${userName}. Check your audio and video setup.`}
             </p>
           </div>
@@ -291,11 +311,11 @@ export function GreenRoomLobby({
                 title="Click to copy Room ID"
               >
                 <span>{roomId}</span>
-                <span>{copied ? "✓ Copied" : "📋"}</span>
+                {copied ? <Check size={13} style={{ color: "#34d399" }} /> : <Copy size={13} />}
               </button>
             </div>
             <div className={styles.presenceRow}>
-              <span>👥</span>
+              <Users size={14} style={{ color: "#818cf8" }} />
               <span>
                 {participantCount === 0 ? (
                   "No one else is in this meeting yet."
@@ -309,10 +329,10 @@ export function GreenRoomLobby({
             </div>
           </div>
 
-          {/* Google Meet style: Guest Name Field */}
+          {/* Guest Name Field */}
           {isGuest && (
             <div className={styles.deviceField} style={{ marginTop: "0.25rem" }}>
-              <label htmlFor="guest-name-input" style={{ color: "#60a5fa", fontWeight: 700 }}>
+              <label htmlFor="guest-name-input" style={{ color: "#818cf8", fontWeight: 700 }}>
                 What&apos;s your name?
               </label>
               <input
@@ -321,13 +341,13 @@ export function GreenRoomLobby({
                 className={styles.selectDropdown}
                 style={{
                   background: "rgba(15, 23, 42, 0.9)",
-                  border: nameError ? "1px solid #ef4444" : "1px solid #3b82f6",
+                  border: nameError ? "1px solid #ef4444" : "1px solid rgba(99, 102, 241, 0.4)",
                   color: "#f8fafc",
                   fontSize: "0.95rem",
                   padding: "10px 14px",
-                  borderRadius: "10px",
+                  borderRadius: "12px",
                 }}
-                placeholder="Enter your name to join (e.g. Aman Kumar)"
+                placeholder="Enter your name (e.g. Aman Sharma)"
                 value={enteredName}
                 onChange={(e) => {
                   setNameError("");
@@ -367,9 +387,15 @@ export function GreenRoomLobby({
                 fontSize: "0.8rem",
                 color: "#fcd34d",
                 lineHeight: "1.35",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "0.5rem",
               }}
             >
-              💡 <strong>Camera/mic note:</strong> Modern browsers require HTTPS (or localhost) to grant camera/mic permissions. You can join with avatar and chat!
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
+              <div>
+                <strong>Camera/mic note:</strong> WebRTC requires HTTPS or localhost permissions. You can still join with your avatar and in-call chat!
+              </div>
             </div>
           )}
 
@@ -381,15 +407,15 @@ export function GreenRoomLobby({
               className={styles.joinNowButton}
               onClick={handleJoinClick}
             >
-              <span>🚀</span>
-              <span>{isGuest ? "Ask to Join" : "Join Meeting Now"}</span>
+              <LogIn size={18} />
+              <span>{isGuest ? "Ask to Join Room" : "Join Meeting Now"}</span>
             </button>
             <button
               type="button"
               className={styles.cancelButton}
               onClick={onCancel}
             >
-              {isGuest ? "Leave / Cancel" : "Cancel & Return to Dashboard"}
+              {isGuest ? "Cancel & Exit" : "Return to Dashboard"}
             </button>
           </div>
         </div>

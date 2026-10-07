@@ -1,21 +1,22 @@
 "use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import styles from '../../styles/login.module.scss';
-import { login } from '../../services/auth.service';
+import React, { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Radio, Mail, Lock, ArrowRight, Loader2, Sparkles, ShieldCheck } from "lucide-react";
+import styles from "../../styles/login.module.scss";
+import { login } from "../../services/auth.service";
 import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login: loginUser } = useAuth();
   const [formData, setFormData] = useState({
-    email: '',
-    password: ''
+    email: "",
+    password: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.id]: e.target.value });
@@ -24,18 +25,15 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       const response = await login(formData);
-      // Assuming successful login returns a token set in cookies or local storage.
-      // Redirecting to dashboard:
-      console.log('Login successful:', response.data);
       const { user, accessToken } = response.data.data;
       loginUser(user, accessToken);
-      router.push('/dashboard');
+      router.push("/dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Invalid email or password. Please try again.');
+      setError(err.response?.data?.message || "Invalid email or password. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -44,12 +42,47 @@ export default function LoginPage() {
   return (
     <div className={styles.container}>
       <div className={styles.glassCard}>
-        <div className={styles.header}>
-          <h1>Welcome Back</h1>
-          <p>Sign in to continue to your dashboard.</p>
+        {/* Brand Header */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "1.5rem" }}>
+          <div
+            style={{
+              width: "48px",
+              height: "48px",
+              borderRadius: "14px",
+              background: "linear-gradient(135deg, #6366f1, #a855f7)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "white",
+              boxShadow: "0 0 20px rgba(99, 102, 241, 0.4)",
+            }}
+          >
+            <Radio size={24} />
+          </div>
         </div>
 
-        {error && <div className={styles.error} style={{ color: '#ef4444', marginBottom: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>{error}</div>}
+        <div className={styles.header}>
+          <h1>Welcome Back</h1>
+          <p>Sign in to access your video workspaces and meetings.</p>
+        </div>
+
+        {error && (
+          <div
+            className={styles.error}
+            style={{
+              color: "#f87171",
+              background: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.25)",
+              padding: "0.6rem 1rem",
+              borderRadius: "10px",
+              marginBottom: "1.25rem",
+              textAlign: "center",
+              fontSize: "0.85rem",
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         <form className={styles.form} onSubmit={handleSubmit} suppressHydrationWarning>
           <div className={styles.formGroup}>
@@ -57,7 +90,7 @@ export default function LoginPage() {
             <input
               type="email"
               id="email"
-              placeholder="enter your email"
+              placeholder="name@company.com"
               value={formData.email}
               onChange={handleChange}
               required
@@ -79,12 +112,22 @@ export default function LoginPage() {
           </div>
 
           <button type="submit" className={styles.submitBtn} disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? (
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                <Loader2 size={18} className="animate-spin" />
+                <span>Signing in…</span>
+              </span>
+            ) : (
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                <span>Sign In</span>
+                <ArrowRight size={18} />
+              </span>
+            )}
           </button>
         </form>
 
         <div className={styles.footer}>
-          Don&apos;t have an account? <Link href="/signup">Create one</Link>
+          Don&apos;t have an account? <Link href="/signup">Create one free</Link>
         </div>
       </div>
     </div>

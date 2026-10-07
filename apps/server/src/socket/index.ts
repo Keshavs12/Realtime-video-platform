@@ -51,6 +51,34 @@ export interface WhiteboardElement {
 // In-memory whiteboard elements history per room (up to 2000 elements)
 const roomWhiteboardHistory = new Map<string, WhiteboardElement[]>();
 
+export interface PollOption {
+    id: string;
+    text: string;
+    votes: number;
+}
+
+export interface PollItem {
+    id: string;
+    question: string;
+    creatorName: string;
+    options: PollOption[];
+    voters?: Record<string, string>; // userId -> optionId
+    createdAt: number;
+}
+
+export interface WaitingGuest {
+    socketId: string;
+    userId: string;
+    name: string;
+    requestedAt: number;
+}
+
+// In-memory polls, shared notes, and waiting room state per room
+const roomPolls = new Map<string, PollItem[]>();
+const roomNotes = new Map<string, string>();
+const waitingRooms = new Set<string>();
+const roomWaitingQueues = new Map<string, WaitingGuest[]>();
+
 
 /**
  * Initializes and configures the Socket.IO server.
@@ -306,6 +334,48 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
+            // Waiting Room check (Google Meet / Zoom Knock-to-Join)
+            if (waitingRooms.has(roomId) && !isHost && !socket.data.isAdmitted) {
+                let queue = roomWaitingQueues.get(roomId);
+                if (!queue) {
+                    queue = [];
+                    roomWaitingQueues.set(roomId, queue);
+                }
+                const existingIdx = queue.findIndex((g) => g.userId === userId || g.socketId === socket.id);
+                const guestEntry: WaitingGuest = {
+                    socketId: socket.id,
+                    userId,
+                    name: name || "Guest",
+                    requestedAt: Date.now(),
+                };
+                if (existingIdx >= 0) {
+                    queue[existingIdx] = guestEntry;
+                } else {
+                    queue.push(guestEntry);
+                }
+
+                socket.data.roomId = roomId;
+                socket.data.isGuestWaiting = true;
+
+                socket.emit("waiting-room-pending", {
+                    roomId,
+                    message: "Waiting for the host to admit you to the meeting...",
+                });
+
+                // Notify all hosts in room
+                const socketsInRoom = await io.in(roomId).fetchSockets();
+                socketsInRoom
+                    .filter((s) => s.data.isHost)
+                    .forEach((hostSocket) => {
+                        hostSocket.emit("waiting-queue-update", {
+                            queue,
+                            isWaitingRoomEnabled: true,
+                        });
+                        hostSocket.emit("waiting-guest-knock", guestEntry);
+                    });
+                return;
+            }
+
             await evictStaleSockets(io, socket, roomId, userId);
 
             const MAX_ROOM_CAPACITY = 8;
@@ -358,6 +428,24 @@ export const initSocketServer = (server: HttpServer): Server => {
             });
 
             await replayChatHistory(socket, room.id);
+
+            // Replay polls history
+            socket.emit("room-polls-history", {
+                polls: roomPolls.get(roomId) || [],
+            });
+
+            // Replay shared meeting notes
+            socket.emit("notes-history", {
+                notes: roomNotes.get(roomId) || "",
+            });
+
+            // If host, send current waiting room queue
+            if (isHost) {
+                socket.emit("waiting-queue-update", {
+                    queue: roomWaitingQueues.get(roomId) || [],
+                    isWaitingRoomEnabled: waitingRooms.has(roomId),
+                });
+            }
         });
 
         // 1b. Update participant display name (e.g. guest sets name in Green Room lobby)
@@ -699,6 +787,128 @@ export const initSocketServer = (server: HttpServer): Server => {
             if (!roomId) return;
             const history = roomWhiteboardHistory.get(roomId) || [];
             socket.emit("whiteboard-history", { elements: history });
+        });
+
+        // 3h. Waiting Room Controls
+        socket.on("toggle-waiting-room", () => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the host can toggle the waiting room" });
+                return;
+            }
+            if (waitingRooms.has(roomId)) {
+                waitingRooms.delete(roomId);
+            } else {
+                waitingRooms.add(roomId);
+            }
+            const isEnabled = waitingRooms.has(roomId);
+            io.to(roomId).emit("waiting-room-status-changed", { roomId, isEnabled });
+        });
+
+        socket.on("host-admit-peer", async (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) return;
+            const { targetSocketId } = payload;
+            if (!targetSocketId) return;
+
+            let queue = roomWaitingQueues.get(roomId) || [];
+            queue = queue.filter((g) => g.socketId !== targetSocketId);
+            roomWaitingQueues.set(roomId, queue);
+
+            const hostSockets = (await io.in(roomId).fetchSockets()).filter((s) => s.data.isHost);
+            hostSockets.forEach((h) => h.emit("waiting-queue-update", { queue, isWaitingRoomEnabled: true }));
+
+            const allSockets = await io.fetchSockets();
+            const targetSocket = allSockets.find((s) => s.id === targetSocketId);
+            if (targetSocket) {
+                targetSocket.data.isAdmitted = true;
+                targetSocket.emit("admitted-by-host", { roomId });
+            }
+        });
+
+        socket.on("host-deny-peer", async (payload: { targetSocketId: string }) => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) return;
+            const { targetSocketId } = payload;
+            if (!targetSocketId) return;
+
+            let queue = roomWaitingQueues.get(roomId) || [];
+            queue = queue.filter((g) => g.socketId !== targetSocketId);
+            roomWaitingQueues.set(roomId, queue);
+
+            const hostSockets = (await io.in(roomId).fetchSockets()).filter((s) => s.data.isHost);
+            hostSockets.forEach((h) => h.emit("waiting-queue-update", { queue, isWaitingRoomEnabled: true }));
+
+            const allSockets = await io.fetchSockets();
+            const targetSocket = allSockets.find((s) => s.id === targetSocketId);
+            if (targetSocket) {
+                targetSocket.emit("denied-by-host", {
+                    roomId,
+                    message: "The host has declined your request to join the meeting.",
+                });
+            }
+        });
+
+        // 3i. Interactive In-Meeting Polls
+        socket.on("poll-create", (payload: { question: string; options: string[] }) => {
+            const { roomId, name } = socket.data;
+            if (!roomId || !payload?.question || !Array.isArray(payload.options)) return;
+            const validOptions = payload.options.map((o: string) => String(o).trim()).filter(Boolean);
+            if (validOptions.length < 2) return;
+
+            const newPoll: PollItem = {
+                id: `poll-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`,
+                question: payload.question.trim(),
+                creatorName: name || "Participant",
+                options: validOptions.map((text: string, idx: number) => ({
+                    id: `opt-${idx + 1}`,
+                    text,
+                    votes: 0,
+                })),
+                voters: {},
+                createdAt: Date.now(),
+            };
+
+            let polls = roomPolls.get(roomId);
+            if (!polls) {
+                polls = [];
+                roomPolls.set(roomId, polls);
+            }
+            polls.unshift(newPoll);
+            if (polls.length > 50) polls.pop();
+
+            io.to(roomId).emit("poll-created", newPoll);
+        });
+
+        socket.on("poll-vote", (payload: { pollId: string; optionId: string }) => {
+            const { roomId, userId } = socket.data;
+            if (!roomId || !payload?.pollId || !payload?.optionId) return;
+
+            const polls = roomPolls.get(roomId);
+            if (!polls) return;
+            const poll = polls.find((p) => p.id === payload.pollId);
+            if (!poll) return;
+
+            if (!poll.voters) poll.voters = {};
+            poll.voters[userId] = payload.optionId;
+
+            // Recalculate votes
+            poll.options.forEach((opt) => {
+                opt.votes = Object.values(poll.voters || {}).filter((v) => v === opt.id).length;
+            });
+
+            io.to(roomId).emit("poll-updated", poll);
+        });
+
+        // 3j. Collaborative Live Meeting Notes
+        socket.on("notes-update", (payload: { notes: string }) => {
+            const { roomId, name } = socket.data;
+            if (!roomId || typeof payload?.notes !== "string") return;
+            roomNotes.set(roomId, payload.notes);
+            socket.to(roomId).emit("notes-updated", {
+                notes: payload.notes,
+                updatedBy: name || "Participant",
+            });
         });
 
         // 4. Disconnect

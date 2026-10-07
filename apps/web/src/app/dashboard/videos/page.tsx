@@ -1,6 +1,21 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import {
+  Video,
+  Play,
+  Download,
+  Trash2,
+  Clock,
+  Calendar,
+  Key,
+  HardDrive,
+  History,
+  X,
+  FileVideo,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import dashboardStyles from "@/styles/dashboard.module.scss";
 import styles from "@/styles/videos.module.scss";
 import * as roomService from "@/services/room.service";
@@ -69,13 +84,18 @@ function RecordingCard({
             <track kind="captions" />
           </video>
         ) : (
-          <div className={styles.thumbnailPlaceholder}>🎥</div>
+          <div className={styles.thumbnailPlaceholder}>
+            <FileVideo size={36} style={{ color: "#64748b" }} />
+          </div>
         )}
         <div className={styles.durationPill}>
-          ⏱️ {formatDuration(recording.durationSeconds)}
+          <Clock size={11} />
+          <span>{formatDuration(recording.durationSeconds)}</span>
         </div>
         <div className={styles.hoverPlayOverlay}>
-          <div className={styles.playIconCircle}>▶</div>
+          <div className={styles.playIconCircle}>
+            <Play size={16} fill="white" />
+          </div>
         </div>
       </button>
 
@@ -88,8 +108,14 @@ function RecordingCard({
         </div>
 
         <div className={styles.cardMeta}>
-          <span>📅 {formatDate(recording.recordedAt)}</span>
-          <span>🔑 Room: {recording.roomCode}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <Calendar size={12} />
+            <span>{formatDate(recording.recordedAt)}</span>
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <Key size={12} />
+            <span>Room: {recording.roomCode}</span>
+          </span>
         </div>
 
         <div className={styles.cardActions}>
@@ -99,7 +125,8 @@ function RecordingCard({
             onClick={() => onPlay(recording)}
             title="Watch recording"
           >
-            ▶ Watch
+            <Play size={13} fill="currentColor" />
+            <span>Watch</span>
           </button>
           <button
             type="button"
@@ -107,7 +134,8 @@ function RecordingCard({
             onClick={() => onDownload(recording)}
             title="Download .webm video"
           >
-            ⬇️ Download
+            <Download size={13} />
+            <span>Download</span>
           </button>
           <button
             type="button"
@@ -115,7 +143,7 @@ function RecordingCard({
             onClick={() => onDelete(recording.id)}
             title="Delete from local storage"
           >
-            🗑️
+            <Trash2 size={13} />
           </button>
         </div>
       </div>
@@ -220,7 +248,7 @@ export default function MyVideosPage() {
         <div>
           <h2 className={styles.studioTitle}>Videos &amp; Recordings Studio</h2>
           <p className={styles.studioSubtitle}>
-            Review your recorded meetings, replay past calls, and manage your media library.
+            Review your recorded meetings, replay past calls, and manage your local media library.
           </p>
         </div>
 
@@ -230,14 +258,16 @@ export default function MyVideosPage() {
             className={`${styles.tabBtn} ${activeTab === "recordings" ? styles.tabBtnActive : ""}`}
             onClick={() => setActiveTab("recordings")}
           >
-            🎥 Recorded Meetings ({recordings ? recordings.length : 0})
+            <Video size={15} />
+            <span>Recorded Meetings ({recordings ? recordings.length : 0})</span>
           </button>
           <button
             type="button"
             className={`${styles.tabBtn} ${activeTab === "history" ? styles.tabBtnActive : ""}`}
             onClick={() => setActiveTab("history")}
           >
-            📞 Call History ({history ? history.length : 0})
+            <History size={15} />
+            <span>Call History ({history ? history.length : 0})</span>
           </button>
         </div>
       </div>
@@ -247,30 +277,40 @@ export default function MyVideosPage() {
         <div className={styles.tabContent}>
           {recordings && recordings.length > 0 && (
             <div className={styles.statsBanner}>
-              <span>
-                💾 <strong>{recordings.length}</strong> meeting{recordings.length > 1 ? "s" : ""}{" "}
-                recorded
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Video size={14} style={{ color: "#818cf8" }} />
+                <span>
+                  <strong>{recordings.length}</strong> meeting{recordings.length > 1 ? "s" : ""} recorded
+                </span>
               </span>
               <span className={styles.statsDot}>•</span>
-              <span>
-                💽 <strong>{formatBytes(totalSizeBytes)}</strong> stored locally (Zero cloud cost)
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <HardDrive size={14} style={{ color: "#34d399" }} />
+                <span>
+                  <strong>{formatBytes(totalSizeBytes)}</strong> stored locally (Zero cloud cost)
+                </span>
               </span>
             </div>
           )}
 
           {(() => {
             if (recordings === null) {
-              return <p className={styles.empty}>Loading recordings…</p>;
+              return (
+                <div style={{ color: "#94a3b8", padding: "3rem 0", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Loading recordings…</span>
+                </div>
+              );
             }
             if (recordings.length === 0) {
               return (
                 <div className={styles.emptyStateBox}>
-                  <div className={styles.emptyIcon}>🎥</div>
+                  <div className={styles.emptyIcon}>
+                    <Video size={36} style={{ color: "#818cf8" }} />
+                  </div>
                   <h3>No recorded meetings yet</h3>
                   <p>
-                    During any call in a room, click the <strong>⏺️ Record</strong> button in the
-                    bottom controls to capture screen video and all participant audio. Your recording
-                    will be saved here automatically!
+                    During any active video call, click the <strong>Record</strong> button in the bottom floating dock to capture screen video and all participant audio in HD.
                   </p>
                 </div>
               );
@@ -297,12 +337,17 @@ export default function MyVideosPage() {
         <div className={styles.tabContent}>
           {(() => {
             if (history === null) {
-              return <p className={styles.empty}>Loading call history…</p>;
+              return (
+                <div style={{ color: "#94a3b8", padding: "3rem 0", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Loading call history…</span>
+                </div>
+              );
             }
             if (history.length === 0) {
               return (
                 <p className={styles.empty}>
-                  No past calls yet. Start or join a room to see it here.
+                  No past calls yet. Start or join a room to see your history here.
                 </p>
               );
             }
@@ -369,7 +414,7 @@ export default function MyVideosPage() {
                 className={styles.modalCloseBtn}
                 onClick={() => setActivePlayerRec(null)}
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -391,14 +436,16 @@ export default function MyVideosPage() {
                 className={styles.modalDownloadBtn}
                 onClick={() => handleDownload(activePlayerRec)}
               >
-                ⬇️ Download .webm Video
+                <Download size={15} />
+                <span>Download .webm Video</span>
               </button>
               <button
                 type="button"
                 className={styles.modalDeleteBtn}
                 onClick={() => handleDelete(activePlayerRec.id)}
               >
-                🗑️ Delete Recording
+                <Trash2 size={15} />
+                <span>Delete Recording</span>
               </button>
             </div>
           </dialog>

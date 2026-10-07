@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Radio, Mail, Clock, RotateCw, ArrowRight, ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import styles from "../../styles/signup.module.scss";
 import { sendSignupOtp, resendSignupOtp, verifySignupOtp } from "../../services/auth.service";
 import { useAuth } from "../../context/AuthContext";
@@ -321,7 +322,17 @@ export default function SignupPage() {
                 className={styles.submitBtn}
                 disabled={loading}
               >
-                {loading ? "Sending Code..." : "Create Account →"}
+                {loading ? (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Sending Code…</span>
+                  </span>
+                ) : (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <span>Create Account</span>
+                    <ArrowRight size={16} />
+                  </span>
+                )}
               </button>
             </form>
 
@@ -342,7 +353,7 @@ export default function SignupPage() {
             </div>
 
             <div className={styles.emailBadge}>
-              <span>📧</span>
+              <Mail size={14} style={{ color: "#818cf8" }} />
               <strong>{formData.email}</strong>
               <button
                 type="button"
@@ -411,14 +422,24 @@ export default function SignupPage() {
                 className={styles.submitBtn}
                 disabled={verifying || otp.includes("")}
               >
-                {verifying ? "Verifying..." : "Verify & Continue →"}
+                {verifying ? (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Verifying…</span>
+                  </span>
+                ) : (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
+                    <span>Verify &amp; Continue</span>
+                    <ArrowRight size={16} />
+                  </span>
+                )}
               </button>
 
               {/* 60 Seconds Countdown Timer / Resend Action */}
               <div className={styles.timerContainer}>
                 {countdown > 0 ? (
                   <>
-                    <span className={styles.clockIcon}>⏳</span>
+                    <Clock size={14} style={{ color: "#818cf8" }} />
                     <span>Resend OTP in </span>
                     <span className={styles.countdownText}>
                       0:{countdown.toString().padStart(2, "0")}
@@ -431,7 +452,8 @@ export default function SignupPage() {
                     onClick={handleResendOtp}
                     disabled={resending}
                   >
-                    {resending ? "Sending fresh code..." : "🔄 Resend OTP Code"}
+                    <RotateCw size={14} className={resending ? "animate-spin" : ""} />
+                    <span>{resending ? "Sending fresh code…" : "Resend OTP Code"}</span>
                   </button>
                 )}
               </div>
@@ -445,7 +467,8 @@ export default function SignupPage() {
                   setSuccess("");
                 }}
               >
-                ← Back to registration
+                <ArrowLeft size={15} />
+                <span>Back to registration</span>
               </button>
             </form>
           </div>
