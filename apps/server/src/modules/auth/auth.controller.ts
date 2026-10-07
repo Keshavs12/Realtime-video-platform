@@ -25,11 +25,16 @@ const REFRESH_COOKIE_OPTIONS: CookieOptions = {
 };
 
 export const signup = asyncHandler(async (req, res) => {
-    const user = await authService.signup(req.body);
+    const result = await authService.signup(req.body);
+    res.cookie("refreshToken", result.refreshToken, REFRESH_COOKIE_OPTIONS);
     res.status(201).json({
         success: true,
         message: "User registered successfully.",
-        data: user,
+        data: {
+            user: result.user,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+        },
     });
 });
 

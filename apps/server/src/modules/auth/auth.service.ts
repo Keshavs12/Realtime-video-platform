@@ -52,7 +52,9 @@ interface SignupPayload {
 }
 
 export const signup = async (data: SignupPayload) => {
-    const { name, email, password } = data;
+    const name = data.name.trim();
+    const email = data.email.trim().toLowerCase();
+    const { password } = data;
     const hashedPassword = await hashPassword(password);
 
     const existingUser = await prisma.user.findUnique({
@@ -79,13 +81,37 @@ export const signup = async (data: SignupPayload) => {
         },
     });
 
-    return user;
+    const accessToken = generateAccessToken({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+    });
+
+    const refreshToken = generateRefreshToken({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+    });
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            refreshToken: hashToken(refreshToken),
+        },
+    });
+
+    return {
+        user,
+        accessToken,
+        refreshToken,
+    };
 };
 
 export const login = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
         where: {
-            email,
+            email: cleanEmail,
         },
     });
 
@@ -275,7 +301,9 @@ const cleanupExpiredOtps = async () => {
 };
 
 export const initiateSignupOtp = async (data: SignupPayload) => {
-    const { name, email, password } = data;
+    const name = data.name.trim();
+    const email = data.email.trim().toLowerCase();
+    const { password } = data;
 
     // Prune stale expired records in the background
     await cleanupExpiredOtps();
@@ -356,7 +384,8 @@ export const initiateSignupOtp = async (data: SignupPayload) => {
     };
 };
 
-export const resendSignupOtp = async (email: string) => {
+export const resendSignupOtp = async (rawEmail: string) => {
+    const email = rawEmail.trim().toLowerCase();
     await cleanupExpiredOtps();
 
     const existingOtp = await prisma.emailOtp.findUnique({
@@ -417,7 +446,8 @@ export const resendSignupOtp = async (email: string) => {
     };
 };
 
-export const verifySignupOtp = async (email: string, otp: string) => {
+export const verifySignupOtp = async (rawEmail: string, otp: string) => {
+    const email = rawEmail.trim().toLowerCase();
     await cleanupExpiredOtps();
 
     const record = await prisma.emailOtp.findUnique({

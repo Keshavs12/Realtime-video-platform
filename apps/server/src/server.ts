@@ -1,3 +1,4 @@
+import "dotenv/config";
 import http from "node:http";
 import dns from "node:dns";
 import app from "./app";

@@ -14,6 +14,9 @@ import crypto from "node:crypto";
 
 const app = express();
 
+// Trust reverse proxy headers (Render, Vercel, Nginx, Cloudflare, AWS ALB)
+app.set("trust proxy", 1);
+
 app.use(helmet());
 
 app.use(

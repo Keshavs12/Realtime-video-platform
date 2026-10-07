@@ -59,12 +59,37 @@ export default function SignupPage() {
   // -------------------------------------------------------------
   const handleInitiateSignup = async (e: React.SyntheticEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setSuccess("");
 
+    const cleanName = formData.name.trim();
+    const cleanEmail = formData.email.trim().toLowerCase();
+    const cleanPassword = formData.password;
+
+    if (!cleanName || cleanName.length < 2) {
+      setError("Please enter a valid full name (at least 2 characters).");
+      return;
+    }
+
+    if (!cleanEmail || !/\S+@\S+\.\S+/.test(cleanEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!cleanPassword || cleanPassword.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      await sendSignupOtp(formData);
+      await sendSignupOtp({
+        name: cleanName,
+        email: cleanEmail,
+        password: cleanPassword,
+      });
+      setFormData((prev) => ({ ...prev, name: cleanName, email: cleanEmail }));
       setPhase("otp");
       setCountdown(60);
       setSuccess("A 6-digit verification code has been sent to your email!");
@@ -146,7 +171,8 @@ export default function SignupPage() {
     setSuccess("");
 
     try {
-      await resendSignupOtp(formData.email);
+      const cleanEmail = formData.email.trim().toLowerCase();
+      await resendSignupOtp(cleanEmail);
       setCountdown(60);
       setOtp(["", "", "", "", "", ""]);
       setSuccess("A new 6-digit verification code has been sent!");
@@ -170,8 +196,14 @@ export default function SignupPage() {
     setSuccess("");
 
     try {
-      const response = await verifySignupOtp(formData.email, otpCode);
-      const { user, accessToken } = response.data.data;
+      const cleanEmail = formData.email.trim().toLowerCase();
+      const response = await verifySignupOtp(cleanEmail, otpCode);
+      const data = response?.data?.data || response?.data;
+      const { user, accessToken, refreshToken } = data;
+
+      if (refreshToken) {
+        localStorage.setItem("refreshToken", refreshToken);
+      }
 
       // Auto login user into global AuthContext
       authLogin(user, accessToken);
