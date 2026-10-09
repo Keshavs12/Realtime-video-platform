@@ -37,7 +37,7 @@ interface GreenRoomLobbyProps {
   switchCamera: (deviceId: string) => void;
   switchMicrophone: (deviceId: string) => void;
   participantCount: number;
-  onJoinMeeting: () => void;
+  onJoinMeeting: (name?: string) => void;
   onCancel: () => void;
 }
 
@@ -263,7 +263,7 @@ export function GreenRoomLobby({
     }
     setNameError("");
     onGuestNameChange?.(finalName);
-    onJoinMeeting();
+    onJoinMeeting(finalName);
   };
 
   const isMediaUnavailable = videoDevices.length === 0 && audioDevices.length === 0;

@@ -127,8 +127,13 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const [showRecapModal, setShowRecapModal] = useState(false);
   const [isBackgroundBlur, setIsBackgroundBlur] = useState(false);
 
-  // Collapsible sidebar & tabs
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Collapsible sidebar & tabs (closed by default on mobile so video is front and center)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth > 768;
+    }
+    return true;
+  });
   const [sidebarTab, setSidebarTab] = useState<SidebarTabType>("chat");
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -311,12 +316,11 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         switchCamera={switchCamera}
         switchMicrophone={switchMicrophone}
         participantCount={presenceList.length}
-        onJoinMeeting={() => {
+        onJoinMeeting={(joinedName?: string) => {
           setHasJoinedLobby(true);
-          const finalName = guestName?.trim() || user?.name || "Guest";
+          const finalName = joinedName?.trim() || guestName?.trim() || user?.name || "Guest";
           if (socket) {
             socket.emit("update-name", { name: finalName });
-            socket.emit("join-room", { roomId, name: finalName });
           }
         }}
         onCancel={() => (isGuest ? router.push("/login") : router.push("/dashboard"))}

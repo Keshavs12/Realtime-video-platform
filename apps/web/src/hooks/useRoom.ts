@@ -473,32 +473,57 @@ export const useRoom = (
         return createFallbackCanvasStream(effectiveName || "Guest", "(Camera disabled by browser on HTTP)");
       }
 
+      // Step 1: Try HD front-facing camera with ideal audio
       try {
         return await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+          },
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
-      } catch (err: any) {
-        console.warn("Camera+mic access failed, attempting fallback:", err?.name, err?.message);
-
-        let audioStream: MediaStream | null = null;
-        try {
-          if (navigator.mediaDevices?.getUserMedia) {
-            audioStream = await navigator.mediaDevices.getUserMedia({
-              video: false,
-              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            });
-          }
-        } catch (audioErr) {
-          console.warn("Audio-only access also unavailable:", audioErr);
-        }
-
-        return createFallbackCanvasStream(
-          effectiveName || "Guest",
-          err?.name === "NotReadableError" ? "(Camera in use by another tab/app)" : "(Camera permission denied)",
-          audioStream
-        );
+      } catch (hdErr: any) {
+        console.warn("HD video constraints rejected, falling back to standard mobile video:", hdErr?.name);
       }
+
+      // Step 2: Try relaxed front-facing video constraints (essential for mobile devices)
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "user" } },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      } catch (stdErr: any) {
+        console.warn("Standard video constraints rejected, attempting generic video fallback:", stdErr?.name);
+      }
+
+      // Step 3: Try generic video: true, audio: true
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+      } catch (genErr: any) {
+        console.warn("Generic video access failed, attempting audio-only fallback:", genErr?.name);
+      }
+
+      // Step 4: Fallback to audio-only if video is blocked or unavailable
+      let audioStream: MediaStream | null = null;
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      } catch (audioErr) {
+        console.warn("Audio-only access also unavailable:", audioErr);
+      }
+
+      return createFallbackCanvasStream(
+        effectiveName || "Guest",
+        "(Camera permission denied or unavailable)",
+        audioStream
+      );
     };
 
     Promise.all([acquireUserMedia(), fetchIceServers()])
@@ -527,9 +552,16 @@ export const useRoom = (
         let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
         if (typeof window !== "undefined") {
           const hostname = window.location.hostname;
-          if (hostname !== "localhost" && hostname !== "127.0.0.1" && /^[\d.]+$/.test(hostname)) {
+          const isSecure = window.location.protocol === "https:";
+
+          // If accessed on a non-localhost host (mobile device on LAN, ngrok tunnel, domain, etc.)
+          if (hostname !== "localhost" && hostname !== "127.0.0.1") {
             if (socketUrl.includes("localhost") || socketUrl.includes("127.0.0.1")) {
-              socketUrl = `${window.location.protocol}//${hostname}:5000`;
+              if (isSecure) {
+                socketUrl = window.location.origin;
+              } else if (/^[\d.]+$/.test(hostname)) {
+                socketUrl = `${window.location.protocol}//${hostname}:5000`;
+              }
             }
           }
         }
@@ -1172,13 +1204,15 @@ export const useRoom = (
           if (event.track && !existingPeer?.stream?.getTracks().some((t) => t.id === event.track.id)) {
             existingPeer.stream.addTrack(event.track);
           }
+          // Create fresh MediaStream instance with all tracks so React reference checks trigger re-renders
+          const freshStream = new MediaStream(existingPeer.stream.getTracks());
           const updatedPeers = [...prev];
           updatedPeers[existingPeerIndex] = {
             ...existingPeer,
             socketId: peerSocketId,
             userId: effectiveUserId || existingPeer.userId,
             name: effectiveName || existingPeer.name,
-            stream: existingPeer.stream,
+            stream: freshStream,
           };
           return updatedPeers;
         }

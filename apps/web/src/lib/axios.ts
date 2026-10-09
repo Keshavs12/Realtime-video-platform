@@ -20,11 +20,16 @@ api.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined" && config.baseURL) {
       const hostname = window.location.hostname;
-      if (hostname !== "localhost" && hostname !== "127.0.0.1" && /^[\d.]+$/.test(hostname)) {
+      const isSecure = window.location.protocol === "https:";
+      if (hostname !== "localhost" && hostname !== "127.0.0.1") {
         if (config.baseURL.includes("localhost") || config.baseURL.includes("127.0.0.1")) {
-          config.baseURL = config.baseURL
-            .replace("localhost", hostname)
-            .replace("127.0.0.1", hostname);
+          if (isSecure) {
+            config.baseURL = `${window.location.origin}/api/v1`;
+          } else if (/^[\d.]+$/.test(hostname)) {
+            config.baseURL = config.baseURL
+              .replace("localhost", hostname)
+              .replace("127.0.0.1", hostname);
+          }
         }
       }
     }

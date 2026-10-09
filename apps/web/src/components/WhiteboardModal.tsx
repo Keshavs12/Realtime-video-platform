@@ -194,6 +194,7 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const isDrawingRef = useRef(false);
+  const activePointerIdRef = useRef<number | null>(null);
   const prevPointRef = useRef<WhiteboardPoint | null>(null);
   const startPointRef = useRef<WhiteboardPoint | null>(null);
   const currentPathPointsRef = useRef<WhiteboardPoint[]>([]);
@@ -209,13 +210,14 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     const rect = canvas.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
+    if (width === 0 || height === 0) return;
 
     // Reset and clear canvas
     ctx.clearRect(0, 0, width, height);
 
     elements.forEach((elem) => {
       ctx.save();
-      const scaledSize = Math.max(1, elem.size * (width / 1200));
+      const scaledSize = Math.max(1.5, elem.size * Math.max(0.65, width / 1200));
 
       if (elem.type === "path" && elem.points && elem.points.length > 0) {
         if (elem.tool === "eraser") {
@@ -428,13 +430,27 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
 
   // Pointer event handlers
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Palm rejection / ignore secondary fingers during multi-touch
+    if (activePointerIdRef.current !== null && activePointerIdRef.current !== e.pointerId) {
+      return;
+    }
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
 
-    canvas.setPointerCapture(e.pointerId);
+    try {
+      canvas.setPointerCapture(e.pointerId);
+      activePointerIdRef.current = e.pointerId;
+    } catch {
+      // Ignore if setPointerCapture fails
+    }
+
     const rect = canvas.getBoundingClientRect();
-    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const width = rect.width;
+    const height = rect.height;
+    if (width === 0 || height === 0) return;
+
+    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / width));
+    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / height));
 
     isDrawingRef.current = true;
     startPointRef.current = { x: normX, y: normY };
@@ -446,10 +462,10 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
       const mainCanvas = mainCanvasRef.current;
       const ctx = mainCanvas?.getContext("2d");
       if (ctx) {
-        const scaledSize = Math.max(1, selectedSize * (rect.width / 1200));
+        const scaledSize = Math.max(1.5, selectedSize * Math.max(0.65, width / 1200));
         drawInitialDot(ctx, normX, normY, {
-          width: rect.width,
-          height: rect.height,
+          width,
+          height,
           scaledSize,
           tool: selectedTool,
           color: selectedColor,
@@ -460,20 +476,25 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawingRef.current) return;
+    if (activePointerIdRef.current !== null && activePointerIdRef.current !== e.pointerId) {
+      return;
+    }
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
-    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    if (width === 0 || height === 0) return;
+
+    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / width));
+    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / height));
 
     const prev = prevPointRef.current;
     const start = startPointRef.current;
     if (!prev || !start) return;
 
-    const scaledSize = Math.max(1, selectedSize * (width / 1200));
+    const scaledSize = Math.max(1.5, selectedSize * Math.max(0.65, width / 1200));
 
     if (selectedTool === "pen" || selectedTool === "highlighter" || selectedTool === "eraser") {
       const mainCanvas = mainCanvasRef.current;
@@ -517,6 +538,9 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current !== null && activePointerIdRef.current === e.pointerId) {
+      activePointerIdRef.current = null;
+    }
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
 
@@ -532,8 +556,10 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     const rect = canvas.getBoundingClientRect();
     const width = rect.width;
     const height = rect.height;
-    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    if (width === 0 || height === 0) return;
+
+    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / width));
+    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / height));
     const start = startPointRef.current;
 
     // Clear preview canvas
@@ -850,11 +876,12 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
           </aside>
 
           {/* Canvas Viewport */}
-          <div ref={containerRef} className={styles.canvasContainer}>
-            <canvas ref={mainCanvasRef} className={styles.mainCanvas} />
+          <div ref={containerRef} className={styles.canvasContainer} style={{ touchAction: "none" }}>
+            <canvas ref={mainCanvasRef} className={styles.mainCanvas} style={{ touchAction: "none" }} />
             <canvas
               ref={previewCanvasRef}
               className={styles.previewCanvas}
+              style={{ touchAction: "none" }}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}

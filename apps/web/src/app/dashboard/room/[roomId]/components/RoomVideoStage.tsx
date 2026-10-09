@@ -40,6 +40,11 @@ interface VideoFeedProps {
 export const VideoFeed = ({ stream, muted = false, className, isBlurred = false }: Readonly<VideoFeedProps>) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+  const [effectiveMuted, setEffectiveMuted] = useState(muted);
+
+  useEffect(() => {
+    setEffectiveMuted(muted);
+  }, [muted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -55,7 +60,9 @@ export const VideoFeed = ({ stream, muted = false, className, isBlurred = false 
         if (cancelled || (err as DOMException).name === "AbortError") return;
 
         console.warn("Unmuted playback prevented by browser. Falling back to muted to show video:", err);
+        // Persist muted in React state so React reconciler doesn't revert to unmuted on render
         video.muted = true;
+        setEffectiveMuted(true);
         setIsAudioBlocked(true);
         try {
           await video.play();
@@ -84,10 +91,11 @@ export const VideoFeed = ({ stream, muted = false, className, isBlurred = false 
     };
   }, [stream]);
 
-  const handleUnmute = (e: React.MouseEvent) => {
+  const handleUnmute = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     if (videoRef.current) {
       videoRef.current.muted = false;
+      setEffectiveMuted(false);
       videoRef.current.play().then(() => setIsAudioBlocked(false)).catch(console.error);
     }
   };
@@ -98,7 +106,7 @@ export const VideoFeed = ({ stream, muted = false, className, isBlurred = false 
         ref={videoRef}
         autoPlay
         playsInline
-        muted={muted}
+        muted={effectiveMuted}
         className={className}
         style={isBlurred ? { filter: "contrast(1.06) saturate(1.15) brightness(1.02)" } : undefined}
       >
@@ -107,6 +115,7 @@ export const VideoFeed = ({ stream, muted = false, className, isBlurred = false 
       {isAudioBlocked && !muted && (
         <button
           onClick={handleUnmute}
+          onTouchEnd={handleUnmute}
           style={{
             position: "absolute",
             top: 14,
