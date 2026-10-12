@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Dimensions,
+  useWindowDimensions,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from "react-native";
 import { io, Socket } from "socket.io-client";
 import { Colors } from "../theme/colors";
@@ -16,7 +17,11 @@ import { useAuth } from "../context/AuthContext";
 import { getSocketBaseUrl, getStoredToken } from "../config/api";
 import { ChatModal } from "../components/ChatModal";
 import { ReactionOverlay } from "../components/ReactionOverlay";
-import { ChatMessage, Participant, FloatingReaction } from "../types";
+import { PollsModal } from "../components/PollsModal";
+import { NotesModal } from "../components/NotesModal";
+import { HostControlsModal } from "../components/HostControlsModal";
+import { WhiteboardModal } from "../components/WhiteboardModal";
+import { ChatMessage, Participant, FloatingReaction, PollItem } from "../types";
 import { Ionicons } from "@expo/vector-icons";
 import {
   RTCPeerConnection,
@@ -34,10 +39,11 @@ interface RoomScreenProps {
   onLeaveRoom: () => void;
 }
 
-const { width } = Dimensions.get("window");
-
 export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   const { user } = useAuth();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   const socketRef = useRef<Socket | null>(null);
 
   // WebRTC Refs
@@ -50,18 +56,29 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   // Participant & Room state
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isHost, setIsHost] = useState(false);
+  const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
   const [isBackCamera, setIsBackCamera] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
 
-  // In-call Chat & Reactions
+  // Modals & In-Call Interaction States
   const [chatVisible, setChatVisible] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+
+  // Polls, Notes, Whiteboard, Host Controls
+  const [polls, setPolls] = useState<PollItem[]>([]);
+  const [pollsVisible, setPollsVisible] = useState(false);
+  const [notes, setNotes] = useState<string>("");
+  const [notesUpdatedBy, setNotesUpdatedBy] = useState<string | null>(null);
+  const [notesVisible, setNotesVisible] = useState(false);
+  const [whiteboardVisible, setWhiteboardVisible] = useState(false);
+  const [hostControlsVisible, setHostControlsVisible] = useState(false);
 
   // Call timer
   useEffect(() => {
@@ -108,7 +125,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
   // Create an RTCPeerConnection for a remote peer
   const createPeerConnection = useCallback(
-    (peerSocketId: string, peerUserId?: string, peerName?: string): RTCPeerConnection | null => {
+    (peerSocketId: string, _peerUserId?: string, _peerName?: string): RTCPeerConnection | null => {
       if (!isWebRTCSupported) return null;
 
       if (peerConnectionsRef.current[peerSocketId]) {
@@ -211,9 +228,15 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         });
       });
 
-      socket.on("room-info", ({ isHost: hostFlag }: { isHost: boolean }) => {
+      socket.on("room-info", ({ isHost: hostFlag, isLocked: lockedFlag }: { isHost: boolean; isLocked?: boolean }) => {
         if (!isMounted) return;
         setIsHost(hostFlag);
+        if (lockedFlag !== undefined) setIsRoomLocked(lockedFlag);
+      });
+
+      socket.on("room-lock-changed", ({ isLocked }: { isLocked: boolean }) => {
+        if (!isMounted) return;
+        setIsRoomLocked(isLocked);
       });
 
       // Existing peers in the room -> initiate WebRTC offer
@@ -416,7 +439,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         setMessages(hist.map((m) => ({ ...m, isLocal: m.userId === user?.id })));
       });
 
-      // Reactions
+      // Floating Reactions
       socket.on("reaction-received", (reaction: FloatingReaction) => {
         if (!isMounted) return;
         setReactions((prev) => [...prev.slice(-10), reaction]);
@@ -432,6 +455,34 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           );
         }
       );
+
+      // Polls Sync
+      socket.on("room-polls-history", ({ polls: hist }: { polls: PollItem[] }) => {
+        if (!isMounted) return;
+        setPolls(hist || []);
+      });
+
+      socket.on("poll-created", (newPoll: PollItem) => {
+        if (!isMounted) return;
+        setPolls((prev) => [newPoll, ...prev]);
+      });
+
+      socket.on("poll-updated", (updated: PollItem) => {
+        if (!isMounted) return;
+        setPolls((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      });
+
+      // Notes Sync
+      socket.on("notes-history", ({ notes: histNotes }: { notes: string }) => {
+        if (!isMounted) return;
+        setNotes(histNotes || "");
+      });
+
+      socket.on("notes-updated", ({ notes: newNotes, updatedBy: by }: { notes: string; updatedBy?: string }) => {
+        if (!isMounted) return;
+        setNotes(newNotes);
+        if (by) setNotesUpdatedBy(by);
+      });
 
       // Muted / Kicked by Host
       socket.on("muted-by-host", ({ message }: { message: string }) => {
@@ -597,6 +648,79 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     }
   };
 
+  // Polls Handlers
+  const handleCreatePoll = (questionText: string, optionsList: string[]) => {
+    if (socketRef.current) {
+      socketRef.current.emit("poll-create", {
+        question: questionText,
+        options: optionsList,
+      });
+    }
+  };
+
+  const handleVotePoll = (pollId: string, optionId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("poll-vote", {
+        pollId,
+        optionId,
+      });
+    }
+  };
+
+  // Notes Handler
+  const handleUpdateNotes = (newText: string) => {
+    setNotes(newText);
+    if (socketRef.current) {
+      socketRef.current.emit("notes-update", {
+        notes: newText,
+      });
+    }
+  };
+
+  // Host Controls Handlers
+  const handleToggleRoomLock = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("toggle-room-lock");
+    }
+  };
+
+  const handleMuteAll = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("host-mute-all");
+    }
+  };
+
+  const handleMuteParticipant = (socketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("host-mute-peer", { targetSocketId: socketId });
+    }
+  };
+
+  const handleKickParticipant = (socketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit("host-kick-peer", { targetSocketId: socketId });
+    }
+  };
+
+  // Whiteboard Handlers
+  const handleDrawSegment = (data: any) => {
+    if (socketRef.current) {
+      socketRef.current.emit("whiteboard-draw", data);
+    }
+  };
+
+  const handleClearWhiteboard = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("whiteboard-clear");
+    }
+  };
+
+  const handleUndoWhiteboard = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("whiteboard-undo");
+    }
+  };
+
   // End Call
   const handleEndCall = () => {
     Alert.alert("Leave Meeting", "Are you sure you want to leave this call?", [
@@ -621,6 +745,29 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
+  // Responsive Peer Card Dimensions
+  const getCardStyle = () => {
+    const count = participants.length;
+    if (count === 0) {
+      return {
+        width: width - 24,
+        height: Math.min(height * 0.65, 480),
+      };
+    }
+    if (count === 1) {
+      return {
+        width: isLandscape ? (width - 36) / 2 : width - 24,
+        height: isLandscape ? height * 0.68 : (height - 230) / 2,
+      };
+    }
+    return {
+      width: (width - 36) / 2,
+      height: 200,
+    };
+  };
+
+  const cardDimensions = getCardStyle();
+
   // Participant Card Renderer (matches web app avatar-off glowing aesthetic)
   const renderParticipantCard = (
     isLocal: boolean,
@@ -636,7 +783,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     const canShowVideo = isWebRTCSupported && stream && !isCameraMuted;
 
     return (
-      <View key={key} style={styles.peerCard}>
+      <View key={key} style={[styles.peerCard, cardDimensions]}>
         {canShowVideo ? (
           <RTCView
             streamURL={stream.toURL()}
@@ -705,6 +852,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           <View style={styles.roomCodePill}>
             <View style={styles.liveIndicator} />
             <Text style={styles.roomCodeText}>{roomCode}</Text>
+            {isRoomLocked ? <Text style={{ fontSize: 11, marginLeft: 4 }}>🔒</Text> : null}
           </View>
           <Text style={styles.timerText}>⏱️ {formatTimer(callDuration)}</Text>
         </View>
@@ -712,11 +860,11 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         <View style={styles.headerRightCol}>
           {/* Flip camera button */}
           <TouchableOpacity onPress={handleFlipCamera} style={styles.headerIconBtn}>
-            <Ionicons name="camera-reverse" size={20} color={Colors.text} />
+            <Ionicons name="camera-reverse" size={18} color={Colors.text} />
           </TouchableOpacity>
 
           <View style={styles.participantCountPill}>
-            <Ionicons name="people" size={14} color={Colors.accent} />
+            <Ionicons name="people" size={13} color={Colors.accent} />
             <Text style={styles.participantCountText}>{participants.length + 1}</Text>
           </View>
         </View>
@@ -766,7 +914,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         </View>
       ) : null}
 
-      {/* Bottom Floating Call Control Bar */}
+      {/* Bottom Call Control Bar */}
       <View style={styles.controlBar}>
         {/* Mic Toggle */}
         <TouchableOpacity
@@ -775,7 +923,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         >
           <Ionicons
             name={isAudioMuted ? "mic-off" : "mic"}
-            size={22}
+            size={20}
             color={isAudioMuted ? "#ffffff" : Colors.text}
           />
         </TouchableOpacity>
@@ -787,7 +935,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         >
           <Ionicons
             name={isVideoMuted ? "videocam-off" : "videocam"}
-            size={22}
+            size={20}
             color={isVideoMuted ? "#ffffff" : Colors.text}
           />
         </TouchableOpacity>
@@ -797,15 +945,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           onPress={toggleHandRaise}
           style={[styles.controlBtn, isHandRaised ? styles.controlBtnHand : null]}
         >
-          <Text style={{ fontSize: 20 }}>✋</Text>
-        </TouchableOpacity>
-
-        {/* Reactions */}
-        <TouchableOpacity
-          onPress={() => setShowReactionPicker(!showReactionPicker)}
-          style={styles.controlBtn}
-        >
-          <Ionicons name="happy-outline" size={22} color={Colors.text} />
+          <Text style={{ fontSize: 18 }}>✋</Text>
         </TouchableOpacity>
 
         {/* Chat Button with Unread Badge */}
@@ -816,7 +956,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           }}
           style={styles.controlBtn}
         >
-          <Ionicons name="chatbubbles-outline" size={22} color={Colors.text} />
+          <Ionicons name="chatbubbles-outline" size={20} color={Colors.text} />
           {unreadCount > 0 ? (
             <View style={styles.unreadBadge}>
               <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -824,16 +964,135 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           ) : null}
         </TouchableOpacity>
 
+        {/* More Actions Drawer Trigger (⋯) */}
+        <TouchableOpacity
+          onPress={() => setMoreMenuVisible(true)}
+          style={[styles.controlBtn, styles.moreBtn]}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={Colors.text} />
+        </TouchableOpacity>
+
         {/* End Call Button */}
         <TouchableOpacity onPress={handleEndCall} style={styles.endCallBtn}>
           <Ionicons
             name="call"
-            size={24}
+            size={22}
             color="#ffffff"
             style={{ transform: [{ rotate: "135deg" }] }}
           />
         </TouchableOpacity>
       </View>
+
+      {/* More Actions Bottom Drawer / Modal */}
+      <Modal
+        visible={moreMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoreMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.moreOverlay}
+          activeOpacity={1}
+          onPress={() => setMoreMenuVisible(false)}
+        >
+          <View style={styles.moreSheet}>
+            <View style={styles.moreSheetHeader}>
+              <Text style={styles.moreSheetTitle}>Meeting Tools & Actions</Text>
+              <TouchableOpacity onPress={() => setMoreMenuVisible(false)}>
+                <Ionicons name="close" size={20} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.moreGrid}>
+              {/* Polls */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setPollsVisible(true);
+                }}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                  <Ionicons name="bar-chart" size={22} color={Colors.primary} />
+                </View>
+                <Text style={styles.moreTileLabel}>Polls ({polls.length})</Text>
+              </TouchableOpacity>
+
+              {/* Shared Notes */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setNotesVisible(true);
+                }}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+                  <Ionicons name="document-text" size={22} color={Colors.accent} />
+                </View>
+                <Text style={styles.moreTileLabel}>Meeting Notes</Text>
+              </TouchableOpacity>
+
+              {/* Live Whiteboard */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setWhiteboardVisible(true);
+                }}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+                  <Ionicons name="color-palette" size={22} color={Colors.warning} />
+                </View>
+                <Text style={styles.moreTileLabel}>Whiteboard</Text>
+              </TouchableOpacity>
+
+              {/* Emoji Reactions */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setShowReactionPicker(true);
+                }}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(236, 72, 153, 0.15)" }]}>
+                  <Ionicons name="happy" size={22} color="#ec4899" />
+                </View>
+                <Text style={styles.moreTileLabel}>Reactions</Text>
+              </TouchableOpacity>
+
+              {/* Flip Camera */}
+              <TouchableOpacity
+                onPress={() => {
+                  handleFlipCamera();
+                  setMoreMenuVisible(false);
+                }}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(148, 163, 184, 0.15)" }]}>
+                  <Ionicons name="camera-reverse" size={22} color={Colors.text} />
+                </View>
+                <Text style={styles.moreTileLabel}>Flip Camera</Text>
+              </TouchableOpacity>
+
+              {/* Host Controls (If Host) */}
+              {isHost ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setMoreMenuVisible(false);
+                    setHostControlsVisible(true);
+                  }}
+                  style={styles.moreTile}
+                >
+                  <View style={[styles.moreTileIcon, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+                    <Ionicons name="shield-checkmark" size={22} color={Colors.danger} />
+                  </View>
+                  <Text style={styles.moreTileLabel}>Host Controls 👑</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* In-Call Chat Modal */}
       <ChatModal
@@ -842,6 +1101,48 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         messages={messages}
         onSendMessage={handleSendMessage}
       />
+
+      {/* Polls Modal */}
+      <PollsModal
+        visible={pollsVisible}
+        onClose={() => setPollsVisible(false)}
+        polls={polls}
+        currentUserId={user?.id || ""}
+        onCreatePoll={handleCreatePoll}
+        onVotePoll={handleVotePoll}
+      />
+
+      {/* Collaborative Notes Modal */}
+      <NotesModal
+        visible={notesVisible}
+        onClose={() => setNotesVisible(false)}
+        notes={notes}
+        updatedBy={notesUpdatedBy}
+        onUpdateNotes={handleUpdateNotes}
+      />
+
+      {/* Interactive Whiteboard Modal */}
+      <WhiteboardModal
+        visible={whiteboardVisible}
+        onClose={() => setWhiteboardVisible(false)}
+        onDrawSegment={handleDrawSegment}
+        onClearBoard={handleClearWhiteboard}
+        onUndoBoard={handleUndoWhiteboard}
+      />
+
+      {/* Host Controls Modal */}
+      {isHost ? (
+        <HostControlsModal
+          visible={hostControlsVisible}
+          onClose={() => setHostControlsVisible(false)}
+          isRoomLocked={isRoomLocked}
+          participants={participants}
+          onToggleLock={handleToggleRoomLock}
+          onMuteAll={handleMuteAll}
+          onMuteParticipant={handleMuteParticipant}
+          onKickParticipant={handleKickParticipant}
+        />
+      ) : null}
     </SafeAreaView>
   );
 };
@@ -856,7 +1157,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     backgroundColor: "rgba(11, 15, 25, 0.95)",
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
@@ -870,9 +1171,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: Colors.cardSecondary,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -886,17 +1187,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.cardSecondary,
     borderWidth: 1,
     borderColor: Colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    marginRight: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 14,
+    marginRight: 8,
   },
   liveIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: Colors.danger,
-    marginRight: 6,
+    marginRight: 5,
   },
   roomCodeText: {
     color: "#ffffff",
@@ -905,15 +1206,15 @@ const styles = StyleSheet.create({
   },
   timerText: {
     color: Colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
   },
   participantCountPill: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: Colors.cardSecondary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -931,8 +1232,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   peerCard: {
-    width: (width - 36) / 2,
-    height: 210,
     backgroundColor: "#0d1322",
     borderRadius: 18,
     borderWidth: 1,
@@ -1106,20 +1405,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
     backgroundColor: Colors.card,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
   },
   controlBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.cardSecondary,
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: "center",
     justifyContent: "center",
+  },
+  moreBtn: {
+    backgroundColor: Colors.cardSecondary,
   },
   controlBtnMuted: {
     backgroundColor: Colors.danger,
@@ -1147,9 +1449,9 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   endCallBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: Colors.danger,
     alignItems: "center",
     justifyContent: "center",
@@ -1158,5 +1460,60 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 8,
     elevation: 6,
+  },
+  moreOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "flex-end",
+  },
+  moreSheet: {
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 18,
+    paddingBottom: 30,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  moreSheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  moreSheetTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  moreGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  moreTile: {
+    width: "30%",
+    backgroundColor: Colors.cardSecondary,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreTileIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  moreTileLabel: {
+    color: Colors.text,
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

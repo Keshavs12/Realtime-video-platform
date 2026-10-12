@@ -78,3 +78,37 @@ export interface FloatingReaction {
   fromName: string;
   fromSocketId: string;
 }
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+export interface PollItem {
+  id: string;
+  question: string;
+  creatorName: string;
+  options: PollOption[];
+  voters?: Record<string, string>; // userId -> optionId
+  createdAt: number;
+}
+
+export interface WhiteboardPoint {
+  x: number;
+  y: number;
+}
+
+export interface WhiteboardElement {
+  id: string;
+  type: "path" | "line" | "rect" | "circle";
+  tool: "pen" | "eraser";
+  color: string;
+  size: number;
+  points?: WhiteboardPoint[];
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+  userId?: string;
+}
