@@ -58,6 +58,11 @@ export interface PresenceUser {
   isHost?: boolean;
 }
 
+export interface PeerMediaState {
+  isVideoMuted?: boolean;
+  isAudioMuted?: boolean;
+}
+
 export interface HandRaisedUser {
   socketId: string;
   userId: string;
@@ -297,6 +302,7 @@ export const useRoom = (
   const [presenceList, setPresenceList] = useState<PresenceUser[]>([]);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [peerMediaStatus, setPeerMediaStatus] = useState<{ [socketId: string]: PeerMediaState }>({});
   const [videoDevices, setVideoDevices] = useState<MediaDeviceOption[]>([]);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceOption[]>([]);
   const [selectedVideoDeviceId, setSelectedVideoDeviceId] = useState<string>("");
@@ -347,6 +353,7 @@ export const useRoom = (
   // The original camera video track, stashed while screen sharing is active
   // so it can be restored without re-requesting getUserMedia.
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
+  const wasVideoMutedBeforeScreenShareRef = useRef(false);
   // Tracks which side originally sent the offer for each peer connection, so that
   // only the offerer attempts an ICE restart on failure (avoids both sides
   // racing to renegotiate at once).
@@ -580,6 +587,8 @@ export const useRoom = (
           socket.emit("join-room", {
             roomId,
             name: effectiveName,
+            isVideoMuted: isVideoMuted,
+            isAudioMuted: isAudioMutedRef.current,
           });
         });
 
@@ -655,6 +664,15 @@ export const useRoom = (
 
         socket.on("peer-screen-share", ({ socketId, isSharing }: { socketId: string; isSharing: boolean }) => {
           setScreenSharingPeers((prev) => updateScreenSharingPeers(prev, socketId, isSharing));
+          if (isSharing) {
+            setPeerMediaStatus((prev) => ({
+              ...prev,
+              [socketId]: {
+                ...prev[socketId],
+                isVideoMuted: false,
+              },
+            }));
+          }
         });
 
         // Server replays persisted chat history right after join, so a
@@ -725,13 +743,18 @@ export const useRoom = (
         });
 
         // 3. Handle Room users & Presence
-        socket.on("room-users", async ({ users }: { users: PresenceUser[] }) => {
+        socket.on("room-users", async ({ users }: { users: (PresenceUser & { isVideoMuted?: boolean; isAudioMuted?: boolean })[] }) => {
           // Filter out self and deduplicate by userId
           const filteredUsers: PresenceUser[] = [];
           const seen = new Set<string>();
+          const initialMediaStatus: { [socketId: string]: PeerMediaState } = {};
           for (const u of users) {
             if (u.socketId) {
               peerDetailsRef.current[u.socketId] = { userId: u.userId, name: u.name, isHost: u.isHost };
+              initialMediaStatus[u.socketId] = {
+                isVideoMuted: Boolean(u.isVideoMuted),
+                isAudioMuted: Boolean(u.isAudioMuted),
+              };
             }
             if (u.userId !== effectiveUserId && !seen.has(u.userId)) {
               seen.add(u.userId);
@@ -739,6 +762,7 @@ export const useRoom = (
             }
           }
           setPresenceList(filteredUsers);
+          setPeerMediaStatus((prev) => ({ ...prev, ...initialMediaStatus }));
 
           // The newly joined user initiates the peer connection with all existing peers
           await Promise.all(
@@ -748,7 +772,7 @@ export const useRoom = (
           );
         });
 
-        socket.on("user-joined", (joinedUser: PresenceUser) => {
+        socket.on("user-joined", (joinedUser: PresenceUser & { isVideoMuted?: boolean; isAudioMuted?: boolean }) => {
           // Never add self to presence list
           if (joinedUser.userId === effectiveUserId) return;
 
@@ -758,12 +782,42 @@ export const useRoom = (
               name: joinedUser.name,
               isHost: joinedUser.isHost,
             };
+            setPeerMediaStatus((prev) => ({
+              ...prev,
+              [joinedUser.socketId]: {
+                isVideoMuted: Boolean(joinedUser.isVideoMuted),
+                isAudioMuted: Boolean(joinedUser.isAudioMuted),
+              },
+            }));
           }
           setPresenceList((prev) => addPeerToList(prev, joinedUser));
           if (joinedUser.name) {
             setPeers((prev) => updatePeerDetails(prev, joinedUser.socketId, joinedUser.userId, joinedUser.name, joinedUser.isHost));
           }
         });
+
+        socket.on(
+          "peer-media-status",
+          ({
+            socketId,
+            isVideoMuted: remoteVideoMuted,
+            isAudioMuted: remoteAudioMuted,
+          }: {
+            socketId: string;
+            isVideoMuted?: boolean;
+            isAudioMuted?: boolean;
+          }) => {
+            if (!socketId) return;
+            setPeerMediaStatus((prev) => ({
+              ...prev,
+              [socketId]: {
+                ...prev[socketId],
+                ...(remoteVideoMuted !== undefined ? { isVideoMuted: remoteVideoMuted } : {}),
+                ...(remoteAudioMuted !== undefined ? { isAudioMuted: remoteAudioMuted } : {}),
+              },
+            }));
+          }
+        );
 
         socket.on("user-left", ({ socketId, userId }: { socketId: string; userId?: string }) => {
           // Remove from presence list
@@ -773,6 +827,11 @@ export const useRoom = (
           setScreenSharingPeers((prev) => {
             const next = new Set(prev);
             next.delete(socketId);
+            return next;
+          });
+          setPeerMediaStatus((prev) => {
+            const next = { ...prev };
+            delete next[socketId];
             return next;
           });
           // Remove peer connection and stream
@@ -1345,63 +1404,132 @@ export const useRoom = (
   // The original camera track is kept (not stopped) so stopScreenShare can
   // restore it without another getUserMedia prompt.
   const startScreenShare = async () => {
-    if (!localStreamRef.current || isScreenSharing) return;
+    if (isScreenSharing) return;
+
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
+      console.warn("getDisplayMedia is not supported in this browser environment.");
+      alert("Screen sharing is not supported by your current browser or device.");
+      return;
+    }
 
     try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      let screenStream: MediaStream;
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: "always" } as any,
+          audio: true,
+        });
+      } catch (audioErr: any) {
+        // Fallback without audio: Safari (iOS/macOS) and mobile browsers reject audio: true with NotSupportedError
+        if (audioErr?.name === "NotAllowedError") {
+          return;
+        }
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+        });
+      }
+
       const screenTrack = screenStream.getVideoTracks()[0];
       if (!screenTrack) return;
 
-      const cameraTrack = localStreamRef.current.getVideoTracks()[0];
-      cameraTrackRef.current = cameraTrack ?? null;
+      screenTrack.enabled = true;
 
-      if (cameraTrack) {
-        localStreamRef.current.removeTrack(cameraTrack);
+      if (!localStreamRef.current) {
+        localStreamRef.current = new MediaStream();
+      }
+
+      const currentVideoTrack = localStreamRef.current.getVideoTracks()[0];
+      cameraTrackRef.current = currentVideoTrack ?? null;
+
+      if (currentVideoTrack) {
+        localStreamRef.current.removeTrack(currentVideoTrack);
       }
       localStreamRef.current.addTrack(screenTrack);
 
+      // Re-instantiate localStream so React updates VideoFeed srcObject
+      const updatedLocalStream = new MediaStream(localStreamRef.current.getTracks());
+      localStreamRef.current = updatedLocalStream;
+      setLocalStream(updatedLocalStream);
+
+      // Replace video track on all existing peer connections
       Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
-        const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
-        void sender?.replaceTrack(screenTrack);
+        const sender =
+          peerConnection.getSenders().find((s) => s.track?.kind === "video") ||
+          peerConnection.getSenders().find((s) => !s.track);
+        if (sender) {
+          void sender.replaceTrack(screenTrack);
+        } else {
+          peerConnection.addTrack(screenTrack, localStreamRef.current!);
+        }
       });
+
+      // Save muted state and un-mute video so screen is immediately visible
+      wasVideoMutedBeforeScreenShareRef.current = isVideoMuted;
+      setIsVideoMuted(false);
 
       // Broadcast presenting state to all peers in the room
       socketRef.current?.emit("screen-share-status", { isSharing: true });
+      socketRef.current?.emit("media-status-change", {
+        isVideoMuted: false,
+        isAudioMuted: isAudioMutedRef.current,
+      });
 
-      // Revert automatically if the user stops sharing via the browser's own
-      // "Stop sharing" control instead of our in-app button.
-      screenTrack.onended = () => stopScreenShare();
+      // Revert automatically if the user stops sharing via the browser's own UI
+      screenTrack.onended = () => {
+        stopScreenShare();
+      };
 
       setIsScreenSharing(true);
-    } catch (err) {
-      console.warn("Screen share cancelled or failed:", err);
+    } catch (err: any) {
+      if (err?.name !== "NotAllowedError") {
+        console.warn("Screen share failed:", err);
+      }
     }
   };
 
   const stopScreenShare = () => {
     if (!localStreamRef.current || !isScreenSharing) return;
 
-    const screenTrack = localStreamRef.current.getVideoTracks()[0];
-    if (screenTrack) {
-      screenTrack.stop();
-      localStreamRef.current.removeTrack(screenTrack);
-    }
+    const currentVideoTracks = localStreamRef.current.getVideoTracks();
+    currentVideoTracks.forEach((t) => {
+      if (t.id !== cameraTrackRef.current?.id) {
+        t.stop();
+        localStreamRef.current?.removeTrack(t);
+      }
+    });
 
     const cameraTrack = cameraTrackRef.current;
     if (cameraTrack) {
       localStreamRef.current.addTrack(cameraTrack);
       Object.values(peerConnectionsRef.current).forEach((peerConnection) => {
-        const sender = peerConnection.getSenders().find((s) => s.track?.kind === "video");
-        void sender?.replaceTrack(cameraTrack);
+        const sender =
+          peerConnection.getSenders().find((s) => s.track?.kind === "video") ||
+          peerConnection.getSenders().find((s) => !s.track);
+        if (sender) {
+          void sender.replaceTrack(cameraTrack);
+        }
       });
     }
     cameraTrackRef.current = null;
 
-    // Broadcast screen share stopped
+    // Restore previous muted status
+    const wasMuted = wasVideoMutedBeforeScreenShareRef.current;
+    if (cameraTrack) {
+      cameraTrack.enabled = !wasMuted;
+    }
+    setIsVideoMuted(wasMuted);
+
+    // Re-instantiate localStream so React updates VideoFeed
+    const restoredLocalStream = new MediaStream(localStreamRef.current.getTracks());
+    localStreamRef.current = restoredLocalStream;
+    setLocalStream(restoredLocalStream);
+
+    // Broadcast screen share stopped & media status restored
     socketRef.current?.emit("screen-share-status", { isSharing: false });
+    socketRef.current?.emit("media-status-change", {
+      isVideoMuted: wasMuted,
+      isAudioMuted: isAudioMutedRef.current,
+    });
     setIsScreenSharing(false);
   };
 
@@ -1476,6 +1604,10 @@ export const useRoom = (
         if (nextMuted) {
           setSpeakingMap((prev) => ({ ...prev, local: false }));
         }
+        socketRef.current?.emit("media-status-change", {
+          isAudioMuted: nextMuted,
+          isVideoMuted: isVideoMuted,
+        });
       }
     }
   };
@@ -1485,7 +1617,12 @@ export const useRoom = (
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoMuted(!videoTrack.enabled);
+        const nextMuted = !videoTrack.enabled;
+        setIsVideoMuted(nextMuted);
+        socketRef.current?.emit("media-status-change", {
+          isVideoMuted: nextMuted,
+          isAudioMuted: isAudioMutedRef.current,
+        });
       }
     }
   };
@@ -1502,6 +1639,10 @@ export const useRoom = (
         if (videoTrack) {
           videoTrack.enabled = !nextMode;
           setIsVideoMuted(nextMode);
+          socketRef.current?.emit("media-status-change", {
+            isVideoMuted: nextMode,
+            isAudioMuted: isAudioMutedRef.current,
+          });
         }
       }
 
@@ -1569,6 +1710,7 @@ export const useRoom = (
     toggleVideo,
     isAudioMuted,
     isVideoMuted,
+    peerMediaStatus,
     videoDevices,
     audioDevices,
     selectedVideoDeviceId,

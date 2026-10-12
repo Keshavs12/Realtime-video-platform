@@ -42,6 +42,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     toggleVideo,
     isAudioMuted,
     isVideoMuted,
+    peerMediaStatus,
     videoDevices,
     audioDevices,
     selectedVideoDeviceId,
@@ -226,6 +227,18 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const isSpotlightValid = spotlightId === "local" || peers.some((p) => p.socketId === spotlightId);
   const activeSpotlightId = isSpotlightValid ? spotlightId : null;
 
+  // Auto-spotlight the active screen presenter so the shared screen takes center stage
+  useEffect(() => {
+    if (isScreenSharing) {
+      setSpotlightId("local");
+    } else if (screenSharingPeers.size > 0) {
+      const presenterSocketId = Array.from(screenSharingPeers)[0];
+      setSpotlightId(presenterSocketId);
+    } else if (spotlightId === "local" && !isScreenSharing) {
+      setSpotlightId(null);
+    }
+  }, [isScreenSharing, screenSharingPeers]);
+
   const handleChatScroll = () => {
     if (!chatMessagesRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
@@ -241,7 +254,9 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     const lastMsg = messages.at(-1);
 
     if (isChatAtBottomRef.current || lastMsg?.isLocal) {
-      chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight, behavior: "smooth" });
+      requestAnimationFrame(() => {
+        chatMessagesRef.current?.scrollTo({ top: chatMessagesRef.current.scrollHeight, behavior: "smooth" });
+      });
       setUnreadCount(0);
     } else {
       setUnreadCount((prev) => prev + 1);
@@ -359,6 +374,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         isScreenSharing={isScreenSharing}
         isVideoMuted={isVideoMuted}
         isAudioMuted={isAudioMuted}
+        peerMediaStatus={peerMediaStatus}
         speakingMap={speakingMap}
         peers={peers}
         presenceList={presenceList}
@@ -408,6 +424,9 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         }}
         onToggleLowBandwidthMode={toggleLowBandwidthMode}
         onToggleSidebar={() => {
+          if (!isSidebarOpen) {
+            setSidebarTab("chat");
+          }
           setIsSidebarOpen((prev) => !prev);
           setUnreadCount(0);
         }}

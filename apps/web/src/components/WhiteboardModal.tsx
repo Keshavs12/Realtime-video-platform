@@ -494,6 +494,9 @@ export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
     const start = startPointRef.current;
     if (!prev || !start) return;
 
+    // Filter imperceptible sub-pixel jitter to optimize draw performance and reduce network flood
+    if (Math.hypot(normX - prev.x, normY - prev.y) < 0.0008) return;
+
     const scaledSize = Math.max(1.5, selectedSize * Math.max(0.65, width / 1200));
 
     if (selectedTool === "pen" || selectedTool === "highlighter" || selectedTool === "eraser") {

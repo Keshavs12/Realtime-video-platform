@@ -25,6 +25,7 @@ import {
   HandRaisedUser,
   FloatingReaction,
   NetworkQualityStats,
+  PeerMediaState,
 } from "@/hooks/useRoom";
 
 interface VideoFeedProps {
@@ -37,7 +38,7 @@ interface VideoFeedProps {
 /**
  * A helper component to assign a MediaStream to an HTML5 video tag.
  */
-export const VideoFeed = ({ stream, muted = false, className, isBlurred = false }: Readonly<VideoFeedProps>) => {
+export const VideoFeed = React.memo(({ stream, muted = false, className, isBlurred = false }: Readonly<VideoFeedProps>) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [effectiveMuted, setEffectiveMuted] = useState(muted);
@@ -142,7 +143,9 @@ export const VideoFeed = ({ stream, muted = false, className, isBlurred = false 
       )}
     </div>
   );
-};
+});
+
+VideoFeed.displayName = "VideoFeed";
 
 const SignalBars = ({ quality }: { quality: string }) => {
   const bars = quality === "excellent" ? 4 : quality === "good" ? 3 : quality === "poor" ? 2 : 1;
@@ -192,6 +195,7 @@ interface RoomVideoStageProps {
   isScreenSharing: boolean;
   isVideoMuted: boolean;
   isAudioMuted: boolean;
+  peerMediaStatus?: Record<string, PeerMediaState>;
   speakingMap: Record<string, boolean>;
   peers: Peer[];
   presenceList: PresenceUser[];
@@ -218,6 +222,7 @@ export function RoomVideoStage({
   isScreenSharing,
   isVideoMuted,
   isAudioMuted,
+  peerMediaStatus,
   speakingMap,
   peers,
   presenceList,
@@ -299,7 +304,14 @@ export function RoomVideoStage({
           </span>
         )}
 
-        {isVideoMuted ? (
+        {isScreenSharing ? (
+          <VideoFeed
+            stream={localStream}
+            muted={true}
+            className={`${styles.video} ${styles.presentation}`}
+            isBlurred={false}
+          />
+        ) : isVideoMuted ? (
           <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
             <div className={styles.avatarInitial}>{(localDisplayName || "Y")[0].toUpperCase()}</div>
             <span className={styles.avatarName}>{localDisplayName}</span>
@@ -322,7 +334,7 @@ export function RoomVideoStage({
             </div>
           )}
           {isAudioMuted && <MicOff size={12} style={{ color: "#f87171" }} />}
-          {isVideoMuted && <VideoOff size={12} style={{ color: "#f87171" }} />}
+          {!isScreenSharing && isVideoMuted && <VideoOff size={12} style={{ color: "#f87171" }} />}
         </div>
       </div>
     );
@@ -332,12 +344,19 @@ export function RoomVideoStage({
     const displayName = getPeerDisplayName(peer, presenceList);
     const isSpeaking = Boolean(speakingMap[peer.socketId]);
     const stats = networkQuality[peer.socketId];
-    const hasVideoTrack = Boolean(
-      peer.stream?.getVideoTracks().some((t) => t.enabled && t.readyState === "live")
+    const peerStatus = peerMediaStatus?.[peer.socketId];
+    const isPresenting = screenSharingPeers.has(peer.socketId);
+    const hasLiveVideoTrack = Boolean(
+      peer.stream?.getVideoTracks().some((t) => t.enabled && t.readyState === "live" && !t.muted)
     );
+    const isPeerVideoOff = isPresenting
+      ? false
+      : peerStatus?.isVideoMuted !== undefined
+      ? peerStatus.isVideoMuted
+      : !hasLiveVideoTrack;
+    const isPeerAudioOff = Boolean(peerStatus?.isAudioMuted);
     const wrapperClass = getFeedWrapperClass(isSpotlight, isFilmstrip, isSpeaking);
     const isHandRaised = raisedHands.some((h) => h.socketId === peer.socketId);
-    const isPresenting = screenSharingPeers.has(peer.socketId);
 
     return (
       <div className={wrapperClass} key={peer.socketId}>
@@ -389,13 +408,17 @@ export function RoomVideoStage({
           </div>
         )}
 
-        {!hasVideoTrack ? (
+        {isPeerVideoOff ? (
           <div className={`${styles.avatarFallback} ${isSpeaking ? styles.speakingPulse : ""}`}>
             <div className={styles.avatarInitial}>{(displayName || "P")[0].toUpperCase()}</div>
             <span className={styles.avatarName}>{displayName}</span>
           </div>
         ) : (
-          <VideoFeed stream={peer.stream} muted={false} className={styles.video} />
+          <VideoFeed
+            stream={peer.stream}
+            muted={false}
+            className={`${styles.video} ${isPresenting ? styles.presentation : ""}`}
+          />
         )}
 
         <div className={styles.peerName}>
@@ -407,6 +430,8 @@ export function RoomVideoStage({
               <span style={{ width: "2px", height: "80%", background: "#10b981", borderRadius: "1px" }} />
             </div>
           )}
+          {isPeerAudioOff && <MicOff size={12} style={{ color: "#f87171" }} />}
+          {!isPresenting && isPeerVideoOff && <VideoOff size={12} style={{ color: "#f87171" }} />}
         </div>
       </div>
     );

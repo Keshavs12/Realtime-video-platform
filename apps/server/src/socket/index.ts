@@ -27,6 +27,8 @@ export const closeRedisClients = async () => {
 interface JoinRoomPayload {
     roomId: string;
     name?: string;
+    isVideoMuted?: boolean;
+    isAudioMuted?: boolean;
 }
 
 export interface WhiteboardPoint {
@@ -261,7 +263,14 @@ export const initSocketServer = (server: HttpServer): Server => {
     ) => {
         const sockets = await targetIo.in(roomId).fetchSockets();
         const seenUsers = new Set<string>();
-        const usersInRoom: { socketId: string; userId: string; name?: string; isHost?: boolean }[] = [];
+        const usersInRoom: {
+            socketId: string;
+            userId: string;
+            name?: string;
+            isHost?: boolean;
+            isVideoMuted?: boolean;
+            isAudioMuted?: boolean;
+        }[] = [];
 
         for (const s of sockets) {
             const peerUserId = s.data.userId as string;
@@ -272,6 +281,8 @@ export const initSocketServer = (server: HttpServer): Server => {
                     userId: peerUserId,
                     name: s.data.name as string | undefined,
                     isHost: s.data.isHost as boolean | undefined,
+                    isVideoMuted: Boolean(s.data.isVideoMuted),
+                    isAudioMuted: Boolean(s.data.isAudioMuted),
                 });
             }
         }
@@ -394,6 +405,8 @@ export const initSocketServer = (server: HttpServer): Server => {
             socket.data.roomId = roomId;
             socket.data.roomDbId = room.id;
             socket.data.isHost = isHost;
+            socket.data.isVideoMuted = Boolean(payload?.isVideoMuted);
+            socket.data.isAudioMuted = Boolean(payload?.isAudioMuted);
 
             await socket.join(roomId);
             if (!socket.data.isGuest) {
@@ -419,6 +432,8 @@ export const initSocketServer = (server: HttpServer): Server => {
                 userId,
                 name,
                 isHost,
+                isVideoMuted: Boolean(socket.data.isVideoMuted),
+                isAudioMuted: Boolean(socket.data.isAudioMuted),
             });
 
             const usersInRoom = await getRoomPeerUsers(io, roomId, socket.id, userId);
@@ -727,6 +742,26 @@ export const initSocketServer = (server: HttpServer): Server => {
                 userId,
                 name: name || "Guest",
                 isSharing: Boolean(payload?.isSharing),
+            });
+        });
+
+        // 3f-2. Media Status (Camera On/Off, Mic Mute/Unmute)
+        socket.on("media-status-change", (payload: { isVideoMuted?: boolean; isAudioMuted?: boolean }) => {
+            const { roomId, userId } = socket.data;
+            if (!roomId) return;
+
+            if (payload?.isVideoMuted !== undefined) {
+                socket.data.isVideoMuted = Boolean(payload.isVideoMuted);
+            }
+            if (payload?.isAudioMuted !== undefined) {
+                socket.data.isAudioMuted = Boolean(payload.isAudioMuted);
+            }
+
+            socket.to(roomId).emit("peer-media-status", {
+                socketId: socket.id,
+                userId,
+                isVideoMuted: Boolean(socket.data.isVideoMuted),
+                isAudioMuted: Boolean(socket.data.isAudioMuted),
             });
         });
 

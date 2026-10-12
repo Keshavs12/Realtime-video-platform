@@ -95,28 +95,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .avatarInitial {
-  width: 86px;
-  height: 86px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4338ca 0%, #1d4ed8 50%, #0369a1 100%);
+  background: linear-gradient(135deg, #a855f7 0%, #6366f1 45%, #3b82f6 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.4rem;
+  font-size: 2.75rem;
   font-weight: 700;
-  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.45), 0 10px 25px rgba(59, 130, 246, 0.25);
 }
 
 .avatarLabel {
-  color: #94a3b8;
-  font-size: 0.92rem;
-  font-weight: 500;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
   letter-spacing: -0.01em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 // Floating controls on preview

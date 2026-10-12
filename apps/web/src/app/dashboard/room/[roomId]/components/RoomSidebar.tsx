@@ -532,6 +532,7 @@ export function RoomSidebar({
               placeholder="Send message to everyone…"
               value={chatInput}
               onChange={(e) => onChatInputChange(e.target.value)}
+              autoFocus
             />
             <button type="submit" className={styles.chatSendButton} disabled={!chatInput.trim()}>
               <Send size={15} />
