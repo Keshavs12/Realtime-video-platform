@@ -68,6 +68,8 @@ export interface Participant {
   isAudioMuted?: boolean;
   isVideoMuted?: boolean;
   isHandRaised?: boolean;
+  isSharing?: boolean;
+  stream?: any;
 }
 
 export interface FloatingReaction {

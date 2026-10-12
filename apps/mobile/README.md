@@ -25,14 +25,16 @@ Cross-platform mobile application for **SuperCall Realtime Video Platform**, bui
    - **Dispatch Reminders**: One-tap notification dispatch to all invitees.
    - **Cancel/Delete**: Hosts can cancel scheduled meetings.
 
-4. **Live Video Call Room**
-   - Real-time signaling via **Socket.IO**.
-   - **Participant Grid**: Dynamic avatar and video cards for all attendees with active speaker indicators.
-   - **Host & Status Badges**: Host crown, audio muted status, video off status, and hand-raise badges.
+4. **Live Video Call Room (WebRTC + Socket.IO)**
+   - **True P2P WebRTC Video/Audio Streaming**: Native WebRTC integration via `react-native-webrtc` and Metered.ca TURN relay / Google STUN servers.
+   - **Camera Flip Button**: One-tap toggle between front selfie camera and rear camera.
+   - **Camera-Off Avatar View**: Clean dark gradient avatar with centered glowing rings when video is off (matches SuperCall web design).
+   - **Participant Grid**: Dynamic video tiles for all attendees with mirror control and speaker indicators.
+   - **Host & Status Badges**: Host crown (👑), mic-muted indicator, camera-off indicator, and hand-raise badges.
    - **In-Call Real-Time Chat**: Dedicated modal with chat history, instant messaging, and unread count badges.
    - **Hand Raising (✋)**: Toggle raised hand to notify the host and attendees.
    - **Floating Emoji Reactions (👏, 👍, ❤️, 🎉, 🔥, 😂, 🚀, 💡)**: Animated floating popover with smooth fade-and-rise animations.
-   - **Audio / Video Controls**: Toggle microphone, toggle camera, and end/leave call.
+   - **Audio / Video Controls**: Toggle microphone, toggle camera, flip camera, and leave call.
 
 5. **Meeting History**
    - Call history logs with room codes, dates, duration in minutes, participant counts, and host indicator.
