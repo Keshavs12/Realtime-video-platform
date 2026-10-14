@@ -6,6 +6,7 @@ export const authRateLimiter = rateLimit({
     limit: 60, // 60 requests per window per IP
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
     keyGenerator: (req: Request) => {
         // Use client IP via proxy header or connection
         const forwarded = req.headers["x-forwarded-for"];

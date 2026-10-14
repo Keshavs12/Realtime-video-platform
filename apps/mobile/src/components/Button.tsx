@@ -26,7 +26,7 @@ export const Button = ({
   icon,
 }: ButtonProps) => {
   const getBackgroundColor = () => {
-    if (disabled) return "#1e293b";
+    if (disabled) return "rgba(30, 41, 59, 0.4)";
     switch (variant) {
       case "primary":
         return Colors.primary;
@@ -43,8 +43,11 @@ export const Button = ({
   };
 
   const getBorderColor = () => {
+    if (disabled) return "rgba(255, 255, 255, 0.05)";
     if (variant === "outline") return Colors.borderLight;
-    if (variant === "secondary") return Colors.border;
+    if (variant === "secondary") return Colors.glassBorderStrong;
+    if (variant === "primary") return "rgba(255, 255, 255, 0.2)";
+    if (variant === "danger") return "rgba(255, 255, 255, 0.15)";
     return "transparent";
   };
 
@@ -64,18 +67,27 @@ export const Button = ({
     }
   };
 
+  const getElevationStyle = () => {
+    if (disabled) return null;
+    if (variant === "primary") return styles.primaryElevation;
+    if (variant === "danger") return styles.dangerElevation;
+    if (variant === "secondary") return styles.glassElevation;
+    return null;
+  };
+
   return (
     <TouchableOpacity
-      activeOpacity={0.8}
+      activeOpacity={0.82}
       onPress={onPress}
       disabled={disabled || loading}
       style={[
         styles.base,
         styles[size],
+        getElevationStyle(),
         {
           backgroundColor: getBackgroundColor(),
           borderColor: getBorderColor(),
-          borderWidth: variant === "outline" || variant === "secondary" ? 1 : 0,
+          borderWidth: variant === "ghost" ? 0 : 1,
         },
         style,
       ]}
@@ -107,11 +119,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
+    borderRadius: 14,
+  },
+  primaryElevation: {
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  dangerElevation: {
+    shadowColor: Colors.danger,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  glassElevation: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
   small: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 15,
   },
   medium: {
     paddingVertical: 14,
@@ -119,11 +152,12 @@ const styles = StyleSheet.create({
   },
   large: {
     paddingVertical: 18,
-    paddingHorizontal: 24,
+    paddingHorizontal: 26,
   },
   text: {
     fontWeight: "700",
     textAlign: "center",
+    letterSpacing: 0.2,
   },
   text_small: {
     fontSize: 13,
@@ -135,3 +169,4 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
 });
+

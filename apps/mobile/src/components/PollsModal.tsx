@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,6 +36,8 @@ export const PollsModal = ({
   const [isCreating, setIsCreating] = useState(false);
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
 
   const handleAddOption = () => {
     if (options.length < 6) {
@@ -112,7 +115,7 @@ export const PollsModal = ({
                       {option.text}
                     </Text>
                   </View>
-                  <Text style={styles.optionPercentage}>
+                  <Text style={[styles.optionPercentage, isVoted && styles.optionPercentageSelected]}>
                     {percentage}% ({votes})
                   </Text>
                 </View>
@@ -125,22 +128,34 @@ export const PollsModal = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
+        style={[styles.overlay, isTablet && styles.overlayTablet]}
       >
-        <View style={styles.container}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={[styles.container, isTablet && styles.containerTablet]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Ionicons name="bar-chart" size={20} color={Colors.primary} />
-              <Text style={styles.title}>
-                {isCreating ? "Create a Poll" : `Meeting Polls (${polls.length})`}
-              </Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="bar-chart" size={18} color={Colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.title}>
+                  {isCreating ? "Create a Poll" : "Meeting Polls"}
+                </Text>
+                <Text style={styles.subtitle}>
+                  {isCreating ? "Collect votes from attendees" : `${polls.length} active poll${polls.length === 1 ? "" : "s"}`}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>
 
@@ -150,8 +165,8 @@ export const PollsModal = ({
               <Text style={styles.label}>Question</Text>
               <TextInput
                 style={styles.input}
-                placeholder="What would you like to ask?"
-                placeholderTextColor={Colors.textSubtle}
+                placeholder="What would you like to ask the room?"
+                placeholderTextColor="#64748b"
                 value={question}
                 onChangeText={setQuestion}
               />
@@ -162,14 +177,15 @@ export const PollsModal = ({
                   <TextInput
                     style={[styles.input, styles.optionInputFlex]}
                     placeholder={`Option ${idx + 1}`}
-                    placeholderTextColor={Colors.textSubtle}
+                    placeholderTextColor="#64748b"
                     value={opt}
-                    onChangeText={(txt) => handleOptionChange(txt, idx)}
+                    onChangeText={(val) => handleOptionChange(val, idx)}
                   />
                   {options.length > 2 ? (
                     <TouchableOpacity
                       onPress={() => handleRemoveOption(idx)}
                       style={styles.removeOptionBtn}
+                      activeOpacity={0.7}
                     >
                       <Ionicons name="trash-outline" size={18} color={Colors.danger} />
                     </TouchableOpacity>
@@ -178,8 +194,12 @@ export const PollsModal = ({
               ))}
 
               {options.length < 6 ? (
-                <TouchableOpacity onPress={handleAddOption} style={styles.addOptionBtn}>
-                  <Ionicons name="add" size={18} color={Colors.primary} />
+                <TouchableOpacity
+                  onPress={handleAddOption}
+                  style={styles.addOptionBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
                   <Text style={styles.addOptionText}>Add Another Option</Text>
                 </TouchableOpacity>
               ) : null}
@@ -188,12 +208,14 @@ export const PollsModal = ({
                 <TouchableOpacity
                   onPress={() => setIsCreating(false)}
                   style={styles.cancelBtn}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleCreateSubmit}
                   style={styles.submitBtn}
+                  activeOpacity={0.8}
                 >
                   <Text style={styles.submitBtnText}>Launch Poll</Text>
                 </TouchableOpacity>
@@ -203,10 +225,12 @@ export const PollsModal = ({
             <View style={styles.listWrapper}>
               {polls.length === 0 ? (
                 <View style={styles.emptyContainer}>
-                  <Ionicons name="pie-chart-outline" size={48} color={Colors.textSubtle} />
-                  <Text style={styles.emptyText}>No active polls yet</Text>
+                  <View style={styles.emptyIconBg}>
+                    <Ionicons name="stats-chart-outline" size={36} color={Colors.primary} />
+                  </View>
+                  <Text style={styles.emptyText}>No polls active yet</Text>
                   <Text style={styles.emptySubtext}>
-                    Create a poll to gather quick feedback from attendees.
+                    Create a poll to gather feedback or make group decisions instantly.
                   </Text>
                 </View>
               ) : (
@@ -218,13 +242,14 @@ export const PollsModal = ({
                 />
               )}
 
-              {/* Bottom Action */}
+              {/* Bottom Create Button Bar */}
               <View style={styles.bottomBar}>
                 <TouchableOpacity
                   onPress={() => setIsCreating(true)}
                   style={styles.createPollBtn}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="add-circle" size={20} color="#ffffff" />
+                  <Ionicons name="add" size={18} color="#ffffff" />
                   <Text style={styles.createPollBtnText}>Create New Poll</Text>
                 </TouchableOpacity>
               </View>
@@ -239,17 +264,37 @@ export const PollsModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     justifyContent: "flex-end",
   },
+  overlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
   container: {
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     maxHeight: "85%",
     minHeight: "55%",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  containerTablet: {
+    width: "100%",
+    maxWidth: 580,
+    height: 640,
+    borderRadius: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: "row",
@@ -258,20 +303,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.85)",
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.text,
-    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 1,
   },
   closeBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   listWrapper: {
     flex: 1,
@@ -281,11 +351,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   pollCard: {
-    backgroundColor: Colors.cardSecondary,
-    borderRadius: 16,
+    backgroundColor: "rgba(30, 41, 59, 0.55)",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 14,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    padding: 16,
     marginBottom: 14,
   },
   pollHeader: {
@@ -293,29 +363,30 @@ const styles = StyleSheet.create({
   },
   pollQuestion: {
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#ffffff",
     marginBottom: 4,
   },
   pollMeta: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: "#94a3b8",
+    fontWeight: "500",
   },
   optionsList: {
     gap: 8,
   },
   optionBtn: {
     position: "relative",
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 12,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     overflow: "hidden",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   optionBtnSelected: {
-    borderColor: Colors.primary,
+    borderColor: "rgba(99, 102, 241, 0.6)",
   },
   progressBar: {
     position: "absolute",
@@ -323,7 +394,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     backgroundColor: "rgba(99, 102, 241, 0.2)",
-    borderRadius: 9,
+    borderRadius: 11,
   },
   progressBarSelected: {
     backgroundColor: "rgba(99, 102, 241, 0.35)",
@@ -340,14 +411,14 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   radioCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 1.5,
-    borderColor: Colors.textMuted,
+    borderColor: "#64748b",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: 10,
   },
   radioCircleSelected: {
     borderColor: Colors.primary,
@@ -359,23 +430,28 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   optionText: {
-    color: Colors.text,
+    color: "#e2e8f0",
     fontSize: 13,
     fontWeight: "600",
   },
   optionTextSelected: {
     color: "#ffffff",
+    fontWeight: "700",
   },
   optionPercentage: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 12,
     fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  optionPercentageSelected: {
+    color: "#ffffff",
   },
   bottomBar: {
     padding: 14,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.card,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.9)",
   },
   createPollBtn: {
     backgroundColor: Colors.primary,
@@ -383,12 +459,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createPollBtnText: {
     color: "#ffffff",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
     marginLeft: 6,
   },
   emptyContainer: {
@@ -398,35 +479,47 @@ const styles = StyleSheet.create({
     padding: 32,
     minHeight: 220,
   },
+  emptyIconBg: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
   emptyText: {
-    color: Colors.text,
-    fontSize: 15,
+    color: "#ffffff",
+    fontSize: 16,
     fontWeight: "700",
-    marginTop: 12,
   },
   emptySubtext: {
-    color: Colors.textMuted,
-    fontSize: 12,
+    color: "#94a3b8",
+    fontSize: 13,
     textAlign: "center",
     marginTop: 4,
+    lineHeight: 18,
   },
   createContent: {
-    padding: 16,
+    padding: 18,
   },
   label: {
-    color: Colors.textMuted,
-    fontSize: 12,
+    color: "#94a3b8",
+    fontSize: 11,
     fontWeight: "700",
-    marginBottom: 6,
+    marginBottom: 8,
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(11, 17, 32, 0.8)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     color: "#ffffff",
     fontSize: 14,
     marginBottom: 12,
@@ -442,47 +535,56 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   removeOptionBtn: {
-    padding: 8,
+    padding: 10,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.25)",
   },
   addOptionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
     marginBottom: 16,
   },
   addOptionText: {
     color: Colors.primary,
     fontSize: 13,
-    fontWeight: "600",
-    marginLeft: 4,
+    fontWeight: "700",
+    marginLeft: 6,
   },
   formActionRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
     marginTop: 8,
   },
   cancelBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: Colors.cardSecondary,
+    borderRadius: 14,
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
   },
   cancelBtnText: {
-    color: Colors.textMuted,
-    fontWeight: "600",
+    color: "#94a3b8",
+    fontWeight: "700",
   },
   submitBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: Colors.primary,
     alignItems: "center",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
   submitBtnText: {
     color: "#ffffff",
-    fontWeight: "700",
+    fontWeight: "800",
   },
 });

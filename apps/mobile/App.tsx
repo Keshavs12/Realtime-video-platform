@@ -101,7 +101,7 @@ const MainNavigator = () => {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0f19" />
+      <StatusBar barStyle="light-content" backgroundColor="#070b13" />
       <AuthProvider>
         <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
           <MainNavigator />

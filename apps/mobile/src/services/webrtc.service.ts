@@ -1,12 +1,42 @@
-import { NativeModules } from "react-native";
-import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCSessionDescription,
-  RTCView,
-  MediaStream,
-  mediaDevices,
+import { NativeModules, View } from "react-native";
+import type {
+  RTCPeerConnection as IRTCPeerConnection,
+  RTCIceCandidate as IRTCIceCandidate,
+  RTCSessionDescription as IRTCSessionDescription,
+  MediaStream as IMediaStream,
 } from "react-native-webrtc";
+
+export type RTCPeerConnection = IRTCPeerConnection;
+export type RTCIceCandidate = IRTCIceCandidate;
+export type RTCSessionDescription = IRTCSessionDescription;
+export type MediaStream = IMediaStream;
+
+/**
+ * Checks if react-native-webrtc native module is available in the current runtime.
+ * (Returns true in Dev Client or Production APK/IPA; returns false in standard Expo Go).
+ */
+export const isWebRTCSupported = Boolean(NativeModules.WebRTCModule);
+
+let RTCPeerConnection: any;
+let RTCIceCandidate: any;
+let RTCSessionDescription: any;
+let RTCView: any = View;
+let MediaStream: any;
+let mediaDevices: any;
+
+if (isWebRTCSupported) {
+  try {
+    const webrtc = require("react-native-webrtc");
+    RTCPeerConnection = webrtc.RTCPeerConnection;
+    RTCIceCandidate = webrtc.RTCIceCandidate;
+    RTCSessionDescription = webrtc.RTCSessionDescription;
+    RTCView = webrtc.RTCView;
+    MediaStream = webrtc.MediaStream;
+    mediaDevices = webrtc.mediaDevices;
+  } catch (err) {
+    console.warn("[WebRTC] Failed to load native WebRTC module:", err);
+  }
+}
 
 // Metered.ca TURN Relay Credentials
 const METERED_DOMAIN = "callingbalouini.metered.live";
@@ -17,12 +47,6 @@ export const FALLBACK_ICE_SERVERS = [
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
 ];
-
-/**
- * Checks if react-native-webrtc native module is available in the current runtime.
- * (Returns true in Dev Client or Production APK/IPA; returns false in standard Expo Go).
- */
-export const isWebRTCSupported = Boolean(NativeModules.WebRTCModule);
 
 /**
  * Fetches short-lived TURN credentials from Metered.ca for reliable cross-network P2P connections.

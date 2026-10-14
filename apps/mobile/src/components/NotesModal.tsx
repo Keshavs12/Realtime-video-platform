@@ -8,6 +8,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,6 +31,8 @@ export const NotesModal = ({
   const [localText, setLocalText] = useState(notes);
   const [isSyncing, setIsSyncing] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
 
   // Sync external changes into localText when not actively editing
   useEffect(() => {
@@ -53,25 +56,35 @@ export const NotesModal = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
+        style={[styles.overlay, isTablet && styles.overlayTablet]}
       >
-        <View style={styles.container}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={[styles.container, isTablet && styles.containerTablet]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleCol}>
               <View style={styles.titleRow}>
-                <Ionicons name="document-text" size={20} color={Colors.primary} />
-                <Text style={styles.title}>Collaborative Meeting Notes</Text>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="document-text" size={18} color={Colors.accent} />
+                </View>
+                <View>
+                  <Text style={styles.title}>Collaborative Notes</Text>
+                  {updatedBy ? (
+                    <Text style={styles.subtitle}>Last updated by {updatedBy}</Text>
+                  ) : (
+                    <Text style={styles.subtitle}>Real-time synchronized across all devices</Text>
+                  )}
+                </View>
               </View>
-              {updatedBy ? (
-                <Text style={styles.subtitle}>Last updated by {updatedBy}</Text>
-              ) : (
-                <Text style={styles.subtitle}>Real-time synchronized with all attendees</Text>
-              )}
             </View>
+
             <View style={styles.headerRight}>
               <View style={styles.syncBadge}>
                 <View
@@ -82,8 +95,8 @@ export const NotesModal = ({
                 />
                 <Text style={styles.syncText}>{isSyncing ? "Syncing..." : "Saved"}</Text>
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+                <Ionicons name="close" size={18} color="#94a3b8" />
               </TouchableOpacity>
             </View>
           </View>
@@ -95,7 +108,7 @@ export const NotesModal = ({
               multiline
               textAlignVertical="top"
               placeholder="Take collaborative meeting notes, action items, or agenda points here..."
-              placeholderTextColor={Colors.textSubtle}
+              placeholderTextColor="#64748b"
               value={localText}
               onChangeText={handleChangeText}
             />
@@ -103,8 +116,11 @@ export const NotesModal = ({
 
           {/* Footer Info */}
           <View style={styles.footer}>
-            <Text style={styles.charCount}>{localText.length} characters</Text>
-            <Text style={styles.hintText}>Changes auto-save instantly</Text>
+            <View style={styles.footerBadge}>
+              <Ionicons name="cloud-done-outline" size={13} color={Colors.accent} style={{ marginRight: 4 }} />
+              <Text style={styles.charCount}>{localText.length} characters</Text>
+            </View>
+            <Text style={styles.hintText}>Auto-saves on keystroke</Text>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -115,16 +131,36 @@ export const NotesModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     justifyContent: "flex-end",
   },
+  overlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
   container: {
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     height: "75%",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  containerTablet: {
+    width: "100%",
+    maxWidth: 620,
+    height: 640,
+    borderRadius: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: "row",
@@ -133,7 +169,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.85)",
   },
   titleCol: {
     flex: 1,
@@ -142,32 +179,43 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.text,
-    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.2,
   },
   subtitle: {
     fontSize: 11,
-    color: Colors.textMuted,
-    marginTop: 2,
-    marginLeft: 28,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 1,
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   syncBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardSecondary,
-    paddingHorizontal: 8,
+    backgroundColor: "rgba(18, 25, 45, 0.75)",
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 12,
-    marginRight: 8,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   syncDot: {
     width: 6,
@@ -176,12 +224,19 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   syncText: {
-    color: Colors.textMuted,
+    color: "#e2e8f0",
     fontSize: 11,
     fontWeight: "600",
   },
   closeBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   editorWrapper: {
     flex: 1,
@@ -190,30 +245,37 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
-    backgroundColor: Colors.cardSecondary,
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: "rgba(11, 17, 32, 0.75)",
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   footer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.9)",
+  },
+  footerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   charCount: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 11,
     fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
   hintText: {
-    color: Colors.textSubtle,
+    color: "#64748b",
     fontSize: 11,
+    fontWeight: "500",
   },
 });

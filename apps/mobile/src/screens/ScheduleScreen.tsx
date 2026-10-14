@@ -11,6 +11,7 @@ import {
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Header } from "../components/Header";
@@ -26,6 +27,9 @@ interface ScheduleScreenProps {
 }
 
 export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+
   const [meetings, setMeetings] = useState<ScheduledMeetingItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -91,7 +95,6 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
       return;
     }
 
-    // Auto-add typed email even if user forgot to press "+ Add" (parity with web)
     let finalInvitees = [...invitees];
     const pendingEmail = inviteeInput.trim().toLowerCase();
     if (pendingEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pendingEmail)) {
@@ -176,125 +179,153 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
       />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && styles.scrollContentWide,
+        ]}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
       >
-        {/* Banner with Schedule button */}
-        <View style={styles.bannerCard}>
-          <View style={styles.bannerTextCol}>
-            <Text style={styles.bannerTitle}>Scheduled Video Meetings</Text>
-            <Text style={styles.bannerSub}>
-              Plan upcoming meetings and invite team members with automated email notifications.
-            </Text>
-          </View>
-          <Button
-            title="+ Schedule Meeting"
-            size="small"
-            onPress={() => setShowModal(true)}
-            style={{ marginTop: 12 }}
-          />
-        </View>
-
-        <Text style={styles.sectionHeading}>Upcoming Video Calls ({meetings.length})</Text>
-
-        {meetings.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={48} color={Colors.textSubtle} />
-            <Text style={styles.emptyTitle}>No scheduled meetings</Text>
-            <Text style={styles.emptySub}>Tap "+ Schedule Meeting" above to invite participants.</Text>
-          </View>
-        ) : (
-          meetings.map((item) => {
-            const dateStr = new Date(item.scheduledAt).toLocaleString([], {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-            const isHost = item.isHost;
-
-            return (
-              <View key={item.id} style={styles.meetingCard}>
-                <View style={styles.cardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.meetingTitle}>{item.title}</Text>
-                    <Text style={styles.hostName}>
-                      Hosted by {item.host?.name || "Host"} {isHost ? "(You)" : ""}
-                    </Text>
-                  </View>
-                  <View style={styles.durationPill}>
-                    <Text style={styles.durationPillText}>{item.durationMinutes}m</Text>
-                  </View>
-                </View>
-
-                {item.description ? (
-                  <Text style={styles.meetingDescription}>{item.description}</Text>
-                ) : null}
-
-                <View style={styles.detailRow}>
-                  <Ionicons name="time" size={15} color={Colors.accent} />
-                  <Text style={styles.detailText}>{dateStr}</Text>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <Ionicons name="key" size={15} color={Colors.textMuted} />
-                  <Text style={styles.detailCodeText}>Room: {item.roomCode}</Text>
-                </View>
-
-                {item.inviteeList?.length > 0 ? (
-                  <View style={styles.inviteeListRow}>
-                    <Ionicons name="mail" size={15} color={Colors.textMuted} />
-                    <Text style={styles.inviteesCount}>
-                      {item.inviteeList.length} invitee(s): {item.inviteeList.join(", ")}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* Card Action Buttons */}
-                <View style={styles.cardActions}>
-                  <Button
-                    title="🚀 Join Call"
-                    size="small"
-                    onPress={() => onJoinRoom(item.roomCode)}
-                    style={{ flex: 1, marginRight: 8 }}
-                  />
-
-                  {isHost ? (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => handleSendReminder(item.id)}
-                        disabled={remindingId === item.id}
-                        style={styles.iconActionBtn}
-                      >
-                        <Ionicons name="notifications-outline" size={18} color={Colors.accent} />
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => handleDelete(item.id)}
-                        style={[styles.iconActionBtn, styles.deleteActionBtn]}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-                      </TouchableOpacity>
-                    </>
-                  ) : null}
-                </View>
+        <View style={[styles.mainLayout, isTablet && styles.mainLayoutWide]}>
+          {/* Banner with Schedule button */}
+          <View style={styles.bannerCard}>
+            <View style={styles.bannerLeftRow}>
+              <View style={styles.bannerIconCircle}>
+                <Ionicons name="calendar" size={24} color="#ffffff" />
               </View>
-            );
-          })
-        )}
+              <View style={styles.bannerTextCol}>
+                <Text style={styles.bannerTitle}>Scheduled Video Meetings</Text>
+                <Text style={styles.bannerSub}>
+                  Coordinate upcoming executive calls and notify team members with automated email invitations.
+                </Text>
+              </View>
+            </View>
+            <Button
+              title="+ Schedule Meeting"
+              size="small"
+              onPress={() => setShowModal(true)}
+              style={styles.bannerBtn}
+            />
+          </View>
+
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeading}>Upcoming Video Calls ({meetings.length})</Text>
+            <View style={styles.calendarPill}>
+              <Ionicons name="time-outline" size={13} color={Colors.accent} style={{ marginRight: 4 }} />
+              <Text style={styles.calendarPillText}>Auto Sync</Text>
+            </View>
+          </View>
+
+          {meetings.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="calendar-outline" size={32} color={Colors.accent} />
+              </View>
+              <Text style={styles.emptyTitle}>No scheduled meetings</Text>
+              <Text style={styles.emptySub}>Tap "+ Schedule Meeting" above to invite participants.</Text>
+            </View>
+          ) : (
+            <View style={[styles.meetingsGrid, isTablet && styles.meetingsGridTablet]}>
+              {meetings.map((item) => {
+                const dateStr = new Date(item.scheduledAt).toLocaleString([], {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                const isHost = item.isHost;
+
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.meetingCard, isTablet && styles.meetingCardHalf]}
+                  >
+                    <View style={styles.cardHeader}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={styles.meetingTitle}>{item.title}</Text>
+                        <Text style={styles.hostName}>
+                          Hosted by {item.host?.name || "Host"} {isHost ? "(You)" : ""}
+                        </Text>
+                      </View>
+                      <View style={styles.durationPill}>
+                        <Text style={styles.durationPillText}>{item.durationMinutes}m</Text>
+                      </View>
+                    </View>
+
+                    {item.description ? (
+                      <Text style={styles.meetingDescription}>{item.description}</Text>
+                    ) : null}
+
+                    <View style={styles.detailRow}>
+                      <Ionicons name="time" size={15} color={Colors.accent} />
+                      <Text style={styles.detailText}>{dateStr}</Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Ionicons name="key" size={15} color={Colors.textMuted} />
+                      <Text style={styles.detailCodeText}>Room: {item.roomCode}</Text>
+                    </View>
+
+                    {item.inviteeList?.length > 0 ? (
+                      <View style={styles.inviteeListRow}>
+                        <Ionicons name="mail" size={15} color={Colors.textMuted} />
+                        <Text style={styles.inviteesCount}>
+                          {item.inviteeList.length} invitee(s): {item.inviteeList.join(", ")}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* Card Action Buttons */}
+                    <View style={styles.cardActions}>
+                      <Button
+                        title="🚀 Join Call"
+                        size="small"
+                        onPress={() => onJoinRoom(item.roomCode)}
+                        style={{ flex: 1, marginRight: 8 }}
+                      />
+
+                      {isHost ? (
+                        <>
+                          <TouchableOpacity
+                            onPress={() => handleSendReminder(item.id)}
+                            disabled={remindingId === item.id}
+                            style={styles.iconActionBtn}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="notifications-outline" size={18} color={Colors.accent} />
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            onPress={() => handleDelete(item.id)}
+                            style={[styles.iconActionBtn, styles.deleteActionBtn]}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                          </TouchableOpacity>
+                        </>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Schedule Meeting Modal */}
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => setShowModal(false)}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, isTablet && styles.modalOverlayTablet]}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, isTablet && styles.modalContentTablet]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Schedule a Video Meeting</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)} style={styles.modalCloseBtn}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="calendar" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Schedule Video Meeting</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowModal(false)} activeOpacity={0.7} style={styles.modalCloseBtn}>
                 <Ionicons name="close" size={22} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -302,7 +333,7 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
             <ScrollView contentContainerStyle={styles.modalScroll}>
               <Input
                 label="Meeting Title *"
-                placeholder="e.g. Weekly Team Standup"
+                placeholder="e.g. Weekly Executive Review"
                 value={title}
                 onChangeText={setTitle}
               />
@@ -330,6 +361,7 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
                   <TouchableOpacity
                     key={mins}
                     onPress={() => setDurationMinutes(mins)}
+                    activeOpacity={0.75}
                     style={[
                       styles.durationOption,
                       durationMinutes === mins ? styles.durationOptionActive : null,
@@ -352,7 +384,7 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
               <View style={styles.inviteeInputRow}>
                 <TextInput
                   style={styles.inviteeInput}
-                  placeholder="colleague@example.com"
+                  placeholder="colleague@company.com"
                   placeholderTextColor={Colors.textSubtle}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -375,7 +407,7 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
                   {invitees.map((e) => (
                     <View key={e} style={styles.chip}>
                       <Text style={styles.chipText}>{e}</Text>
-                      <TouchableOpacity onPress={() => handleRemoveInvitee(e)} style={styles.chipRemove}>
+                      <TouchableOpacity onPress={() => handleRemoveInvitee(e)} activeOpacity={0.7} style={styles.chipRemove}>
                         <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
                       </TouchableOpacity>
                     </View>
@@ -401,6 +433,7 @@ export const ScheduleScreen = ({ onBack, onJoinRoom }: ScheduleScreenProps) => {
   );
 };
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -410,21 +443,55 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
+  scrollContentWide: {
+    paddingHorizontal: 28,
+  },
+  mainLayout: {
+    width: "100%",
+  },
+  mainLayoutWide: {
+    maxWidth: 1080,
+    alignSelf: "center",
+  },
   bannerCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 18,
+    backgroundColor: "rgba(18, 25, 45, 0.78)",
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  bannerLeftRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  bannerIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 4,
   },
   bannerTextCol: {
-    marginBottom: 4,
+    flex: 1,
   },
   bannerTitle: {
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#ffffff",
+    letterSpacing: -0.3,
   },
   bannerSub: {
     fontSize: 13,
@@ -432,39 +499,97 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 4,
   },
+  bannerBtn: {
+    marginTop: 14,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   sectionHeading: {
     fontSize: 16,
     fontWeight: "800",
-    color: Colors.text,
-    marginBottom: 12,
+    color: "#ffffff",
+    letterSpacing: -0.2,
+  },
+  calendarPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(56, 189, 248, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  calendarPillText: {
+    color: Colors.accent,
+    fontSize: 11,
+    fontWeight: "700",
   },
   emptyContainer: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 32,
+    backgroundColor: "rgba(18, 25, 45, 0.78)",
+    borderRadius: 20,
+    padding: 36,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(56, 189, 248, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: Colors.text,
-    marginTop: 12,
+    color: "#ffffff",
+    marginTop: 4,
   },
   emptySub: {
     fontSize: 13,
     color: Colors.textMuted,
     marginTop: 4,
     textAlign: "center",
+    maxWidth: 320,
+  },
+  meetingsGrid: {
+    width: "100%",
+  },
+  meetingsGridTablet: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
   },
   meetingCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: "rgba(18, 25, 45, 0.78)",
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.10)",
     marginBottom: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  meetingCardHalf: {
+    width: "48.5%",
+    marginBottom: 0,
   },
   cardHeader: {
     flexDirection: "row",
@@ -473,21 +598,23 @@ const styles = StyleSheet.create({
   },
   meetingTitle: {
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#ffffff",
+    letterSpacing: -0.2,
   },
   hostName: {
     fontSize: 12,
     color: Colors.textSubtle,
-    marginTop: 2,
+    marginTop: 3,
+    fontWeight: "500",
   },
   durationPill: {
     backgroundColor: "rgba(99, 102, 241, 0.15)",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(99, 102, 241, 0.3)",
+    borderColor: "rgba(99, 102, 241, 0.30)",
   },
   durationPillText: {
     color: Colors.accent,
@@ -497,7 +624,7 @@ const styles = StyleSheet.create({
   meetingDescription: {
     fontSize: 13,
     color: Colors.textMuted,
-    marginVertical: 8,
+    marginVertical: 10,
     lineHeight: 18,
   },
   detailRow: {
@@ -508,60 +635,79 @@ const styles = StyleSheet.create({
   detailText: {
     color: Colors.text,
     fontSize: 13,
-    marginLeft: 6,
+    marginLeft: 7,
+    fontWeight: "500",
   },
   detailCodeText: {
     color: Colors.textMuted,
     fontSize: 12,
     fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-    marginLeft: 6,
+    marginLeft: 7,
   },
   inviteeListRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 7,
   },
   inviteesCount: {
     color: Colors.textSubtle,
     fontSize: 12,
-    marginLeft: 6,
+    marginLeft: 7,
     flex: 1,
   },
   cardActions: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 14,
+    marginTop: 16,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
   },
   iconActionBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: Colors.cardSecondary,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.10)",
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 8,
   },
   deleteActionBtn: {
-    borderColor: "rgba(239, 68, 68, 0.3)",
+    backgroundColor: "rgba(239, 68, 68, 0.10)",
+    borderColor: "rgba(239, 68, 68, 0.30)",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
+  },
+  modalOverlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   modalContent: {
     height: "85%",
-    backgroundColor: Colors.card,
+    backgroundColor: "rgba(18, 25, 45, 0.95)",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.15)",
     overflow: "hidden",
+  },
+  modalContentTablet: {
+    height: "auto",
+    maxHeight: "85%",
+    width: "100%",
+    maxWidth: 580,
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.6,
+    shadowRadius: 28,
+    elevation: 12,
   },
   modalHeader: {
     flexDirection: "row",
@@ -570,45 +716,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.cardSecondary,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(10, 15, 29, 0.8)",
   },
   modalTitle: {
     fontSize: 17,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#ffffff",
+    letterSpacing: -0.3,
   },
   modalCloseBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalScroll: {
-    padding: 20,
+    padding: 22,
   },
   label: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
     color: Colors.textMuted,
-    marginBottom: 6,
+    marginBottom: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   durationSelector: {
     flexDirection: "row",
-    marginBottom: 16,
+    marginBottom: 18,
   },
   durationOption: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 11,
     marginRight: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.cardSecondary,
+    borderRadius: 12,
+    backgroundColor: "rgba(11, 17, 32, 0.75)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.10)",
     alignItems: "center",
   },
   durationOptionActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 4,
   },
   durationOptionText: {
     color: Colors.textMuted,
@@ -621,13 +778,13 @@ const styles = StyleSheet.create({
   inviteeInputRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   inviteeInput: {
     flex: 1,
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(11, 17, 32, 0.75)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.10)",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -641,26 +798,28 @@ const styles = StyleSheet.create({
   chipsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: 12,
+    marginBottom: 14,
   },
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(99, 102, 241, 0.12)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 16,
+    borderColor: "rgba(99, 102, 241, 0.30)",
+    borderRadius: 14,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     marginRight: 6,
     marginBottom: 6,
   },
   chipText: {
     color: Colors.accent,
     fontSize: 12,
+    fontWeight: "600",
     marginRight: 4,
   },
   chipRemove: {
     padding: 2,
   },
 });
+

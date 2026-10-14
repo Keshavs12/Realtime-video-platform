@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Default backend API URL. Render deployment or local fallback.
-export const DEFAULT_API_URL = "https://realtime-video-server-401y.onrender.com/api/v1";
-export const DEFAULT_SOCKET_URL = "https://realtime-video-server-401y.onrender.com";
+// Production backend API URL
+export const DEFAULT_API_URL = "https://realtime-video-platform.onrender.com/api/v1";
+export const DEFAULT_SOCKET_URL = "https://realtime-video-platform.onrender.com";
 
 const STORAGE_KEYS = {
   ACCESS_TOKEN: "@supercall_access_token",
@@ -11,10 +11,50 @@ const STORAGE_KEYS = {
   SERVER_URL: "@supercall_server_url",
 };
 
+// Resilient storage: in-memory cache fallback to prevent crashes if native AsyncStorage is unavailable
+const memoryStorage: Record<string, string> = {};
+
+export const safeStorage = {
+  getItem: async (key: string): Promise<string | null> => {
+    try {
+      if (AsyncStorage && typeof AsyncStorage.getItem === "function") {
+        const val = await AsyncStorage.getItem(key);
+        if (val !== null) return val;
+      }
+    } catch {
+      // Ignore native module error and fallback to memory
+    }
+    return memoryStorage[key] ?? null;
+  },
+  setItem: async (key: string, value: string): Promise<void> => {
+    memoryStorage[key] = value;
+    try {
+      if (AsyncStorage && typeof AsyncStorage.setItem === "function") {
+        await AsyncStorage.setItem(key, value);
+      }
+    } catch {
+      // Ignore native module error and keep in memory
+    }
+  },
+  removeItem: async (key: string): Promise<void> => {
+    delete memoryStorage[key];
+    try {
+      if (AsyncStorage && typeof AsyncStorage.removeItem === "function") {
+        await AsyncStorage.removeItem(key);
+      }
+    } catch {
+      // Ignore native module error
+    }
+  },
+};
+
 export const getStoredServerUrl = async (): Promise<string> => {
   try {
-    const url = await AsyncStorage.getItem(STORAGE_KEYS.SERVER_URL);
-    return url || DEFAULT_API_URL;
+    const url = await safeStorage.getItem(STORAGE_KEYS.SERVER_URL);
+    if (!url || url.includes("401y.onrender.com") || url.includes("172.") || url.includes("192.") || url.includes("localhost")) {
+      return DEFAULT_API_URL;
+    }
+    return url;
   } catch {
     return DEFAULT_API_URL;
   }
@@ -22,7 +62,7 @@ export const getStoredServerUrl = async (): Promise<string> => {
 
 export const setStoredServerUrl = async (url: string): Promise<void> => {
   const sanitized = url.trim().replace(/\/+$/, "");
-  await AsyncStorage.setItem(STORAGE_KEYS.SERVER_URL, sanitized);
+  await safeStorage.setItem(STORAGE_KEYS.SERVER_URL, sanitized);
 };
 
 export const getSocketBaseUrl = async (): Promise<string> => {
@@ -33,7 +73,7 @@ export const getSocketBaseUrl = async (): Promise<string> => {
 
 export const getStoredToken = async (): Promise<string | null> => {
   try {
-    return await AsyncStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    return await safeStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
   } catch {
     return null;
   }
@@ -41,21 +81,21 @@ export const getStoredToken = async (): Promise<string | null> => {
 
 export const getStoredRefreshToken = async (): Promise<string | null> => {
   try {
-    return await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+    return await safeStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
   } catch {
     return null;
   }
 };
 
 export const saveAuthTokens = async (accessToken: string, refreshToken: string): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
-  await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
+  await safeStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
+  await safeStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
 };
 
 export const clearAuthTokens = async (): Promise<void> => {
-  await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-  await AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-  await AsyncStorage.removeItem(STORAGE_KEYS.USER_DATA);
+  await safeStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  await safeStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+  await safeStorage.removeItem(STORAGE_KEYS.USER_DATA);
 };
 
 // Typed lightweight Fetch wrapper supporting auto-token injection and baseURL
@@ -130,7 +170,7 @@ const attemptTokenRefresh = async (): Promise<boolean> => {
       const data = await res.json();
       const newAccessToken = data?.data?.accessToken;
       if (newAccessToken) {
-        await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
+        await safeStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
         return true;
       }
     }

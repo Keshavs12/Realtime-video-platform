@@ -7,6 +7,7 @@ import {
   FlatList,
   StyleSheet,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +34,9 @@ export const HostControlsModal = ({
   onMuteParticipant,
   onKickParticipant,
 }: HostControlsModalProps) => {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+
   const confirmMuteAll = () => {
     Alert.alert("Mute All Participants", "Are you sure you want to mute everyone in the meeting?", [
       { text: "Cancel", style: "cancel" },
@@ -78,6 +82,7 @@ export const HostControlsModal = ({
             <TouchableOpacity
               onPress={() => onMuteParticipant(item.socketId)}
               style={styles.actionIconBtn}
+              activeOpacity={0.7}
             >
               <Ionicons name="mic-off" size={16} color={Colors.warning} />
             </TouchableOpacity>
@@ -86,6 +91,7 @@ export const HostControlsModal = ({
             <TouchableOpacity
               onPress={() => confirmKick(item)}
               style={[styles.actionIconBtn, styles.actionKickBtn]}
+              activeOpacity={0.7}
             >
               <Ionicons name="person-remove" size={16} color={Colors.danger} />
             </TouchableOpacity>
@@ -96,17 +102,27 @@ export const HostControlsModal = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.container}>
+    <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
+      <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={[styles.container, isTablet && styles.containerTablet]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Ionicons name="shield-checkmark" size={20} color={Colors.accent} />
-              <Text style={styles.title}>Host Meeting Controls</Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="shield-checkmark" size={18} color={Colors.accent} />
+              </View>
+              <View>
+                <Text style={styles.title}>Host Meeting Controls</Text>
+                <Text style={styles.subtitle}>Administrative privileges for this room</Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>
 
@@ -116,12 +132,15 @@ export const HostControlsModal = ({
             <TouchableOpacity
               onPress={onToggleLock}
               style={[styles.quickCard, isRoomLocked && styles.quickCardLocked]}
+              activeOpacity={0.75}
             >
-              <Ionicons
-                name={isRoomLocked ? "lock-closed" : "lock-open"}
-                size={22}
-                color={isRoomLocked ? Colors.danger : Colors.accent}
-              />
+              <View style={[styles.quickIconCircle, isRoomLocked ? styles.quickIconLocked : styles.quickIconUnlocked]}>
+                <Ionicons
+                  name={isRoomLocked ? "lock-closed" : "lock-open"}
+                  size={20}
+                  color={isRoomLocked ? Colors.danger : Colors.accent}
+                />
+              </View>
               <Text style={styles.quickCardTitle}>
                 {isRoomLocked ? "Room Locked" : "Room Unlocked"}
               </Text>
@@ -131,8 +150,10 @@ export const HostControlsModal = ({
             </TouchableOpacity>
 
             {/* Mute All Button */}
-            <TouchableOpacity onPress={confirmMuteAll} style={styles.quickCard}>
-              <Ionicons name="volume-mute" size={22} color={Colors.warning} />
+            <TouchableOpacity onPress={confirmMuteAll} style={styles.quickCard} activeOpacity={0.75}>
+              <View style={[styles.quickIconCircle, { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "rgba(245, 158, 11, 0.3)" }]}>
+                <Ionicons name="volume-mute" size={20} color={Colors.warning} />
+              </View>
               <Text style={styles.quickCardTitle}>Mute Everyone</Text>
               <Text style={styles.quickCardSub}>Silence all attendees</Text>
             </TouchableOpacity>
@@ -146,7 +167,10 @@ export const HostControlsModal = ({
 
             {participants.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No other participants in room yet.</Text>
+                <View style={styles.emptyIconBg}>
+                  <Ionicons name="people-outline" size={32} color={Colors.textMuted} />
+                </View>
+                <Text style={styles.emptyText}>No other participants in room yet</Text>
               </View>
             ) : (
               <FlatList
@@ -166,17 +190,37 @@ export const HostControlsModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     justifyContent: "flex-end",
   },
+  overlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
   container: {
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     maxHeight: "85%",
     minHeight: "55%",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  containerTablet: {
+    width: "100%",
+    maxWidth: 580,
+    height: 640,
+    borderRadius: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: "row",
@@ -185,50 +229,92 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.85)",
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.text,
-    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 1,
   },
   closeBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   quickBar: {
     flexDirection: "row",
-    padding: 14,
+    padding: 16,
     gap: 12,
   },
   quickCard: {
     flex: 1,
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(30, 41, 59, 0.55)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 16,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 18,
     padding: 14,
     alignItems: "center",
   },
   quickCardLocked: {
-    borderColor: Colors.danger,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.4)",
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+  },
+  quickIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  quickIconUnlocked: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderColor: "rgba(16, 185, 129, 0.3)",
+  },
+  quickIconLocked: {
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    borderColor: "rgba(239, 68, 68, 0.4)",
   },
   quickCardTitle: {
     color: "#ffffff",
     fontSize: 13,
-    fontWeight: "700",
-    marginTop: 8,
+    fontWeight: "800",
   },
   quickCardSub: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 10,
     textAlign: "center",
     marginTop: 2,
+    fontWeight: "500",
   },
   listSection: {
     flex: 1,
@@ -236,10 +322,11 @@ const styles = StyleSheet.create({
   sectionHeader: {
     paddingHorizontal: 18,
     paddingVertical: 8,
-    color: Colors.textMuted,
-    fontSize: 12,
+    color: "#94a3b8",
+    fontSize: 11,
     fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   listContent: {
     paddingHorizontal: 16,
@@ -249,12 +336,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.cardSecondary,
-    borderRadius: 14,
+    backgroundColor: "rgba(30, 41, 59, 0.55)",
+    borderRadius: 16,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   peerInfoRow: {
     flexDirection: "row",
@@ -263,18 +350,20 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   avatarMini: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   avatarMiniText: {
     color: "#ffffff",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   peerDetails: {
     flex: 1,
@@ -282,35 +371,49 @@ const styles = StyleSheet.create({
   peerName: {
     color: "#ffffff",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   peerSub: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 11,
     marginTop: 2,
+    fontWeight: "500",
   },
   peerActionsRow: {
     flexDirection: "row",
     gap: 8,
   },
   actionIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
     alignItems: "center",
     justifyContent: "center",
   },
   actionKickBtn: {
     backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderColor: "rgba(239, 68, 68, 0.3)",
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
+  emptyIconBg: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
   emptyText: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 13,
+    fontWeight: "500",
   },
 });

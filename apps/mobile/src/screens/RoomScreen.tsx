@@ -748,25 +748,43 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   // Responsive Peer Card Dimensions
   const getCardStyle = () => {
     const count = participants.length;
+    const isTablet = width >= 768;
+    const maxContentWidth = isTablet ? Math.min(width - 48, 1140) : width - 24;
+
     if (count === 0) {
       return {
-        width: width - 24,
-        height: Math.min(height * 0.65, 480),
+        width: maxContentWidth,
+        height: isLandscape ? height * 0.72 : Math.min(height * 0.65, 520),
       };
     }
     if (count === 1) {
+      if (isLandscape || isTablet) {
+        return {
+          width: (maxContentWidth - 14) / 2,
+          height: isLandscape ? height * 0.68 : Math.min(height * 0.44, 380),
+        };
+      }
       return {
-        width: isLandscape ? (width - 36) / 2 : width - 24,
-        height: isLandscape ? height * 0.68 : (height - 230) / 2,
+        width: maxContentWidth,
+        height: Math.min((height - 230) / 2, 300),
       };
     }
+    if (count <= 3) {
+      return {
+        width: (maxContentWidth - 14) / 2,
+        height: isTablet ? 280 : isLandscape ? 200 : 210,
+      };
+    }
+    const cols = isTablet ? 3 : 2;
+    const gap = (cols - 1) * 12;
     return {
-      width: (width - 36) / 2,
-      height: 200,
+      width: (maxContentWidth - gap) / cols,
+      height: isTablet ? 230 : 180,
     };
   };
 
   const cardDimensions = getCardStyle();
+  const isTabletDevice = width >= 768;
 
   // Participant Card Renderer (matches web app avatar-off glowing aesthetic)
   const renderParticipantCard = (
@@ -848,30 +866,41 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
       {/* Top Floating Header */}
       <View style={styles.topHeader}>
-        <View style={styles.roomInfoCol}>
-          <View style={styles.roomCodePill}>
-            <View style={styles.liveIndicator} />
-            <Text style={styles.roomCodeText}>{roomCode}</Text>
-            {isRoomLocked ? <Text style={{ fontSize: 11, marginLeft: 4 }}>🔒</Text> : null}
+        <View style={[styles.topHeaderInner, isTabletDevice && styles.topHeaderInnerWide]}>
+          <View style={styles.roomInfoCol}>
+            <View style={styles.roomCodePill}>
+              <View style={styles.liveIndicator} />
+              <Text style={styles.roomCodeText}>Room {roomCode}</Text>
+              {isRoomLocked ? <Text style={{ fontSize: 11, marginLeft: 4 }}>🔒</Text> : null}
+            </View>
+            <View style={styles.e2eePill}>
+              <Ionicons name="shield-checkmark" size={11} color={Colors.success} style={{ marginRight: 3 }} />
+              <Text style={styles.e2eeText}>E2EE HD</Text>
+            </View>
+            <Text style={styles.timerText}>⏱️ {formatTimer(callDuration)}</Text>
           </View>
-          <Text style={styles.timerText}>⏱️ {formatTimer(callDuration)}</Text>
-        </View>
 
-        <View style={styles.headerRightCol}>
-          {/* Flip camera button */}
-          <TouchableOpacity onPress={handleFlipCamera} style={styles.headerIconBtn}>
-            <Ionicons name="camera-reverse" size={18} color={Colors.text} />
-          </TouchableOpacity>
+          <View style={styles.headerRightCol}>
+            {/* Flip camera button */}
+            <TouchableOpacity onPress={handleFlipCamera} activeOpacity={0.7} style={styles.headerIconBtn}>
+              <Ionicons name="camera-reverse" size={18} color={Colors.text} />
+            </TouchableOpacity>
 
-          <View style={styles.participantCountPill}>
-            <Ionicons name="people" size={13} color={Colors.accent} />
-            <Text style={styles.participantCountText}>{participants.length + 1}</Text>
+            <View style={styles.participantCountPill}>
+              <Ionicons name="people" size={13} color={Colors.accent} />
+              <Text style={styles.participantCountText}>{participants.length + 1}</Text>
+            </View>
           </View>
         </View>
       </View>
 
       {/* Participant Video Grid */}
-      <ScrollView contentContainerStyle={styles.gridContent}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.gridContent,
+          isTabletDevice && styles.gridContentWide,
+        ]}
+      >
         {/* Local Participant Card */}
         {renderParticipantCard(
           true,
@@ -907,6 +936,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
               key={emoji}
               onPress={() => handleSendReaction(emoji)}
               style={styles.reactionPickerItem}
+              activeOpacity={0.7}
             >
               <Text style={styles.reactionPickerEmoji}>{emoji}</Text>
             </TouchableOpacity>
@@ -914,73 +944,80 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         </View>
       ) : null}
 
-      {/* Bottom Call Control Bar */}
-      <View style={styles.controlBar}>
-        {/* Mic Toggle */}
-        <TouchableOpacity
-          onPress={toggleAudio}
-          style={[styles.controlBtn, isAudioMuted ? styles.controlBtnMuted : null]}
-        >
-          <Ionicons
-            name={isAudioMuted ? "mic-off" : "mic"}
-            size={20}
-            color={isAudioMuted ? "#ffffff" : Colors.text}
-          />
-        </TouchableOpacity>
+      {/* Bottom Floating Call Control Bar */}
+      <View style={[styles.controlBarWrapper, isTabletDevice && styles.controlBarWrapperWide]}>
+        <View style={styles.controlBar}>
+          {/* Mic Toggle */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={toggleAudio}
+            style={[styles.controlBtn, isAudioMuted ? styles.controlBtnMuted : null]}
+          >
+            <Ionicons
+              name={isAudioMuted ? "mic-off" : "mic"}
+              size={20}
+              color="#ffffff"
+            />
+          </TouchableOpacity>
 
-        {/* Camera Toggle */}
-        <TouchableOpacity
-          onPress={toggleVideo}
-          style={[styles.controlBtn, isVideoMuted ? styles.controlBtnMuted : null]}
-        >
-          <Ionicons
-            name={isVideoMuted ? "videocam-off" : "videocam"}
-            size={20}
-            color={isVideoMuted ? "#ffffff" : Colors.text}
-          />
-        </TouchableOpacity>
+          {/* Camera Toggle */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={toggleVideo}
+            style={[styles.controlBtn, isVideoMuted ? styles.controlBtnMuted : null]}
+          >
+            <Ionicons
+              name={isVideoMuted ? "videocam-off" : "videocam"}
+              size={20}
+              color="#ffffff"
+            />
+          </TouchableOpacity>
 
-        {/* Hand Raise */}
-        <TouchableOpacity
-          onPress={toggleHandRaise}
-          style={[styles.controlBtn, isHandRaised ? styles.controlBtnHand : null]}
-        >
-          <Text style={{ fontSize: 18 }}>✋</Text>
-        </TouchableOpacity>
+          {/* Hand Raise */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={toggleHandRaise}
+            style={[styles.controlBtn, isHandRaised ? styles.controlBtnHand : null]}
+          >
+            <Text style={{ fontSize: 18 }}>✋</Text>
+          </TouchableOpacity>
 
-        {/* Chat Button with Unread Badge */}
-        <TouchableOpacity
-          onPress={() => {
-            setChatVisible(true);
-            setUnreadCount(0);
-          }}
-          style={styles.controlBtn}
-        >
-          <Ionicons name="chatbubbles-outline" size={20} color={Colors.text} />
-          {unreadCount > 0 ? (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{unreadCount}</Text>
-            </View>
-          ) : null}
-        </TouchableOpacity>
+          {/* Chat Button with Unread Badge */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => {
+              setChatVisible(true);
+              setUnreadCount(0);
+            }}
+            style={styles.controlBtn}
+          >
+            <Ionicons name="chatbubbles-outline" size={20} color="#ffffff" />
+            {unreadCount > 0 ? (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>{unreadCount}</Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
 
-        {/* More Actions Drawer Trigger (⋯) */}
-        <TouchableOpacity
-          onPress={() => setMoreMenuVisible(true)}
-          style={[styles.controlBtn, styles.moreBtn]}
-        >
-          <Ionicons name="ellipsis-horizontal" size={20} color={Colors.text} />
-        </TouchableOpacity>
+          {/* More Actions Drawer Trigger (⋯) */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => setMoreMenuVisible(true)}
+            style={[styles.controlBtn, styles.moreBtn]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#ffffff" />
+          </TouchableOpacity>
 
-        {/* End Call Button */}
-        <TouchableOpacity onPress={handleEndCall} style={styles.endCallBtn}>
-          <Ionicons
-            name="call"
-            size={22}
-            color="#ffffff"
-            style={{ transform: [{ rotate: "135deg" }] }}
-          />
-        </TouchableOpacity>
+          {/* End Call Button */}
+          <TouchableOpacity activeOpacity={0.8} onPress={handleEndCall} style={styles.endCallBtn}>
+            <Ionicons
+              name="call"
+              size={22}
+              color="#ffffff"
+              style={{ transform: [{ rotate: "135deg" }] }}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* More Actions Bottom Drawer / Modal */}
@@ -995,11 +1032,14 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           activeOpacity={1}
           onPress={() => setMoreMenuVisible(false)}
         >
-          <View style={styles.moreSheet}>
+          <View style={[styles.moreSheet, isTabletDevice && styles.moreSheetTablet]}>
             <View style={styles.moreSheetHeader}>
-              <Text style={styles.moreSheetTitle}>Meeting Tools & Actions</Text>
-              <TouchableOpacity onPress={() => setMoreMenuVisible(false)}>
-                <Ionicons name="close" size={20} color={Colors.textMuted} />
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="apps" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.moreSheetTitle}>Meeting Tools &amp; Actions</Text>
+              </View>
+              <TouchableOpacity onPress={() => setMoreMenuVisible(false)} activeOpacity={0.7} style={styles.moreCloseBtn}>
+                <Ionicons name="close" size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -1010,9 +1050,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   setMoreMenuVisible(false);
                   setPollsVisible(true);
                 }}
+                activeOpacity={0.75}
                 style={styles.moreTile}
               >
-                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(99, 102, 241, 0.15)", borderColor: "rgba(99, 102, 241, 0.35)" }]}>
                   <Ionicons name="bar-chart" size={22} color={Colors.primary} />
                 </View>
                 <Text style={styles.moreTileLabel}>Polls ({polls.length})</Text>
@@ -1024,9 +1065,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   setMoreMenuVisible(false);
                   setNotesVisible(true);
                 }}
+                activeOpacity={0.75}
                 style={styles.moreTile}
               >
-                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.35)" }]}>
                   <Ionicons name="document-text" size={22} color={Colors.accent} />
                 </View>
                 <Text style={styles.moreTileLabel}>Meeting Notes</Text>
@@ -1038,9 +1080,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   setMoreMenuVisible(false);
                   setWhiteboardVisible(true);
                 }}
+                activeOpacity={0.75}
                 style={styles.moreTile}
               >
-                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "rgba(245, 158, 11, 0.35)" }]}>
                   <Ionicons name="color-palette" size={22} color={Colors.warning} />
                 </View>
                 <Text style={styles.moreTileLabel}>Whiteboard</Text>
@@ -1052,9 +1095,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   setMoreMenuVisible(false);
                   setShowReactionPicker(true);
                 }}
+                activeOpacity={0.75}
                 style={styles.moreTile}
               >
-                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(236, 72, 153, 0.15)" }]}>
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(236, 72, 153, 0.15)", borderColor: "rgba(236, 72, 153, 0.35)" }]}>
                   <Ionicons name="happy" size={22} color="#ec4899" />
                 </View>
                 <Text style={styles.moreTileLabel}>Reactions</Text>
@@ -1066,9 +1110,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   handleFlipCamera();
                   setMoreMenuVisible(false);
                 }}
+                activeOpacity={0.75}
                 style={styles.moreTile}
               >
-                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(148, 163, 184, 0.15)" }]}>
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(148, 163, 184, 0.15)", borderColor: "rgba(148, 163, 184, 0.30)" }]}>
                   <Ionicons name="camera-reverse" size={22} color={Colors.text} />
                 </View>
                 <Text style={styles.moreTileLabel}>Flip Camera</Text>
@@ -1081,9 +1126,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                     setMoreMenuVisible(false);
                     setHostControlsVisible(true);
                   }}
+                  activeOpacity={0.75}
                   style={styles.moreTile}
                 >
-                  <View style={[styles.moreTileIcon, { backgroundColor: "rgba(239, 68, 68, 0.15)" }]}>
+                  <View style={[styles.moreTileIcon, { backgroundColor: "rgba(239, 68, 68, 0.15)", borderColor: "rgba(239, 68, 68, 0.35)" }]}>
                     <Ionicons name="shield-checkmark" size={22} color={Colors.danger} />
                   </View>
                   <Text style={styles.moreTileLabel}>Host Controls 👑</Text>
@@ -1093,6 +1139,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           </View>
         </TouchableOpacity>
       </Modal>
+
 
       {/* In-Call Chat Modal */}
       <ChatModal
@@ -1153,87 +1200,120 @@ const styles = StyleSheet.create({
     backgroundColor: "#070b13",
   },
   topHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    backgroundColor: "rgba(11, 17, 32, 0.88)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: "rgba(11, 15, 25, 0.95)",
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+  },
+  topHeaderInner: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  topHeaderInnerWide: {
+    maxWidth: 1140,
   },
   roomInfoCol: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   headerRightCol: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   headerIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.cardSecondary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(18, 25, 45, 0.75)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
   },
   roomCodePill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(18, 25, 45, 0.75)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 14,
-    marginRight: 8,
   },
   liveIndicator: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
     backgroundColor: Colors.danger,
-    marginRight: 5,
+    marginRight: 6,
   },
   roomCodeText: {
     color: "#ffffff",
     fontSize: 12,
     fontWeight: "700",
   },
+  e2eePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  e2eeText: {
+    color: Colors.accent,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
   timerText: {
-    color: Colors.textMuted,
-    fontSize: 11,
+    color: "#94a3b8",
+    fontSize: 12,
     fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
   participantCountPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    backgroundColor: "rgba(18, 25, 45, 0.75)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   participantCountText: {
-    color: Colors.text,
+    color: "#ffffff",
     fontSize: 12,
     fontWeight: "700",
-    marginLeft: 4,
+    marginLeft: 5,
   },
   gridContent: {
     padding: 12,
+    paddingBottom: 96,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
   },
+  gridContentWide: {
+    maxWidth: 1140,
+    alignSelf: "center",
+    width: "100%",
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingBottom: 100,
+  },
   peerCard: {
-    backgroundColor: "#0d1322",
-    borderRadius: 18,
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
@@ -1241,6 +1321,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     overflow: "hidden",
     position: "relative",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
   rtcVideo: {
     ...StyleSheet.absoluteFill,
@@ -1335,13 +1420,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: "rgba(11, 15, 25, 0.85)",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.05)",
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
   },
   peerName: {
     color: "#ffffff",
@@ -1356,18 +1441,18 @@ const styles = StyleSheet.create({
   },
   mutedBadge: {
     backgroundColor: Colors.danger,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 4,
   },
   handBadge: {
     backgroundColor: Colors.warning,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 4,
@@ -1378,21 +1463,20 @@ const styles = StyleSheet.create({
   reactionPickerContainer: {
     position: "absolute",
     bottom: 84,
-    left: 20,
-    right: 20,
-    backgroundColor: Colors.card,
+    alignSelf: "center",
+    backgroundColor: "rgba(18, 25, 45, 0.92)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 24,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 28,
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     flexDirection: "row",
     justifyContent: "space-around",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 12,
   },
   reactionPickerItem: {
     padding: 6,
@@ -1400,32 +1484,55 @@ const styles = StyleSheet.create({
   reactionPickerEmoji: {
     fontSize: 26,
   },
+  controlBarWrapper: {
+    position: "absolute",
+    bottom: 16,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  controlBarWrapperWide: {
+    maxWidth: 620,
+    left: "auto",
+    right: "auto",
+    alignSelf: "center",
+    width: "100%",
+  },
   controlBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    backgroundColor: Colors.card,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.88)",
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
   },
   controlBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.cardSecondary,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(30, 41, 59, 0.85)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
   moreBtn: {
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(30, 41, 59, 0.85)",
   },
   controlBtnMuted: {
     backgroundColor: Colors.danger,
-    borderColor: Colors.danger,
+    borderColor: "rgba(239, 68, 68, 0.4)",
   },
   controlBtnHand: {
     backgroundColor: "rgba(245, 158, 11, 0.25)",
@@ -1433,15 +1540,17 @@ const styles = StyleSheet.create({
   },
   unreadBadge: {
     position: "absolute",
-    top: -3,
-    right: -3,
-    backgroundColor: Colors.danger,
+    top: -2,
+    right: -2,
+    backgroundColor: Colors.primary,
     borderRadius: 9,
     minWidth: 18,
     height: 18,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#0f172a",
   },
   unreadText: {
     color: "#ffffff",
@@ -1449,42 +1558,64 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   endCallBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: Colors.danger,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: Colors.danger,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
   },
   moreOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
   },
   moreSheet: {
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 18,
-    paddingBottom: 30,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 22,
+    paddingBottom: 36,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  moreSheetTablet: {
+    maxWidth: 540,
+    width: "100%",
+    alignSelf: "center",
+    borderRadius: 28,
+    marginBottom: 40,
+    paddingBottom: 24,
   },
   moreSheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   moreSheetTitle: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: "700",
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  moreCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   moreGrid: {
     flexDirection: "row",
@@ -1494,26 +1625,28 @@ const styles = StyleSheet.create({
   },
   moreTile: {
     width: "30%",
-    backgroundColor: Colors.cardSecondary,
-    borderRadius: 16,
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
-    paddingVertical: 14,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     alignItems: "center",
     justifyContent: "center",
   },
   moreTileIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 8,
+    borderWidth: 1,
   },
   moreTileLabel: {
-    color: Colors.text,
+    color: "#f8fafc",
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
     textAlign: "center",
   },
 });

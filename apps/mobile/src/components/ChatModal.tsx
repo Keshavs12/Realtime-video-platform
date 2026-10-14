@@ -9,6 +9,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +25,8 @@ interface ChatModalProps {
 export const ChatModal = ({ visible, onClose, messages, onSendMessage }: ChatModalProps) => {
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
 
   useEffect(() => {
     if (visible && messages.length > 0) {
@@ -55,29 +58,41 @@ export const ChatModal = ({ visible, onClose, messages, onSendMessage }: ChatMod
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
+        style={[styles.overlay, isTablet && styles.overlayTablet]}
       >
-        <View style={styles.container}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={[styles.container, isTablet && styles.containerTablet]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Ionicons name="chatbubble-ellipses" size={20} color={Colors.primary} />
-              <Text style={styles.title}>In-Call Messages ({messages.length})</Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="chatbubble-ellipses" size={18} color={Colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.title}>In-Call Messages</Text>
+                <Text style={styles.subtitle}>{messages.length} message{messages.length === 1 ? "" : "s"} • Realtime</Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color={Colors.textMuted} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>
 
           {/* Messages List */}
           {messages.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="chatbubbles-outline" size={44} color={Colors.textSubtle} />
-              <Text style={styles.emptyText}>No messages yet.</Text>
-              <Text style={styles.emptySubtext}>Say hello to the room participants!</Text>
+              <View style={styles.emptyIconBg}>
+                <Ionicons name="chatbubbles-outline" size={36} color={Colors.primary} />
+              </View>
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Send a message to everyone in the room</Text>
             </View>
           ) : (
             <FlatList
@@ -94,7 +109,7 @@ export const ChatModal = ({ visible, onClose, messages, onSendMessage }: ChatMod
             <TextInput
               style={styles.input}
               placeholder="Type a message…"
-              placeholderTextColor={Colors.textSubtle}
+              placeholderTextColor="#64748b"
               value={inputText}
               onChangeText={setInputText}
               onSubmitEditing={handleSend}
@@ -106,7 +121,7 @@ export const ChatModal = ({ visible, onClose, messages, onSendMessage }: ChatMod
               disabled={!inputText.trim()}
               style={[styles.sendBtn, !inputText.trim() ? styles.sendBtnDisabled : null]}
             >
-              <Ionicons name="send" size={18} color="#ffffff" />
+              <Ionicons name="arrow-up" size={18} color="#ffffff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -118,40 +133,83 @@ export const ChatModal = ({ visible, onClose, messages, onSendMessage }: ChatMod
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
     justifyContent: "flex-end",
+  },
+  overlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   container: {
     height: "75%",
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  containerTablet: {
+    width: "100%",
+    maxWidth: 560,
+    height: 620,
+    borderRadius: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.cardSecondary,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.85)",
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.text,
-    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 1,
   },
   closeBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   listContent: {
     padding: 16,
@@ -163,16 +221,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
   },
+  emptyIconBg: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
   emptyText: {
-    color: Colors.text,
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
-    marginTop: 12,
   },
   emptySubtext: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 13,
     marginTop: 4,
+    textAlign: "center",
   },
   msgRow: {
     marginVertical: 4,
@@ -186,18 +255,23 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: "80%",
-    borderRadius: 16,
+    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   bubbleMe: {
     backgroundColor: Colors.primary,
     borderBottomRightRadius: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   bubbleOther: {
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(30, 41, 59, 0.7)",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     borderBottomLeftRadius: 4,
   },
   senderName: {
@@ -215,12 +289,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
     alignSelf: "flex-end",
+    fontVariant: ["tabular-nums"],
   },
   timeMe: {
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "rgba(255, 255, 255, 0.75)",
   },
   timeOther: {
-    color: Colors.textSubtle,
+    color: "#94a3b8",
   },
   inputContainer: {
     flexDirection: "row",
@@ -228,18 +303,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    backgroundColor: Colors.cardSecondary,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.9)",
   },
   input: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: "rgba(11, 17, 32, 0.8)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 20,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: Colors.text,
+    color: "#ffffff",
     fontSize: 14,
     marginRight: 10,
   },
@@ -250,8 +325,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
   },
   sendBtnDisabled: {
-    backgroundColor: Colors.border,
+    backgroundColor: "rgba(51, 65, 85, 0.5)",
+    shadowOpacity: 0,
+    elevation: 0,
   },
 });

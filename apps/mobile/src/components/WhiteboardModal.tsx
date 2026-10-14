@@ -6,9 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   PanResponder,
-  Dimensions,
   GestureResponderEvent,
   PanResponderGestureState,
+  useWindowDimensions,
 } from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,8 +39,6 @@ interface WhiteboardModalProps {
   onUndoBoard: () => void;
 }
 
-const { width } = Dimensions.get("window");
-
 const COLORS = ["#ffffff", "#6366f1", "#10b981", "#ef4444", "#f59e0b"];
 
 export const WhiteboardModal = ({
@@ -54,6 +52,8 @@ export const WhiteboardModal = ({
   const [selectedColor, setSelectedColor] = useState("#ffffff");
   const [tool, setTool] = useState<"pen" | "eraser">("pen");
   const [strokeSize, setStrokeSize] = useState(3);
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
 
   const prevPointRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -126,53 +126,59 @@ export const WhiteboardModal = ({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.container}>
+    <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
+      <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={[styles.container, isTablet && styles.containerTablet]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Ionicons name="color-palette" size={20} color={Colors.accent} />
-              <Text style={styles.title}>Live Shared Whiteboard</Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="color-palette" size={18} color={Colors.warning} />
+              </View>
+              <View>
+                <Text style={styles.title}>Live Shared Whiteboard</Text>
+                <Text style={styles.subtitle}>Collaborative canvas synced live</Text>
+              </View>
             </View>
+
             <View style={styles.headerRight}>
-              <TouchableOpacity onPress={handleUndo} style={styles.iconBtn}>
-                <Ionicons name="arrow-undo" size={18} color={Colors.text} />
+              <TouchableOpacity onPress={handleUndo} style={styles.iconBtn} activeOpacity={0.7}>
+                <Ionicons name="arrow-undo" size={17} color="#ffffff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleClear} style={styles.iconBtn}>
-                <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+              <TouchableOpacity onPress={handleClear} style={[styles.iconBtn, styles.clearBtn]} activeOpacity={0.7}>
+                <Ionicons name="trash-outline" size={17} color={Colors.danger} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+                <Ionicons name="close" size={18} color="#94a3b8" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Canvas Area */}
+          {/* Interactive Canvas Area */}
           <View style={styles.canvas} {...panResponder.panHandlers}>
             {segments.map((seg) => {
               const dx = seg.x2 - seg.x1;
               const dy = seg.y2 - seg.y1;
               const length = Math.hypot(dx, dy);
-              const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+              const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
               return (
                 <View
                   key={seg.id}
-                  pointerEvents="none"
                   style={[
                     styles.lineSegment,
                     {
                       left: seg.x1,
-                      top: seg.y1,
+                      top: seg.y1 - seg.size / 2,
                       width: Math.max(length, 1),
                       height: seg.size,
                       backgroundColor: seg.color,
-                      transform: [
-                        { translateX: 0 },
-                        { translateY: -seg.size / 2 },
-                        { rotate: `${angle}deg` },
-                      ],
+                      transform: [{ rotateZ: `${angle}deg` }],
                     },
                   ]}
                 />
@@ -180,43 +186,46 @@ export const WhiteboardModal = ({
             })}
           </View>
 
-          {/* Bottom Toolbar */}
+          {/* Whiteboard Toolbar */}
           <View style={styles.toolbar}>
-            {/* Tool Selection (Pen vs Eraser) */}
+            {/* Tool Selection (Pen / Eraser) */}
             <View style={styles.toolGroup}>
               <TouchableOpacity
                 onPress={() => setTool("pen")}
                 style={[styles.toolBtn, tool === "pen" && styles.toolBtnActive]}
+                activeOpacity={0.75}
               >
                 <Ionicons
                   name="pencil"
-                  size={18}
-                  color={tool === "pen" ? "#ffffff" : Colors.textMuted}
+                  size={16}
+                  color={tool === "pen" ? "#ffffff" : "#94a3b8"}
                 />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setTool("eraser")}
                 style={[styles.toolBtn, tool === "eraser" && styles.toolBtnActive]}
+                activeOpacity={0.75}
               >
                 <Ionicons
-                  name="backspace-outline"
-                  size={18}
-                  color={tool === "eraser" ? "#ffffff" : Colors.textMuted}
+                  name="cut-outline"
+                  size={16}
+                  color={tool === "eraser" ? "#ffffff" : "#94a3b8"}
                 />
               </TouchableOpacity>
             </View>
 
-            {/* Color Palette */}
+            {/* Color Palette (Pen mode only) */}
             {tool === "pen" ? (
               <View style={styles.colorPalette}>
-                {COLORS.map((c) => (
+                {COLORS.map((col) => (
                   <TouchableOpacity
-                    key={c}
-                    onPress={() => setSelectedColor(c)}
+                    key={col}
+                    onPress={() => setSelectedColor(col)}
+                    activeOpacity={0.8}
                     style={[
                       styles.colorDot,
-                      { backgroundColor: c },
-                      selectedColor === c && styles.colorDotSelected,
+                      { backgroundColor: col },
+                      selectedColor === col && styles.colorDotSelected,
                     ]}
                   />
                 ))}
@@ -225,20 +234,21 @@ export const WhiteboardModal = ({
               <Text style={styles.eraserHint}>Eraser Active</Text>
             )}
 
-            {/* Stroke Size Toggles */}
+            {/* Stroke Thickness */}
             <View style={styles.sizeGroup}>
-              {[2, 4, 8].map((s) => (
+              {[2, 4, 8].map((size) => (
                 <TouchableOpacity
-                  key={s}
-                  onPress={() => setStrokeSize(s)}
-                  style={[styles.sizeBtn, strokeSize === s && styles.sizeBtnActive]}
+                  key={size}
+                  onPress={() => setStrokeSize(size)}
+                  style={[styles.sizeBtn, strokeSize === size && styles.sizeBtnActive]}
+                  activeOpacity={0.75}
                 >
                   <View
                     style={{
-                      width: s * 1.8,
-                      height: s * 1.8,
-                      borderRadius: (s * 1.8) / 2,
-                      backgroundColor: "#ffffff",
+                      width: size * 1.8,
+                      height: size * 1.8,
+                      borderRadius: (size * 1.8) / 2,
+                      backgroundColor: strokeSize === size ? Colors.primary : "#94a3b8",
                     }}
                   />
                 </TouchableOpacity>
@@ -254,38 +264,73 @@ export const WhiteboardModal = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
+  },
+  overlayTablet: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   container: {
     backgroundColor: "#070b13",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     height: "82%",
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 16,
+  },
+  containerTablet: {
+    width: "100%",
+    maxWidth: 780,
+    height: 680,
+    borderRadius: 28,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(18, 25, 45, 0.85)",
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   title: {
     fontSize: 15,
-    fontWeight: "700",
-    color: Colors.text,
-    marginLeft: 8,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "500",
+    marginTop: 1,
   },
   headerRight: {
     flexDirection: "row",
@@ -293,16 +338,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.cardSecondary,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
+  clearBtn: {
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderColor: "rgba(239, 68, 68, 0.25)",
+  },
   closeBtn: {
-    padding: 4,
-    marginLeft: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 2,
   },
   canvas: {
     flex: 1,
@@ -321,26 +379,33 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.card,
+    backgroundColor: "rgba(18, 25, 45, 0.9)",
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
   },
   toolGroup: {
     flexDirection: "row",
-    backgroundColor: Colors.cardSecondary,
-    borderRadius: 12,
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    borderRadius: 14,
     padding: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
     gap: 4,
   },
   toolBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   toolBtnActive: {
     backgroundColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 3,
   },
   colorPalette: {
     flexDirection: "row",
@@ -356,28 +421,33 @@ const styles = StyleSheet.create({
   },
   colorDotSelected: {
     borderColor: Colors.accent,
-    transform: [{ scale: 1.2 }],
+    transform: [{ scale: 1.25 }],
   },
   eraserHint: {
-    color: Colors.textMuted,
+    color: "#94a3b8",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   sizeGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    backgroundColor: "rgba(30, 41, 59, 0.6)",
+    borderRadius: 14,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 4,
   },
   sizeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.cardSecondary,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   sizeBtnActive: {
+    backgroundColor: "rgba(99, 102, 241, 0.2)",
     borderWidth: 1,
-    borderColor: Colors.accent,
+    borderColor: Colors.primary,
   },
 });

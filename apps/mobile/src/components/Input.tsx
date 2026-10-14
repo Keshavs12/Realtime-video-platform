@@ -42,16 +42,17 @@ export const Input = ({
           <TouchableOpacity
             style={styles.eyeBtn}
             onPress={() => setShowPassword(!showPassword)}
+            activeOpacity={0.7}
           >
             <Ionicons
               name={showPassword ? "eye-off-outline" : "eye-outline"}
               size={20}
-              color={Colors.textMuted}
+              color={isFocused ? Colors.primary : Colors.textMuted}
             />
           </TouchableOpacity>
         ) : null}
       </View>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
     </View>
   );
 };
@@ -62,28 +63,34 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   label: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
     color: Colors.textMuted,
-    marginBottom: 6,
+    marginBottom: 7,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardSecondary,
+    backgroundColor: "rgba(11, 17, 32, 0.75)",
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderRadius: 14,
+    paddingHorizontal: 15,
   },
   inputFocused: {
     borderColor: Colors.primary,
-    backgroundColor: "#131d36",
+    backgroundColor: "rgba(20, 30, 56, 0.85)",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 3,
   },
   inputError: {
     borderColor: Colors.danger,
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
   },
   input: {
     flex: 1,
@@ -95,8 +102,10 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   errorText: {
-    color: Colors.danger,
+    color: "#fca5a5",
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: "500",
   },
 });
+
