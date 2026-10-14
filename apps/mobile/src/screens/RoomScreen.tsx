@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  Share,
 } from "react-native";
 import { io, Socket } from "socket.io-client";
 import { Colors } from "../theme/colors";
@@ -88,6 +89,18 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     return () => clearInterval(timer);
   }, []);
 
+  const handleShareRoomCode = async () => {
+    const cleanCode = roomCode.trim().toLowerCase();
+    try {
+      await Share.share({
+        message: `Join my SuperCall video meeting!\nRoom Code: ${cleanCode}\nLink: https://realtime-video-platform.onrender.com/room/${cleanCode}`,
+        title: "SuperCall Meeting Code",
+      });
+    } catch {
+      Alert.alert("Room Code", `Meeting code: ${cleanCode}`);
+    }
+  };
+
   // Helper to safely add ice candidate or queue if remote description isn't set yet
   const addIceCandidateSafe = async (socketId: string, candidate: any) => {
     const pc = peerConnectionsRef.current[socketId];
@@ -158,7 +171,14 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
         // On remote stream / track received
         pc.ontrack = (event: any) => {
-          const remoteStream = event.streams && event.streams[0] ? event.streams[0] : null;
+          let remoteStream = event.streams && event.streams[0] ? event.streams[0] : null;
+          if (!remoteStream && event.track) {
+            try {
+              remoteStream = new MediaStream([event.track]);
+            } catch (e) {
+              remoteStream = null;
+            }
+          }
           if (remoteStream) {
             setParticipants((prev) =>
               prev.map((p) =>
@@ -199,11 +219,27 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       if (isMounted && stream) {
         localStreamRef.current = stream;
         setLocalStream(stream);
+
+        // Dynamically add tracks to any already-created peer connections
+        Object.values(peerConnectionsRef.current).forEach((pc: any) => {
+          try {
+            const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
+            stream.getTracks().forEach((track: any) => {
+              const alreadyAdded = senders.some((s: any) => s.track && s.track.id === track.id);
+              if (!alreadyAdded) {
+                pc.addTrack(track, stream);
+              }
+            });
+          } catch (e) {
+            console.warn("[WebRTC] Error attaching track to PC:", e);
+          }
+        });
       }
 
       // 3. Connect to Socket.IO signaling server
       const socketUrl = await getSocketBaseUrl();
       const token = await getStoredToken();
+      const cleanRoomCode = roomCode.trim().toLowerCase();
 
       const socket = io(socketUrl, {
         auth: token ? { token } : { guestName: user?.name || "Mobile User" },
@@ -215,18 +251,23 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
       socketRef.current = socket;
 
-      socket.on("connect", () => {
+      const emitJoin = () => {
         const userId = user?.id || `mobile-${Date.now().toString(36)}`;
         const userName = user?.name || "Mobile User";
 
         socket.emit("join-room", {
-          roomId: roomCode,
+          roomId: cleanRoomCode,
           userId,
           name: userName,
           isVideoMuted: false,
           isAudioMuted: false,
         });
-      });
+      };
+
+      socket.on("connect", emitJoin);
+      if (socket.connected) {
+        emitJoin();
+      }
 
       socket.on("room-info", ({ isHost: hostFlag, isLocked: lockedFlag }: { isHost: boolean; isLocked?: boolean }) => {
         if (!isMounted) return;
@@ -804,7 +845,8 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       <View key={key} style={[styles.peerCard, cardDimensions]}>
         {canShowVideo ? (
           <RTCView
-            streamURL={stream.toURL()}
+            streamURL={typeof stream?.toURL === "function" ? stream.toURL() : stream}
+            stream={stream}
             style={styles.rtcVideo}
             objectFit="cover"
             mirror={isLocal && !isBackCamera}
@@ -868,11 +910,16 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       <View style={styles.topHeader}>
         <View style={[styles.topHeaderInner, isTabletDevice && styles.topHeaderInnerWide]}>
           <View style={styles.roomInfoCol}>
-            <View style={styles.roomCodePill}>
+            <TouchableOpacity
+              onPress={handleShareRoomCode}
+              activeOpacity={0.7}
+              style={styles.roomCodePill}
+            >
               <View style={styles.liveIndicator} />
               <Text style={styles.roomCodeText}>Room {roomCode}</Text>
+              <Ionicons name="share-outline" size={13} color="#94a3b8" style={{ marginLeft: 5 }} />
               {isRoomLocked ? <Text style={{ fontSize: 11, marginLeft: 4 }}>🔒</Text> : null}
-            </View>
+            </TouchableOpacity>
             <View style={styles.e2eePill}>
               <Ionicons name="shield-checkmark" size={11} color={Colors.success} style={{ marginRight: 3 }} />
               <Text style={styles.e2eeText}>E2EE HD</Text>
@@ -1117,6 +1164,21 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   <Ionicons name="camera-reverse" size={22} color={Colors.text} />
                 </View>
                 <Text style={styles.moreTileLabel}>Flip Camera</Text>
+              </TouchableOpacity>
+
+              {/* Share Room */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  handleShareRoomCode();
+                }}
+                activeOpacity={0.75}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(99, 102, 241, 0.15)", borderColor: "rgba(99, 102, 241, 0.35)" }]}>
+                  <Ionicons name="share-social" size={22} color={Colors.primary} />
+                </View>
+                <Text style={styles.moreTileLabel}>Share Room</Text>
               </TouchableOpacity>
 
               {/* Host Controls (If Host) */}

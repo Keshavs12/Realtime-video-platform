@@ -92,19 +92,30 @@ export const DashboardScreen = ({
   };
 
   const handleJoinByCode = async () => {
-    const clean = roomCodeInput.trim();
-    if (!clean) {
+    const raw = roomCodeInput.trim();
+    if (!raw) {
       Alert.alert("Missing Room Code", "Please enter a valid room code or link.");
       return;
     }
-    const match = clean.match(/room\/([a-zA-Z0-9_-]+)/);
-    const code = match ? match[1] : clean;
+    const clean = raw
+      .replace(/^https?:\/\/[^\/]+\/room\//i, "")
+      .replace(/^https?:\/\/[^\/]+\//i, "")
+      .replace(/^room[:\s\/-]*/i, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "")
+      .trim()
+      .toLowerCase();
+
+    if (!clean) {
+      Alert.alert("Invalid Room Code", "Please enter a valid 8-character meeting code.");
+      return;
+    }
 
     try {
-      await roomService.checkRoomExists(code);
-      onJoinRoom(code);
+      const res = await roomService.checkRoomExists(clean);
+      onJoinRoom(res?.code || clean);
     } catch {
-      onJoinRoom(code);
+      // If check API failed, allow joining anyway with the clean code
+      onJoinRoom(clean);
     }
   };
 

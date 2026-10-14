@@ -32,7 +32,22 @@ export const createRoom = async (hostId: string) => {
 };
 
 export const checkRoomExists = async (code: string) => {
-    const room = await prisma.room.findUnique({ where: { code } });
+    const clean = String(code || "")
+        .replace(/^https?:\/\/[^\/]+\/room\//i, "")
+        .replace(/^https?:\/\/[^\/]+\//i, "")
+        .replace(/^room[:\s\/-]*/i, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "")
+        .trim()
+        .toLowerCase();
+
+    const room = await prisma.room.findFirst({
+        where: {
+            OR: [
+                { code: clean },
+                { code: { equals: clean, mode: "insensitive" } },
+            ],
+        },
+    });
     if (!room) {
         throw new AppError("Room not found.", 404);
     }

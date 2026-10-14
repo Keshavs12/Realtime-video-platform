@@ -1,4 +1,5 @@
-import { NativeModules, View } from "react-native";
+import React from "react";
+import { NativeModules, View, Platform } from "react-native";
 import type {
   RTCPeerConnection as IRTCPeerConnection,
   RTCIceCandidate as IRTCIceCandidate,
@@ -11,11 +12,14 @@ export type RTCIceCandidate = IRTCIceCandidate;
 export type RTCSessionDescription = IRTCSessionDescription;
 export type MediaStream = IMediaStream;
 
-/**
- * Checks if react-native-webrtc native module is available in the current runtime.
- * (Returns true in Dev Client or Production APK/IPA; returns false in standard Expo Go).
- */
-export const isWebRTCSupported = Boolean(NativeModules.WebRTCModule);
+// Check native WebRTC module or browser WebRTC (for iOS Safari web mode)
+const isNativeWebRTC = Boolean(NativeModules && NativeModules.WebRTCModule);
+const isBrowserWebRTC =
+  Platform.OS === "web" &&
+  typeof window !== "undefined" &&
+  Boolean((window as any).RTCPeerConnection || (typeof navigator !== "undefined" && navigator.mediaDevices));
+
+export const isWebRTCSupported = isNativeWebRTC || isBrowserWebRTC;
 
 let RTCPeerConnection: any;
 let RTCIceCandidate: any;
@@ -24,7 +28,7 @@ let RTCView: any = View;
 let MediaStream: any;
 let mediaDevices: any;
 
-if (isWebRTCSupported) {
+if (isNativeWebRTC) {
   try {
     const webrtc = require("react-native-webrtc");
     RTCPeerConnection = webrtc.RTCPeerConnection;
@@ -36,6 +40,41 @@ if (isWebRTCSupported) {
   } catch (err) {
     console.warn("[WebRTC] Failed to load native WebRTC module:", err);
   }
+} else if (isBrowserWebRTC) {
+  RTCPeerConnection = (window as any).RTCPeerConnection;
+  RTCIceCandidate = (window as any).RTCIceCandidate;
+  RTCSessionDescription = (window as any).RTCSessionDescription;
+  MediaStream = (window as any).MediaStream;
+  mediaDevices = navigator.mediaDevices;
+
+  // Universal RTCView component for web/mobile Safari
+  RTCView = (props: any) => {
+    const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+    React.useEffect(() => {
+      if (videoRef.current && props.stream) {
+        videoRef.current.srcObject = props.stream;
+      }
+    }, [props.stream]);
+
+    return React.createElement(
+      View,
+      { style: props.style },
+      React.createElement("video", {
+        ref: videoRef,
+        autoPlay: true,
+        playsInline: true,
+        muted: Boolean(props.mirror),
+        style: {
+          width: "100%",
+          height: "100%",
+          objectFit: props.objectFit || "cover",
+          transform: props.mirror ? "scaleX(-1)" : "none",
+          backgroundColor: "#000",
+        },
+      })
+    );
+  };
 }
 
 // Metered.ca TURN Relay Credentials
@@ -69,28 +108,49 @@ export const fetchIceServers = async (): Promise<any[]> => {
  * Requests local audio and camera media stream.
  */
 export const getLocalMediaStream = async (video = true, audio = true): Promise<any | null> => {
-  if (!isWebRTCSupported) {
-    console.warn("[WebRTC] Native WebRTC module not detected (Running in standard Expo Go). Media streaming is mocked.");
-    return null;
+  if (isBrowserWebRTC && typeof navigator !== "undefined" && navigator.mediaDevices) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio,
+        video: video
+          ? {
+              facingMode: "user",
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+            }
+          : false,
+      });
+      return stream;
+    } catch (err) {
+      console.warn("[WebRTC Browser] getUserMedia error:", err);
+      return null;
+    }
   }
 
-  try {
-    const stream = await mediaDevices.getUserMedia({
-      audio,
-      video: video
-        ? {
-            facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 30 },
-          }
-        : false,
-    });
-    return stream;
-  } catch (err) {
-    console.error("[WebRTC] Failed to get user media:", err);
-    return null;
+  if (isNativeWebRTC && mediaDevices) {
+    try {
+      const stream = await mediaDevices.getUserMedia({
+        audio,
+        video: video
+          ? {
+              facingMode: "user",
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 30 },
+            }
+          : false,
+      });
+      return stream;
+    } catch (err) {
+      console.error("[WebRTC Native] Failed to get user media:", err);
+      return null;
+    }
   }
+
+  console.warn(
+    "[WebRTC] Native WebRTC drivers not present in Expo Go sandbox. Session connected via real-time signaling."
+  );
+  return null;
 };
 
 /**
@@ -99,7 +159,7 @@ export const getLocalMediaStream = async (video = true, audio = true): Promise<a
 export const switchCameraFacing = (stream: any): boolean => {
   if (!stream) return false;
   try {
-    const videoTracks = stream.getVideoTracks();
+    const videoTracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
     if (videoTracks.length > 0 && typeof videoTracks[0]._switchCamera === "function") {
       videoTracks[0]._switchCamera();
       return true;

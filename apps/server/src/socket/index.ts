@@ -233,36 +233,22 @@ export const initSocketServer = (server: HttpServer): Server => {
     };
 
     const evictStaleSockets = async (
-        targetIo: Server,
-        currentSocket: any,
-        roomId: string,
-        userId: string
+        _targetIo: Server,
+        _currentSocket: any,
+        _roomId: string,
+        _userId: string
     ) => {
-        const existingSockets = await targetIo.in(roomId).fetchSockets();
-        const staleSockets = existingSockets.filter((s) => s.data.userId === userId && s.id !== currentSocket.id);
-        if (staleSockets.length > 0) {
-            await Promise.all(
-                staleSockets.map(async (s) => {
-                    console.log(`🧹 Removing stale socket ${s.id} for user ${userId} from room ${roomId}`);
-                    s.leave(roomId);
-                    currentSocket.to(roomId).emit("user-left", {
-                        socketId: s.id,
-                        userId,
-                    });
-                    await closeOpenParticipation(roomId, userId);
-                })
-            );
-        }
+        // Multi-device calling support: allows the same user account to connect from multiple devices (e.g. two testing phones or phone + web)
+        // Socket teardowns and leaves are handled naturally by the "disconnect" and "leave-room" listeners.
     };
 
     const getRoomPeerUsers = async (
         targetIo: Server,
         roomId: string,
         currentSocketId: string,
-        currentUserId: string
+        _currentUserId: string
     ) => {
         const sockets = await targetIo.in(roomId).fetchSockets();
-        const seenUsers = new Set<string>();
         const usersInRoom: {
             socketId: string;
             userId: string;
@@ -273,13 +259,13 @@ export const initSocketServer = (server: HttpServer): Server => {
         }[] = [];
 
         for (const s of sockets) {
-            const peerUserId = s.data.userId as string;
-            if (s.id !== currentSocketId && peerUserId && peerUserId !== currentUserId && !seenUsers.has(peerUserId)) {
-                seenUsers.add(peerUserId);
+            // Every other socket connected to this room is a peer (even from the same user across multiple testing devices)
+            if (s.id !== currentSocketId) {
+                const peerUserId = (s.data.userId as string) || s.id;
                 usersInRoom.push({
                     socketId: s.id,
                     userId: peerUserId,
-                    name: s.data.name as string | undefined,
+                    name: (s.data.name as string | undefined) || "Participant",
                     isHost: s.data.isHost as boolean | undefined,
                     isVideoMuted: Boolean(s.data.isVideoMuted),
                     isAudioMuted: Boolean(s.data.isAudioMuted),
@@ -317,7 +303,15 @@ export const initSocketServer = (server: HttpServer): Server => {
 
         // 1. Join Room
         socket.on("join-room", async (payload: JoinRoomPayload) => {
-            const { roomId } = payload;
+            const rawRoomId = payload?.roomId;
+            const roomId = String(rawRoomId || "")
+                .replace(/^https?:\/\/[^\/]+\/room\//i, "")
+                .replace(/^https?:\/\/[^\/]+\//i, "")
+                .replace(/^room[:\s\/-]*/i, "")
+                .replace(/[^a-zA-Z0-9_-]/g, "")
+                .trim()
+                .toLowerCase();
+
             const userId = socket.data.userId as string;
 
             const name = await resolveJoinUserName(socket, userId, payload?.name);
@@ -328,9 +322,16 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            const room = await prisma.room.findUnique({ where: { code: roomId } });
+            const room = await prisma.room.findFirst({
+                where: {
+                    OR: [
+                        { code: roomId },
+                        { code: { equals: roomId, mode: "insensitive" } },
+                    ],
+                },
+            });
             if (!room) {
-                console.warn(`⚠️ Rejected join-room for unknown room code: ${roomId}`);
+                console.warn(`⚠️ Rejected join-room for unknown room code: ${roomId} (raw: ${rawRoomId})`);
                 socket.emit("room-not-found", { roomId });
                 return;
             }
