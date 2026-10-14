@@ -314,21 +314,33 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             }))
           );
 
-          // For each existing participant, create peer connection and create offer
-          for (const remoteUser of users) {
-            const pc = createPeerConnection(remoteUser.socketId, remoteUser.userId, remoteUser.name);
-            if (pc) {
-              try {
-                const offer = await pc.createOffer({});
-                await pc.setLocalDescription(offer);
-                socket.emit("offer", {
-                  to: remoteUser.socketId,
-                  offer,
-                  userId: user?.id,
-                  name: user?.name || "Mobile User",
-                });
-              } catch (err) {
-                console.error(`[WebRTC] Failed to create offer for ${remoteUser.socketId}:`, err);
+          // For each existing participant, initiate peer connection
+          if (!isNativeWebRTC) {
+            for (const remoteUser of users) {
+              if (!remoteUser.socketId) continue;
+              webRTCStageRef.current?.sendSignalingEvent({
+                type: "INITIATE_PEER",
+                peerSocketId: remoteUser.socketId,
+                peerName: remoteUser.name || "Participant",
+                iceServers: iceServersRef.current,
+              });
+            }
+          } else {
+            for (const remoteUser of users) {
+              const pc = createPeerConnection(remoteUser.socketId, remoteUser.userId, remoteUser.name);
+              if (pc) {
+                try {
+                  const offer = await pc.createOffer({});
+                  await pc.setLocalDescription(offer);
+                  socket.emit("offer", {
+                    to: remoteUser.socketId,
+                    offer,
+                    userId: user?.id,
+                    name: user?.name || "Mobile User",
+                  });
+                } catch (err) {
+                  console.error(`[WebRTC] Failed to create offer for ${remoteUser.socketId}:`, err);
+                }
               }
             }
           }
@@ -372,8 +384,20 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       socket.on(
         "offer",
         async (payload: { from: string; offer: any; userId?: string; name?: string }) => {
-          const { from, offer, userId, name } = payload;
-          const pc = createPeerConnection(from, userId, name);
+          const { from, offer, userId: offerUserId, name } = payload;
+
+          if (!isNativeWebRTC) {
+            webRTCStageRef.current?.sendSignalingEvent({
+              type: "HANDLE_OFFER",
+              from,
+              offer,
+              name: name || "Participant",
+              iceServers: iceServersRef.current,
+            });
+            return;
+          }
+
+          const pc = createPeerConnection(from, offerUserId, name);
           if (!pc) return;
 
           try {
@@ -398,6 +422,16 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       // Handle WebRTC Answer
       socket.on("answer", async (payload: { from: string; answer: any }) => {
         const { from, answer } = payload;
+
+        if (!isNativeWebRTC) {
+          webRTCStageRef.current?.sendSignalingEvent({
+            type: "HANDLE_ANSWER",
+            from,
+            answer,
+          });
+          return;
+        }
+
         const pc = peerConnectionsRef.current[from];
         if (!pc) return;
 
@@ -412,6 +446,16 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       // Handle ICE Candidate
       socket.on("ice-candidate", (payload: { from: string; candidate: any }) => {
         const { from, candidate } = payload;
+
+        if (!isNativeWebRTC) {
+          webRTCStageRef.current?.sendSignalingEvent({
+            type: "HANDLE_ICE_CANDIDATE",
+            from,
+            candidate,
+          });
+          return;
+        }
+
         if (candidate) {
           addIceCandidateSafe(from, candidate);
         }
@@ -420,6 +464,13 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       // Participant left
       socket.on("user-left", ({ socketId }: { socketId: string }) => {
         if (!isMounted) return;
+
+        if (!isNativeWebRTC) {
+          webRTCStageRef.current?.sendSignalingEvent({
+            type: "USER_LEFT",
+            socketId,
+          });
+        }
 
         if (peerConnectionsRef.current[socketId]) {
           try {
@@ -970,10 +1021,31 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           ref={webRTCStageRef}
           roomCode={roomCode}
           user={user}
-          token={tokenState}
-          serverUrl={serverUrl || DEFAULT_API_URL}
           isVideoMuted={isVideoMuted}
           isAudioMuted={isAudioMuted}
+          iceServers={iceServersRef.current}
+          onOfferCreated={(to, offer) => {
+            socketRef.current?.emit("offer", {
+              to,
+              offer,
+              userId: user?.id,
+              name: user?.name || "Mobile User",
+            });
+          }}
+          onAnswerCreated={(to, answer) => {
+            socketRef.current?.emit("answer", {
+              to,
+              answer,
+              userId: user?.id,
+              name: user?.name || "Mobile User",
+            });
+          }}
+          onIceCandidateGenerated={(to, candidate) => {
+            socketRef.current?.emit("ice-candidate", {
+              to,
+              candidate,
+            });
+          }}
           onParticipantCountChange={(count) => {
             if (count > 0) {
               setWebViewParticipantCount(count);

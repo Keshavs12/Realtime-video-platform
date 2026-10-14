@@ -5,6 +5,7 @@ import { User } from "../types";
 import { Colors } from "../theme/colors";
 
 export interface WebRTCStageWebViewRef {
+  sendSignalingEvent: (event: any) => void;
   toggleAudio: (muted: boolean) => void;
   toggleVideo: (muted: boolean) => void;
   flipCamera: () => void;
@@ -13,12 +14,15 @@ export interface WebRTCStageWebViewRef {
 interface WebRTCStageWebViewProps {
   roomCode: string;
   user: User | null;
-  token: string | null;
-  serverUrl: string;
   isVideoMuted: boolean;
   isAudioMuted: boolean;
+  iceServers: any[];
+  onOfferCreated?: (to: string, offer: any) => void;
+  onAnswerCreated?: (to: string, answer: any) => void;
+  onIceCandidateGenerated?: (to: string, candidate: any) => void;
   onParticipantCountChange?: (count: number) => void;
-  onConnectionStatus?: (status: string) => void;
+  onRemoteStreamReceived?: (peerSocketId: string) => void;
+  onLocalStreamReady?: () => void;
 }
 
 export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageWebViewProps>(
@@ -26,104 +30,109 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
     {
       roomCode,
       user,
-      token,
-      serverUrl,
       isVideoMuted,
       isAudioMuted,
+      iceServers,
+      onOfferCreated,
+      onAnswerCreated,
+      onIceCandidateGenerated,
       onParticipantCountChange,
-      onConnectionStatus,
+      onRemoteStreamReceived,
+      onLocalStreamReady,
     },
     ref
   ) => {
     const webViewRef = useRef<WebView | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Imperative handles so parent RoomScreen can trigger camera flip, audio/video toggles
+    const safeRoomCode = (roomCode || "").trim().toLowerCase();
+    const userName = user?.name || "Mobile User";
+    const initialLetter = (userName[0] || "U").toUpperCase();
+
+    // Helper to send message into WebView
+    const injectMessage = (data: any) => {
+      const json = JSON.stringify(data);
+      webViewRef.current?.injectJavaScript(`
+        if (typeof window.handleRNMessage === 'function') {
+          window.handleRNMessage(${json});
+        }
+        true;
+      `);
+    };
+
+    // Imperative methods exposed to RoomScreen
     useImperativeHandle(ref, () => ({
+      sendSignalingEvent: (event: any) => {
+        injectMessage(event);
+      },
       toggleAudio: (muted: boolean) => {
-        webViewRef.current?.injectJavaScript(`
-          if (typeof window.setAudioMuted === 'function') {
-            window.setAudioMuted(${muted});
-          }
-          true;
-        `);
+        injectMessage({ type: "TOGGLE_AUDIO", muted });
       },
       toggleVideo: (muted: boolean) => {
-        webViewRef.current?.injectJavaScript(`
-          if (typeof window.setVideoMuted === 'function') {
-            window.setVideoMuted(${muted});
-          }
-          true;
-        `);
+        injectMessage({ type: "TOGGLE_VIDEO", muted });
       },
       flipCamera: () => {
-        webViewRef.current?.injectJavaScript(`
-          if (typeof window.flipCameraFacing === 'function') {
-            window.flipCameraFacing();
-          }
-          true;
-        `);
+        injectMessage({ type: "FLIP_CAMERA" });
       },
     }));
 
-    // Sync audio/video mute props to WebView
+    // Pass ICE servers when available
     useEffect(() => {
-      webViewRef.current?.injectJavaScript(`
-        if (typeof window.setAudioMuted === 'function') {
-          window.setAudioMuted(${isAudioMuted});
-        }
-        true;
-      `);
-    }, [isAudioMuted]);
+      if (iceServers && iceServers.length > 0) {
+        injectMessage({ type: "SET_ICE_SERVERS", iceServers });
+      }
+    }, [iceServers]);
 
-    useEffect(() => {
-      webViewRef.current?.injectJavaScript(`
-        if (typeof window.setVideoMuted === 'function') {
-          window.setVideoMuted(${isVideoMuted});
-        }
-        true;
-      `);
-    }, [isVideoMuted]);
-
-    // Handle incoming messages from WebView WebRTC bridge
+    // Handle incoming events from the WebRTC WebView engine
     const handleMessage = (event: any) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
-        if (data.type === "PEER_COUNT" && typeof onParticipantCountChange === "function") {
-          onParticipantCountChange(data.count);
-        } else if (data.type === "STATUS" && typeof onConnectionStatus === "function") {
-          onConnectionStatus(data.status);
-        } else if (data.type === "READY") {
-          setIsLoading(false);
+
+        switch (data.type) {
+          case "READY":
+          case "LOCAL_STREAM_READY":
+            setIsLoading(false);
+            onLocalStreamReady?.();
+            break;
+
+          case "OFFER_CREATED":
+            onOfferCreated?.(data.to, data.offer);
+            break;
+
+          case "ANSWER_CREATED":
+            onAnswerCreated?.(data.to, data.answer);
+            break;
+
+          case "ICE_CANDIDATE_GENERATED":
+            onIceCandidateGenerated?.(data.to, data.candidate);
+            break;
+
+          case "PEER_COUNT":
+            onParticipantCountChange?.(data.count);
+            break;
+
+          case "REMOTE_STREAM_RECEIVED":
+            onRemoteStreamReceived?.(data.peerSocketId);
+            break;
+
+          default:
+            break;
         }
       } catch {
-        // Ignore non-JSON messages
+        // Ignore unparseable messages
       }
     };
 
-    const cleanRoomCode = (roomCode || "")
-      .replace(/^https?:\/\/[^\/]+\/room\//i, "")
-      .replace(/^https?:\/\/[^\/]+\//i, "")
-      .replace(/^room[:\s\/-]*/i, "")
-      .replace(/[^a-zA-Z0-9_-]/g, "")
-      .trim()
-      .toLowerCase();
-
-    const userName = user?.name || "Mobile User";
-    const userId = user?.id || `mobile-${Date.now().toString(36)}`;
-    const socketEndpoint = serverUrl.replace(/\/api\/v1\/?$/, "");
-
-    // Embedded HTML WebRTC implementation running inside Apple's WKWebView
+    // Embedded HTML with Apple WKWebView Hardware WebRTC Engine
     const htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
       background-color: #070b13;
       color: #ffffff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -136,7 +145,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
     #stage {
       flex: 1;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
       padding: 12px;
       align-content: center;
@@ -156,6 +165,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       min-height: 200px;
       max-height: 100%;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     .video-card.speaking {
       border-color: #6366f1;
@@ -199,14 +209,14 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       z-index: 1;
     }
     .avatar-circle {
-      width: 72px;
-      height: 72px;
-      border-radius: 36px;
+      width: 68px;
+      height: 68px;
+      border-radius: 34px;
       background: linear-gradient(135deg, #6366f1, #3b82f6);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 700;
       color: #fff;
       margin-bottom: 8px;
@@ -217,31 +227,15 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       color: #94a3b8;
       letter-spacing: 0.5px;
     }
-    .status-toast {
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(99, 102, 241, 0.35);
-      padding: 5px 14px;
-      border-radius: 20px;
-      font-size: 11px;
-      color: #a5b4fc;
-      z-index: 10;
-      pointer-events: none;
-      display: none;
-    }
   </style>
 </head>
 <body>
-  <div id="statusToast" class="statusToast">Connecting HD Call...</div>
   <div id="stage">
     <!-- Local Participant Card -->
     <div id="card-local" class="video-card">
       <video id="localVideo" autoplay playsinline muted class="mirrored"></video>
       <div id="avatar-local" class="avatar-placeholder">
-        <div class="avatar-circle">${userName.slice(0, 1).toUpperCase()}</div>
+        <div class="avatar-circle">${initialLetter}</div>
         <div class="cam-off-label">Camera Off</div>
       </div>
       <div class="name-badge">
@@ -251,81 +245,82 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
   </div>
 
   <script>
-    const ROOM_CODE = "${cleanRoomCode}";
-    const USER_ID = "${userId}";
-    const USER_NAME = "${userName}";
-    const AUTH_TOKEN = "${token || ""}";
-    const SOCKET_URL = "${socketEndpoint}";
-
     let localStream = null;
-    let socket = null;
     let peerConnections = {};
     let remoteStreams = {};
+    let iceQueues = {};
     let iceServers = [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" }
     ];
     let facingMode = "user";
-    let isVideoOff = false;
-    let isAudioOff = false;
+    let isVideoMuted = ${Boolean(isVideoMuted)};
+    let isAudioMuted = ${Boolean(isAudioMuted)};
 
-    function notifyRN(type, data) {
+    function postToRN(data) {
       if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...data }));
+        window.ReactNativeWebView.postMessage(JSON.stringify(data));
       }
     }
 
-    function showToast(text, duration = 3000) {
-      const toast = document.getElementById("statusToast");
-      if (toast) {
-        toast.innerText = text;
-        toast.style.display = "block";
-        setTimeout(() => { toast.style.display = "none"; }, duration);
-      }
-    }
-
-    // Fetch Metered TURN relay credentials
-    async function initIceServers() {
-      try {
-        const res = await fetch("https://callingbalouini.metered.live/api/v1/turn/credentials?apiKey=e00eb332c25503c6108f99e8c6149198c54f");
-        if (res.ok) {
-          const servers = await res.json();
-          iceServers = [...iceServers, ...servers];
+    // Flush any queued ICE candidates once remote description is set
+    async function flushIceQueue(socketId) {
+      const pc = peerConnections[socketId];
+      const queue = iceQueues[socketId] || [];
+      if (pc && pc.remoteDescription && queue.length > 0) {
+        for (const cand of queue) {
+          try {
+            await pc.addIceCandidate(cand);
+          } catch (e) {
+            console.warn("Error applying queued ICE:", e);
+          }
         }
-      } catch (e) {
-        console.warn("Metered TURN fetch fallback to Google STUN:", e);
+        iceQueues[socketId] = [];
       }
     }
 
     // Capture Local Camera & Microphone
-    async function startLocalMedia() {
+    async function initLocalStream() {
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
+
         const localVideo = document.getElementById("localVideo");
         if (localVideo) {
           localVideo.srcObject = localStream;
+          localVideo.play().catch(() => {});
         }
-        notifyRN("READY", {});
+
+        // Apply initial mute states
+        if (isAudioMuted) {
+          localStream.getAudioTracks().forEach(t => { t.enabled = false; });
+        }
+        if (isVideoMuted) {
+          localStream.getVideoTracks().forEach(t => { t.enabled = false; });
+          const av = document.getElementById("avatar-local");
+          if (av) av.style.display = "flex";
+        }
+
+        postToRN({ type: "LOCAL_STREAM_READY" });
       } catch (err) {
-        console.error("Camera/Mic access error:", err);
-        showToast("⚠️ Camera/Mic permission needed");
-        notifyRN("STATUS", { status: "permission-denied" });
+        console.error("Local media error:", err);
+        postToRN({ type: "MEDIA_ERROR", error: err.message });
       }
     }
 
-    // Create RTCPeerConnection for a remote peer
-    function createPC(peerSocketId, peerName) {
+    // Get or Create RTCPeerConnection for a remote peer
+    function getOrCreatePC(peerSocketId, peerName) {
       if (peerConnections[peerSocketId]) {
         return peerConnections[peerSocketId];
       }
 
       const pc = new RTCPeerConnection({ iceServers: iceServers });
       peerConnections[peerSocketId] = pc;
+      iceQueues[peerSocketId] = [];
 
-      // Add local audio and video tracks
+      // Add local tracks to the connection
       if (localStream) {
         localStream.getTracks().forEach(track => {
           pc.addTrack(track, localStream);
@@ -333,8 +328,9 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       }
 
       pc.onicecandidate = (event) => {
-        if (event.candidate && socket) {
-          socket.emit("ice-candidate", {
+        if (event.candidate) {
+          postToRN({
+            type: "ICE_CANDIDATE_GENERATED",
             to: peerSocketId,
             candidate: event.candidate
           });
@@ -349,11 +345,14 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         if (stream) {
           remoteStreams[peerSocketId] = stream;
           renderRemoteVideo(peerSocketId, peerName, stream);
+          postToRN({ type: "REMOTE_STREAM_RECEIVED", peerSocketId });
         }
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("Peer", peerSocketId, "state:", pc.connectionState);
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          removeRemoteVideo(peerSocketId);
+        }
       };
 
       return pc;
@@ -382,12 +381,16 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         card.appendChild(video);
         card.appendChild(nameBadge);
         stage.appendChild(card);
+        video.play().catch(() => {});
       } else {
         const video = card.querySelector("video");
-        if (video) video.srcObject = stream;
+        if (video) {
+          video.srcObject = stream;
+          video.play().catch(() => {});
+        }
       }
 
-      updateParticipantCount();
+      updatePeerCount();
     }
 
     function removeRemoteVideo(peerSocketId) {
@@ -398,176 +401,163 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         delete peerConnections[peerSocketId];
       }
       delete remoteStreams[peerSocketId];
-      updateParticipantCount();
+      delete iceQueues[peerSocketId];
+      updatePeerCount();
     }
 
-    function updateParticipantCount() {
+    function updatePeerCount() {
       const count = Object.keys(peerConnections).length + 1;
-      notifyRN("PEER_COUNT", { count });
+      postToRN({ type: "PEER_COUNT", count });
     }
 
-    // Connect to Socket.IO Signaling Server
-    async function startSignaling() {
-      await initIceServers();
-      await startLocalMedia();
+    // Handle messages sent from React Native
+    window.handleRNMessage = async function(msg) {
+      if (!msg || !msg.type) return;
 
-      socket = io(SOCKET_URL, {
-        transports: ["websocket", "polling"],
-        auth: AUTH_TOKEN ? { token: AUTH_TOKEN } : { guestName: USER_NAME },
-        reconnection: true,
-      });
+      switch (msg.type) {
+        case "SET_ICE_SERVERS":
+          if (msg.iceServers && Array.isArray(msg.iceServers)) {
+            iceServers = msg.iceServers;
+          }
+          break;
 
-      socket.on("connect", () => {
-        showToast("Connected to Meeting");
-        notifyRN("STATUS", { status: "connected" });
-
-        socket.emit("join-room", {
-          roomId: ROOM_CODE,
-          name: USER_NAME,
-          userId: USER_ID,
-          isVideoMuted: isVideoOff,
-          isAudioMuted: isAudioOff
-        });
-      });
-
-      // Existing peers in the room -> initiate offer
-      socket.on("room-users", async ({ users }) => {
-        if (!users) return;
-        for (const peer of users) {
-          if (!peer.socketId) continue;
-          const pc = createPC(peer.socketId, peer.name);
+        case "INITIATE_PEER": {
+          if (msg.iceServers) iceServers = msg.iceServers;
+          const pc = getOrCreatePC(msg.peerSocketId, msg.peerName);
           try {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            socket.emit("offer", {
-              to: peer.socketId,
-              offer: offer,
-              name: USER_NAME,
-              userId: USER_ID
+            postToRN({
+              type: "OFFER_CREATED",
+              to: msg.peerSocketId,
+              offer: offer
             });
           } catch (e) {
-            console.error("Offer creation error:", e);
+            console.error("Error creating offer:", e);
           }
+          break;
         }
-        updateParticipantCount();
-      });
 
-      // New user joins
-      socket.on("user-joined", (user) => {
-        if (user && user.socketId) {
-          createPC(user.socketId, user.name);
-          updateParticipantCount();
-        }
-      });
-
-      // Receive WebRTC offer
-      socket.on("offer", async ({ from, offer, name }) => {
-        const pc = createPC(from, name);
-        try {
-          await pc.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit("answer", {
-            to: from,
-            answer: answer,
-            name: USER_NAME,
-            userId: USER_ID
-          });
-        } catch (e) {
-          console.error("Answer error:", e);
-        }
-      });
-
-      // Receive WebRTC answer
-      socket.on("answer", async ({ from, answer }) => {
-        const pc = peerConnections[from];
-        if (pc) {
+        case "HANDLE_OFFER": {
+          if (msg.iceServers) iceServers = msg.iceServers;
+          const pc = getOrCreatePC(msg.from, msg.name);
           try {
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+            await flushIceQueue(msg.from);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            postToRN({
+              type: "ANSWER_CREATED",
+              to: msg.from,
+              answer: answer
+            });
           } catch (e) {
-            console.error("Remote desc error:", e);
+            console.error("Error handling offer:", e);
           }
+          break;
         }
-      });
 
-      // Receive ICE Candidate
-      socket.on("ice-candidate", async ({ from, candidate }) => {
-        const pc = peerConnections[from];
-        if (pc && candidate) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (e) {
-            console.warn("ICE error:", e);
-          }
-        }
-      });
-
-      // User Left
-      socket.on("user-left", ({ socketId }) => {
-        removeRemoteVideo(socketId);
-      });
-    }
-
-    // Exposed controls for React Native bridge
-    window.setAudioMuted = function(muted) {
-      isAudioOff = muted;
-      if (localStream) {
-        localStream.getAudioTracks().forEach(t => { t.enabled = !muted; });
-      }
-    };
-
-    window.setVideoMuted = function(muted) {
-      isVideoOff = muted;
-      const avatar = document.getElementById("avatar-local");
-      const video = document.getElementById("localVideo");
-      if (avatar) avatar.style.display = muted ? "flex" : "none";
-      if (video) video.style.opacity = muted ? "0" : "1";
-      if (localStream) {
-        localStream.getVideoTracks().forEach(t => { t.enabled = !muted; });
-      }
-    };
-
-    window.flipCameraFacing = async function() {
-      facingMode = facingMode === "user" ? "environment" : "user";
-      const localVideo = document.getElementById("localVideo");
-      if (localVideo) {
-        if (facingMode === "user") {
-          localVideo.classList.add("mirrored");
-        } else {
-          localVideo.classList.remove("mirrored");
-        }
-      }
-
-      if (localStream) {
-        const oldTrack = localStream.getVideoTracks()[0];
-        if (oldTrack) oldTrack.stop();
-      }
-
-      try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } }
-        });
-        const newTrack = newStream.getVideoTracks()[0];
-        if (localStream && newTrack) {
-          localStream.removeTrack(localStream.getVideoTracks()[0]);
-          localStream.addTrack(newTrack);
-          if (localVideo) localVideo.srcObject = localStream;
-
-          // Replace track in peer connections
-          Object.values(peerConnections).forEach(pc => {
-            const sender = pc.getSenders().find(s => s.track && s.track.kind === "video");
-            if (sender) {
-              sender.replaceTrack(newTrack);
+        case "HANDLE_ANSWER": {
+          const pc = peerConnections[msg.from];
+          if (pc) {
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+              await flushIceQueue(msg.from);
+            } catch (e) {
+              console.error("Error handling answer:", e);
             }
-          });
+          }
+          break;
         }
-      } catch (e) {
-        console.error("Flip camera error:", e);
+
+        case "HANDLE_ICE_CANDIDATE": {
+          const pc = peerConnections[msg.from];
+          const cand = new RTCIceCandidate(msg.candidate);
+          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+            try {
+              await pc.addIceCandidate(cand);
+            } catch (e) {
+              console.warn("Direct ICE error:", e);
+            }
+          } else {
+            if (!iceQueues[msg.from]) iceQueues[msg.from] = [];
+            iceQueues[msg.from].push(cand);
+          }
+          break;
+        }
+
+        case "USER_LEFT":
+          removeRemoteVideo(msg.socketId);
+          break;
+
+        case "TOGGLE_AUDIO":
+          isAudioMuted = Boolean(msg.muted);
+          if (localStream) {
+            localStream.getAudioTracks().forEach(t => { t.enabled = !isAudioMuted; });
+          }
+          break;
+
+        case "TOGGLE_VIDEO": {
+          isVideoMuted = Boolean(msg.muted);
+          const av = document.getElementById("avatar-local");
+          const v = document.getElementById("localVideo");
+          if (av) av.style.display = isVideoMuted ? "flex" : "none";
+          if (v) v.style.opacity = isVideoMuted ? "0" : "1";
+          if (localStream) {
+            localStream.getVideoTracks().forEach(t => { t.enabled = !isVideoMuted; });
+          }
+          break;
+        }
+
+        case "FLIP_CAMERA": {
+          facingMode = facingMode === "user" ? "environment" : "user";
+          const v = document.getElementById("localVideo");
+          if (v) {
+            if (facingMode === "user") {
+              v.classList.add("mirrored");
+            } else {
+              v.classList.remove("mirrored");
+            }
+          }
+
+          if (localStream) {
+            const oldTrack = localStream.getVideoTracks()[0];
+            if (oldTrack) oldTrack.stop();
+          }
+
+          try {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } }
+            });
+            const newTrack = newStream.getVideoTracks()[0];
+            if (localStream && newTrack) {
+              localStream.removeTrack(localStream.getVideoTracks()[0]);
+              localStream.addTrack(newTrack);
+              if (v) {
+                v.srcObject = localStream;
+                v.play().catch(() => {});
+              }
+
+              Object.values(peerConnections).forEach(pc => {
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === "video");
+                if (sender) {
+                  sender.replaceTrack(newTrack);
+                }
+              });
+            }
+          } catch (e) {
+            console.error("Flip camera error:", e);
+          }
+          break;
+        }
+
+        default:
+          break;
       }
     };
 
-    // Auto-launch signaling when DOM is ready
-    window.addEventListener("DOMContentLoaded", startSignaling);
+    // Self-executing setup without waiting for DOMContentLoaded (safe for inline HTML)
+    initLocalStream();
   </script>
 </body>
 </html>
@@ -580,7 +570,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         {isLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Connecting to HD Video Stage...</Text>
+            <Text style={styles.loadingText}>Initializing Camera & Audio...</Text>
           </View>
         )}
         <RNWebView
@@ -604,6 +594,8 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
     );
   }
 );
+
+WebRTCStageWebView.displayName = "WebRTCStageWebView";
 
 const styles = StyleSheet.create({
   container: {
