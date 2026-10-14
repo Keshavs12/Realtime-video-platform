@@ -15,13 +15,14 @@ import {
 import { io, Socket } from "socket.io-client";
 import { Colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
-import { getSocketBaseUrl, getStoredToken } from "../config/api";
+import { getSocketBaseUrl, getStoredToken, DEFAULT_API_URL } from "../config/api";
 import { ChatModal } from "../components/ChatModal";
 import { ReactionOverlay } from "../components/ReactionOverlay";
 import { PollsModal } from "../components/PollsModal";
 import { NotesModal } from "../components/NotesModal";
 import { HostControlsModal } from "../components/HostControlsModal";
 import { WhiteboardModal } from "../components/WhiteboardModal";
+import { WebRTCStageWebView, WebRTCStageWebViewRef } from "../components/WebRTCStageWebView";
 import { ChatMessage, Participant, FloatingReaction, PollItem } from "../types";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -33,6 +34,7 @@ import {
   getLocalMediaStream,
   switchCameraFacing,
   isWebRTCSupported,
+  isNativeWebRTC,
 } from "../services/webrtc.service";
 
 interface RoomScreenProps {
@@ -41,11 +43,14 @@ interface RoomScreenProps {
 }
 
 export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
-  const { user } = useAuth();
+  const { user, serverUrl } = useAuth();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
   const socketRef = useRef<Socket | null>(null);
+  const webRTCStageRef = useRef<WebRTCStageWebViewRef | null>(null);
+  const [tokenState, setTokenState] = useState<string | null>(null);
+  const [webViewParticipantCount, setWebViewParticipantCount] = useState<number | null>(null);
 
   // WebRTC Refs
   const localStreamRef = useRef<any | null>(null);
@@ -81,8 +86,9 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   const [whiteboardVisible, setWhiteboardVisible] = useState(false);
   const [hostControlsVisible, setHostControlsVisible] = useState(false);
 
-  // Call timer
+  // Call timer & auth token load
   useEffect(() => {
+    getStoredToken().then((t) => setTokenState(t));
     const timer = setInterval(() => {
       setCallDuration((prev) => prev + 1);
     }, 1000);
@@ -602,6 +608,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     const next = !isAudioMuted;
     setIsAudioMuted(next);
 
+    if (webRTCStageRef.current) {
+      webRTCStageRef.current.toggleAudio(next);
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track: any) => {
         track.enabled = !next;
@@ -620,6 +630,10 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     const next = !isVideoMuted;
     setIsVideoMuted(next);
 
+    if (webRTCStageRef.current) {
+      webRTCStageRef.current.toggleVideo(next);
+    }
+
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((track: any) => {
         track.enabled = !next;
@@ -635,6 +649,11 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
   // Flip Camera Front / Back
   const handleFlipCamera = () => {
+    if (!isNativeWebRTC && webRTCStageRef.current) {
+      webRTCStageRef.current.flipCamera();
+      setIsBackCamera((prev) => !prev);
+      return;
+    }
     if (!localStreamRef.current) return;
     const switched = switchCameraFacing(localStreamRef.current);
     if (switched) {
@@ -935,45 +954,66 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
             <View style={styles.participantCountPill}>
               <Ionicons name="people" size={13} color={Colors.accent} />
-              <Text style={styles.participantCountText}>{participants.length + 1}</Text>
+              <Text style={styles.participantCountText}>
+                {!isNativeWebRTC && webViewParticipantCount !== null
+                  ? webViewParticipantCount
+                  : participants.length + 1}
+              </Text>
             </View>
           </View>
         </View>
       </View>
 
-      {/* Participant Video Grid */}
-      <ScrollView
-        contentContainerStyle={[
-          styles.gridContent,
-          isTabletDevice && styles.gridContentWide,
-        ]}
-      >
-        {/* Local Participant Card */}
-        {renderParticipantCard(
-          true,
-          user?.name || "You",
-          localStream,
-          isVideoMuted,
-          isAudioMuted,
-          isHandRaised,
-          false,
-          "local-user"
-        )}
-
-        {/* Remote Peers */}
-        {participants.map((peer) =>
-          renderParticipantCard(
+      {/* Participant Video Grid - Uses hardware-accelerated WKWebView in Expo Go or native RTCView in compiled builds */}
+      {!isNativeWebRTC ? (
+        <WebRTCStageWebView
+          ref={webRTCStageRef}
+          roomCode={roomCode}
+          user={user}
+          token={tokenState}
+          serverUrl={serverUrl || DEFAULT_API_URL}
+          isVideoMuted={isVideoMuted}
+          isAudioMuted={isAudioMuted}
+          onParticipantCountChange={(count) => {
+            if (count > 0) {
+              setWebViewParticipantCount(count);
+            }
+          }}
+        />
+      ) : (
+        <ScrollView
+          contentContainerStyle={[
+            styles.gridContent,
+            isTabletDevice && styles.gridContentWide,
+          ]}
+        >
+          {/* Local Participant Card */}
+          {renderParticipantCard(
+            true,
+            user?.name || "You",
+            localStream,
+            isVideoMuted,
+            isAudioMuted,
+            isHandRaised,
             false,
-            peer.name || "Participant",
-            peer.stream,
-            Boolean(peer.isVideoMuted),
-            Boolean(peer.isAudioMuted),
-            Boolean(peer.isHandRaised),
-            Boolean(peer.isSharing),
-            peer.socketId
-          )
-        )}
-      </ScrollView>
+            "local-user"
+          )}
+
+          {/* Remote Peers */}
+          {participants.map((peer) =>
+            renderParticipantCard(
+              false,
+              peer.name || "Participant",
+              peer.stream,
+              Boolean(peer.isVideoMuted),
+              Boolean(peer.isAudioMuted),
+              Boolean(peer.isHandRaised),
+              Boolean(peer.isSharing),
+              peer.socketId
+            )
+          )}
+        </ScrollView>
+      )}
 
       {/* Floating Emoji Picker Popover */}
       {showReactionPicker ? (

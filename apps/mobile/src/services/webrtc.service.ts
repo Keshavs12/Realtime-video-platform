@@ -13,38 +13,97 @@ export type RTCSessionDescription = IRTCSessionDescription;
 export type MediaStream = IMediaStream;
 
 // Check native WebRTC module or browser WebRTC (for iOS Safari web mode)
-const isNativeWebRTC = Boolean(NativeModules && NativeModules.WebRTCModule);
-const isBrowserWebRTC =
+export const isNativeWebRTC = Boolean(NativeModules && NativeModules.WebRTCModule);
+export const isBrowserWebRTC =
   Platform.OS === "web" &&
   typeof window !== "undefined" &&
   Boolean((window as any).RTCPeerConnection || (typeof navigator !== "undefined" && navigator.mediaDevices));
 
 export const isWebRTCSupported = isNativeWebRTC || isBrowserWebRTC;
 
+class SafeSessionDescription {
+  type: string;
+  sdp: string;
+  constructor(desc: any = {}) {
+    this.type = desc?.type || "";
+    this.sdp = desc?.sdp || "";
+  }
+  toJSON() {
+    return { type: this.type, sdp: this.sdp };
+  }
+}
+
+class SafeIceCandidate {
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+  constructor(cand: any = {}) {
+    this.candidate = cand?.candidate || "";
+    this.sdpMid = cand?.sdpMid ?? null;
+    this.sdpMLineIndex = cand?.sdpMLineIndex ?? null;
+  }
+  toJSON() {
+    return {
+      candidate: this.candidate,
+      sdpMid: this.sdpMid,
+      sdpMLineIndex: this.sdpMLineIndex,
+    };
+  }
+}
+
+class SafeMediaStream {
+  id: string;
+  private _tracks: any[];
+  constructor(tracks: any[] = []) {
+    this.id = `stream-${Date.now().toString(36)}`;
+    this._tracks = tracks;
+  }
+  getTracks() {
+    return this._tracks;
+  }
+  getVideoTracks() {
+    return this._tracks.filter((t: any) => t.kind === "video");
+  }
+  getAudioTracks() {
+    return this._tracks.filter((t: any) => t.kind === "audio");
+  }
+  addTrack(track: any) {
+    if (!this._tracks.includes(track)) {
+      this._tracks.push(track);
+    }
+  }
+  removeTrack(track: any) {
+    this._tracks = this._tracks.filter((t: any) => t !== track);
+  }
+  toURL() {
+    return "";
+  }
+}
+
 let RTCPeerConnection: any;
-let RTCIceCandidate: any;
-let RTCSessionDescription: any;
+let RTCIceCandidate: any = SafeIceCandidate;
+let RTCSessionDescription: any = SafeSessionDescription;
 let RTCView: any = View;
-let MediaStream: any;
+let MediaStream: any = SafeMediaStream;
 let mediaDevices: any;
 
 if (isNativeWebRTC) {
   try {
     const webrtc = require("react-native-webrtc");
     RTCPeerConnection = webrtc.RTCPeerConnection;
-    RTCIceCandidate = webrtc.RTCIceCandidate;
-    RTCSessionDescription = webrtc.RTCSessionDescription;
-    RTCView = webrtc.RTCView;
-    MediaStream = webrtc.MediaStream;
+    RTCIceCandidate = webrtc.RTCIceCandidate || SafeIceCandidate;
+    RTCSessionDescription = webrtc.RTCSessionDescription || SafeSessionDescription;
+    RTCView = webrtc.RTCView || View;
+    MediaStream = webrtc.MediaStream || SafeMediaStream;
     mediaDevices = webrtc.mediaDevices;
   } catch (err) {
     console.warn("[WebRTC] Failed to load native WebRTC module:", err);
   }
 } else if (isBrowserWebRTC) {
   RTCPeerConnection = (window as any).RTCPeerConnection;
-  RTCIceCandidate = (window as any).RTCIceCandidate;
-  RTCSessionDescription = (window as any).RTCSessionDescription;
-  MediaStream = (window as any).MediaStream;
+  RTCIceCandidate = (window as any).RTCIceCandidate || SafeIceCandidate;
+  RTCSessionDescription = (window as any).RTCSessionDescription || SafeSessionDescription;
+  MediaStream = (window as any).MediaStream || SafeMediaStream;
   mediaDevices = navigator.mediaDevices;
 
   // Universal RTCView component for web/mobile Safari
