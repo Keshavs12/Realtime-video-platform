@@ -65,7 +65,8 @@ export const LoginScreen = ({ onNavigateToSignup, onNavigateToSettings }: LoginS
           styles.scrollContent,
           isWide && styles.scrollContentWide,
         ]}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
+        showsVerticalScrollIndicator={false}
       >
         <View style={[styles.responsiveWrapper, isWide && styles.responsiveWrapperWide]}>
           {/* Top bar with server settings icon */}

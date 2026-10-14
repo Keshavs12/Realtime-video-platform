@@ -167,6 +167,7 @@ export const DashboardScreen = ({
           styles.scrollContent,
           isTablet && styles.scrollContentWide,
         ]}
+        keyboardShouldPersistTaps="always"
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={Colors.accent} />}
       >
         <View style={[styles.mainLayout, isTablet && styles.mainLayoutWide]}>

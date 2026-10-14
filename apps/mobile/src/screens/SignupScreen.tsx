@@ -139,7 +139,8 @@ export const SignupScreen = ({ onNavigateToLogin }: SignupScreenProps) => {
           styles.scrollContent,
           isWide && styles.scrollContentWide,
         ]}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
+        showsVerticalScrollIndicator={false}
       >
         <View style={[styles.responsiveWrapper, isWide && styles.responsiveWrapperWide]}>
           {/* Header */}

@@ -1,61 +1,101 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ViewStyle, TextInputProps } from "react-native";
+import React, { useState, useRef, useImperativeHandle, forwardRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+  ViewStyle,
+  TextInputProps,
+} from "react-native";
 import { Colors } from "../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 
-interface InputProps extends TextInputProps {
+export interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
   isPassword?: boolean;
 }
 
-export const Input = ({
-  label,
-  error,
-  containerStyle,
-  isPassword = false,
-  ...props
-}: InputProps) => {
-  const [isFocused, setIsFocused] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+export const Input = forwardRef<TextInput, InputProps>(
+  (
+    {
+      label,
+      error,
+      containerStyle,
+      isPassword = false,
+      onFocus,
+      onBlur,
+      ...props
+    },
+    ref
+  ) => {
+    const [isFocused, setIsFocused] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const innerInputRef = useRef<TextInput | null>(null);
 
-  return (
-    <View style={[styles.container, containerStyle]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View
-        style={[
-          styles.inputWrapper,
-          isFocused ? styles.inputFocused : null,
-          error ? styles.inputError : null,
-        ]}
-      >
-        <TextInput
-          placeholderTextColor={Colors.textSubtle}
-          style={styles.input}
-          secureTextEntry={isPassword && !showPassword}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          {...props}
-        />
-        {isPassword ? (
-          <TouchableOpacity
-            style={styles.eyeBtn}
-            onPress={() => setShowPassword(!showPassword)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
-              size={20}
-              color={isFocused ? Colors.primary : Colors.textMuted}
-            />
-          </TouchableOpacity>
+    useImperativeHandle(ref, () => innerInputRef.current as TextInput);
+
+    const handleFocusInput = () => {
+      innerInputRef.current?.focus();
+    };
+
+    return (
+      <View style={[styles.container, containerStyle]}>
+        {label ? (
+          <Pressable onPress={handleFocusInput} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Text style={styles.label}>{label}</Text>
+          </Pressable>
         ) : null}
+
+        <Pressable
+          onPress={handleFocusInput}
+          style={[
+            styles.inputWrapper,
+            isFocused ? styles.inputFocused : null,
+            error ? styles.inputError : null,
+          ]}
+        >
+          <TextInput
+            ref={innerInputRef}
+            placeholderTextColor={Colors.textSubtle}
+            style={styles.input}
+            secureTextEntry={isPassword && !showPassword}
+            onFocus={(e) => {
+              setIsFocused(true);
+              onFocus?.(e);
+            }}
+            onBlur={(e) => {
+              setIsFocused(false);
+              onBlur?.(e);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            {...props}
+          />
+          {isPassword ? (
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword(!showPassword)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={20}
+                color={isFocused ? Colors.primary : Colors.textMuted}
+              />
+            </TouchableOpacity>
+          ) : null}
+        </Pressable>
+        {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
       </View>
-      {error ? <Text style={styles.errorText}>⚠️ {error}</Text> : null}
-    </View>
-  );
-};
+    );
+  }
+);
+
+Input.displayName = "Input";
 
 const styles = StyleSheet.create({
   container: {
@@ -78,6 +118,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.10)",
     borderRadius: 14,
     paddingHorizontal: 15,
+    minHeight: 52,
   },
   inputFocused: {
     borderColor: Colors.primary,
@@ -96,7 +137,8 @@ const styles = StyleSheet.create({
     flex: 1,
     color: Colors.text,
     fontSize: 15,
-    paddingVertical: 14,
+    minHeight: 48,
+    paddingVertical: 12,
   },
   eyeBtn: {
     padding: 6,
@@ -108,4 +150,3 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 });
-
