@@ -26,6 +26,7 @@ export const closeRedisClients = async () => {
 
 interface JoinRoomPayload {
     roomId: string;
+    userId?: string;
     name?: string;
     isVideoMuted?: boolean;
     isAudioMuted?: boolean;
@@ -312,21 +313,18 @@ export const initSocketServer = (server: HttpServer): Server => {
                 .trim()
                 .toLowerCase();
 
-            const userId = socket.data.userId as string;
+            const userId = (socket.data.userId as string) || payload?.userId || (socket.handshake.auth?.userId as string) || `guest-${socket.id.slice(0, 8)}`;
+            socket.data.userId = userId;
 
             const name = await resolveJoinUserName(socket, userId, payload?.name);
-
-            if (!userId) {
-                console.warn(`⚠️ Rejected join-room: unauthenticated socket ${socket.id}`);
-                socket.emit("error", { message: "Authentication required" });
-                return;
-            }
 
             const room = await prisma.room.findFirst({
                 where: {
                     OR: [
                         { code: roomId },
                         { code: { equals: roomId, mode: "insensitive" } },
+                        { code: roomId.replace(/-/g, "") },
+                        { code: { equals: roomId.replace(/-/g, ""), mode: "insensitive" } },
                     ],
                 },
             });
@@ -336,22 +334,24 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
+            const canonicalRoomCode = room.code.toLowerCase().trim();
+
             const isHost = room.hostId === userId;
-            if (lockedRooms.has(roomId) && !isHost) {
-                console.warn(`🔒 Rejected join-room: room ${roomId} is locked by host`);
+            if (lockedRooms.has(canonicalRoomCode) && !isHost) {
+                console.warn(`🔒 Rejected join-room: room ${canonicalRoomCode} is locked by host`);
                 socket.emit("room-locked", {
-                    roomId,
+                    roomId: canonicalRoomCode,
                     message: "This room is currently locked by the host. Please ask the host to unlock.",
                 });
                 return;
             }
 
             // Waiting Room check (Google Meet / Zoom Knock-to-Join)
-            if (waitingRooms.has(roomId) && !isHost && !socket.data.isAdmitted) {
-                let queue = roomWaitingQueues.get(roomId);
+            if (waitingRooms.has(canonicalRoomCode) && !isHost && !socket.data.isAdmitted) {
+                let queue = roomWaitingQueues.get(canonicalRoomCode);
                 if (!queue) {
                     queue = [];
-                    roomWaitingQueues.set(roomId, queue);
+                    roomWaitingQueues.set(canonicalRoomCode, queue);
                 }
                 const existingIdx = queue.findIndex((g) => g.userId === userId || g.socketId === socket.id);
                 const guestEntry: WaitingGuest = {
@@ -366,16 +366,16 @@ export const initSocketServer = (server: HttpServer): Server => {
                     queue.push(guestEntry);
                 }
 
-                socket.data.roomId = roomId;
+                socket.data.roomId = canonicalRoomCode;
                 socket.data.isGuestWaiting = true;
 
                 socket.emit("waiting-room-pending", {
-                    roomId,
+                    roomId: canonicalRoomCode,
                     message: "Waiting for the host to admit you to the meeting...",
                 });
 
                 // Notify all hosts in room
-                const socketsInRoom = await io.in(roomId).fetchSockets();
+                const socketsInRoom = await io.in(canonicalRoomCode).fetchSockets();
                 socketsInRoom
                     .filter((s) => s.data.isHost)
                     .forEach((hostSocket) => {
@@ -388,28 +388,28 @@ export const initSocketServer = (server: HttpServer): Server => {
                 return;
             }
 
-            await evictStaleSockets(io, socket, roomId, userId);
+            await evictStaleSockets(io, socket, canonicalRoomCode, userId);
 
             const MAX_ROOM_CAPACITY = 8;
-            const activeSockets = await io.in(roomId).fetchSockets();
+            const activeSockets = await io.in(canonicalRoomCode).fetchSockets();
             const activeUsers = new Set(activeSockets.map((s) => s.data.userId).filter(Boolean));
             if (!activeUsers.has(userId) && activeUsers.size >= MAX_ROOM_CAPACITY) {
-                console.warn(`⚠️ Rejected join-room: room ${roomId} is full (${activeUsers.size}/${MAX_ROOM_CAPACITY})`);
+                console.warn(`⚠️ Rejected join-room: room ${canonicalRoomCode} is full (${activeUsers.size}/${MAX_ROOM_CAPACITY})`);
                 socket.emit("room-full", {
-                    roomId,
+                    roomId: canonicalRoomCode,
                     maxCapacity: MAX_ROOM_CAPACITY,
                     message: "Room is full. Maximum participant limit reached.",
                 });
                 return;
             }
 
-            socket.data.roomId = roomId;
+            socket.data.roomId = canonicalRoomCode;
             socket.data.roomDbId = room.id;
             socket.data.isHost = isHost;
             socket.data.isVideoMuted = Boolean(payload?.isVideoMuted);
             socket.data.isAudioMuted = Boolean(payload?.isAudioMuted);
 
-            await socket.join(roomId);
+            await socket.join(canonicalRoomCode);
             if (!socket.data.isGuest) {
                 try {
                     await prisma.roomParticipant.create({
@@ -419,16 +419,16 @@ export const initSocketServer = (server: HttpServer): Server => {
                     console.error("Failed to record room participant in DB:", dbErr);
                 }
             }
-            console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${roomId}`);
+            console.log(`🚪 User ${userId} (${name || "Guest"})${isHost ? " [HOST]" : ""} joined room: ${canonicalRoomCode}`);
 
             socket.emit("room-info", {
-                roomId,
+                roomId: canonicalRoomCode,
                 isHost,
-                isLocked: lockedRooms.has(roomId),
+                isLocked: lockedRooms.has(canonicalRoomCode),
                 hostId: room.hostId,
             });
 
-            socket.to(roomId).emit("user-joined", {
+            socket.to(canonicalRoomCode).emit("user-joined", {
                 socketId: socket.id,
                 userId,
                 name,
@@ -437,9 +437,9 @@ export const initSocketServer = (server: HttpServer): Server => {
                 isAudioMuted: Boolean(socket.data.isAudioMuted),
             });
 
-            const usersInRoom = await getRoomPeerUsers(io, roomId, socket.id, userId);
+            const usersInRoom = await getRoomPeerUsers(io, canonicalRoomCode, socket.id, userId);
             socket.emit("room-users", {
-                roomId,
+                roomId: canonicalRoomCode,
                 users: usersInRoom,
             });
 
@@ -447,19 +447,19 @@ export const initSocketServer = (server: HttpServer): Server => {
 
             // Replay polls history
             socket.emit("room-polls-history", {
-                polls: roomPolls.get(roomId) || [],
+                polls: roomPolls.get(canonicalRoomCode) || [],
             });
 
             // Replay shared meeting notes
             socket.emit("notes-history", {
-                notes: roomNotes.get(roomId) || "",
+                notes: roomNotes.get(canonicalRoomCode) || "",
             });
 
             // If host, send current waiting room queue
             if (isHost) {
                 socket.emit("waiting-queue-update", {
-                    queue: roomWaitingQueues.get(roomId) || [],
-                    isWaitingRoomEnabled: waitingRooms.has(roomId),
+                    queue: roomWaitingQueues.get(canonicalRoomCode) || [],
+                    isWaitingRoomEnabled: waitingRooms.has(canonicalRoomCode),
                 });
             }
         });
@@ -614,7 +614,7 @@ export const initSocketServer = (server: HttpServer): Server => {
                 at,
             });
 
-            if (roomDbId) {
+            if (roomDbId && !socket.data.isGuest && userId && !userId.startsWith("guest-")) {
                 prisma.chatMessage
                     .create({ data: { roomId: roomDbId, userId, message } })
                     .catch((err) => console.error("Failed to persist chat message:", err));

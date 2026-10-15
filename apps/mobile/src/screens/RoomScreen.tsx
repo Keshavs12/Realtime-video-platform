@@ -35,6 +35,7 @@ import {
   switchCameraFacing,
   isWebRTCSupported,
   isNativeWebRTC,
+  FALLBACK_ICE_SERVERS,
 } from "../services/webrtc.service";
 
 interface RoomScreenProps {
@@ -56,7 +57,8 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   const localStreamRef = useRef<any | null>(null);
   const [localStream, setLocalStream] = useState<any | null>(null);
   const peerConnectionsRef = useRef<{ [socketId: string]: RTCPeerConnection }>({});
-  const iceServersRef = useRef<any[]>([]);
+  const iceServersRef = useRef<any[]>(FALLBACK_ICE_SERVERS);
+  const [iceServers, setIceServers] = useState<any[]>(FALLBACK_ICE_SERVERS);
   const iceCandidatesQueueRef = useRef<{ [socketId: string]: RTCIceCandidate[] }>({});
 
   // Participant & Room state
@@ -216,8 +218,9 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     const setupCall = async () => {
       // 1. Fetch ICE Servers (STUN/TURN)
       const servers = await fetchIceServers();
-      if (isMounted) {
+      if (isMounted && servers && servers.length > 0) {
         iceServersRef.current = servers;
+        setIceServers(servers);
       }
 
       // 2. Request local camera & mic
@@ -245,14 +248,19 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       // 3. Connect to Socket.IO signaling server
       const socketUrl = await getSocketBaseUrl();
       const token = await getStoredToken();
-      const cleanRoomCode = roomCode.trim().toLowerCase();
+      const cleanRoomCode = roomCode.replace(/[^a-zA-Z0-9_-]/g, "").trim().toLowerCase();
 
       const socket = io(socketUrl, {
-        auth: token ? { token } : { guestName: user?.name || "Mobile User" },
+        auth: {
+          token: token || undefined,
+          guestName: user?.name || "Mobile User",
+          userId: user?.id,
+        },
         transports: ["websocket", "polling"],
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
+        extraHeaders: { "ngrok-skip-browser-warning": "true" },
       });
 
       socketRef.current = socket;
@@ -274,6 +282,14 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
       if (socket.connected) {
         emitJoin();
       }
+
+      socket.on("connect_error", (err) => {
+        console.warn("[Socket] Connect error:", err.message);
+      });
+
+      socket.on("error", (err: any) => {
+        console.warn("[Socket] Error event:", err?.message || err);
+      });
 
       socket.on("room-info", ({ isHost: hostFlag, isLocked: lockedFlag }: { isHost: boolean; isLocked?: boolean }) => {
         if (!isMounted) return;
@@ -1023,7 +1039,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           user={user}
           isVideoMuted={isVideoMuted}
           isAudioMuted={isAudioMuted}
-          iceServers={iceServersRef.current}
+          iceServers={iceServers}
           onOfferCreated={(to, offer) => {
             socketRef.current?.emit("offer", {
               to,

@@ -18,7 +18,8 @@ import { authenticate } from "../auth/auth.middleware";
 
 const roomsRouter = Router();
 
-// Public / In-call meeting summary endpoint (allows guests or authenticated users)
+// Public endpoints (allows guests or authenticated users to check room and summarize)
+roomsRouter.get("/:code/exists", checkRoomExists);
 roomsRouter.post("/summarize", summarizeMeeting);
 
 roomsRouter.use(authenticate);
@@ -26,6 +27,5 @@ roomsRouter.use(authenticate);
 roomsRouter.post("/", createRoom);
 roomsRouter.get("/history", getRoomHistory);
 roomsRouter.get("/stats", getDashboardStats);
-roomsRouter.get("/:code/exists", checkRoomExists);
 
 export default roomsRouter;

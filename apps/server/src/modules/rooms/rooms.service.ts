@@ -45,6 +45,8 @@ export const checkRoomExists = async (code: string) => {
             OR: [
                 { code: clean },
                 { code: { equals: clean, mode: "insensitive" } },
+                { code: clean.replace(/-/g, "") },
+                { code: { equals: clean.replace(/-/g, ""), mode: "insensitive" } },
             ],
         },
     });

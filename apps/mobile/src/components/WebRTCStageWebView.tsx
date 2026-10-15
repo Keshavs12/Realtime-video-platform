@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useImperativeHandle, forwardRef, useState } from "react";
+import React, { useRef, useEffect, useImperativeHandle, forwardRef, useState, useCallback } from "react";
 import { View, StyleSheet, ActivityIndicator, Text } from "react-native";
 import { WebView } from "react-native-webview";
 import { User } from "../types";
@@ -44,21 +44,43 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
   ) => {
     const webViewRef = useRef<WebView | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const pendingQueueRef = useRef<any[]>([]);
+    const webViewReadyRef = useRef(false);
 
     const safeRoomCode = (roomCode || "").trim().toLowerCase();
-    const userName = user?.name || "Mobile User";
-    const initialLetter = (userName[0] || "U").toUpperCase();
+    const userName = (user?.name || "Mobile User").replace(/'/g, "\\'");
+    const initialLetter = ((user?.name || "M")[0] || "M").toUpperCase();
 
-    // Helper to send message into WebView
-    const injectMessage = (data: any) => {
+    // Safety timeout: ensure "Connecting HD Call…" never hangs forever
+    useEffect(() => {
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }, []);
+
+    // Helper: inject a message into the WebView JS bridge
+    const injectMessage = useCallback((data: any) => {
+      if (!webViewReadyRef.current) {
+        pendingQueueRef.current.push(data);
+        return;
+      }
       const json = JSON.stringify(data);
-      webViewRef.current?.injectJavaScript(`
-        if (typeof window.handleRNMessage === 'function') {
-          window.handleRNMessage(${json});
-        }
-        true;
-      `);
-    };
+      webViewRef.current?.injectJavaScript(
+        `if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}true;`
+      );
+    }, []);
+
+    // Flush queued messages after WebView JS signals readiness
+    const flushPendingQueue = useCallback(() => {
+      const queue = pendingQueueRef.current.splice(0);
+      for (const data of queue) {
+        const json = JSON.stringify(data);
+        webViewRef.current?.injectJavaScript(
+          `if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}true;`
+        );
+      }
+    }, []);
 
     // Imperative methods exposed to RoomScreen
     useImperativeHandle(ref, () => ({
@@ -76,186 +98,112 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       },
     }));
 
-    // Pass ICE servers when available
+    // Forward ICE servers whenever updated
     useEffect(() => {
       if (iceServers && iceServers.length > 0) {
         injectMessage({ type: "SET_ICE_SERVERS", iceServers });
       }
-    }, [iceServers]);
+    }, [iceServers, injectMessage]);
 
-    // Handle incoming events from the WebRTC WebView engine
+    // Handle messages posted from inside the WebView
     const handleMessage = (event: any) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
-
         switch (data.type) {
           case "READY":
+            webViewReadyRef.current = true;
+            flushPendingQueue();
+            break;
           case "LOCAL_STREAM_READY":
             setIsLoading(false);
             onLocalStreamReady?.();
+            flushPendingQueue();
             break;
-
+          case "MEDIA_ERROR":
+            setIsLoading(false);
+            onLocalStreamReady?.();
+            flushPendingQueue();
+            break;
           case "OFFER_CREATED":
             onOfferCreated?.(data.to, data.offer);
             break;
-
           case "ANSWER_CREATED":
             onAnswerCreated?.(data.to, data.answer);
             break;
-
           case "ICE_CANDIDATE_GENERATED":
             onIceCandidateGenerated?.(data.to, data.candidate);
             break;
-
           case "PEER_COUNT":
-            onParticipantCountChange?.(data.count);
+            if (typeof data.count === "number") {
+              onParticipantCountChange?.(data.count);
+            }
             break;
-
           case "REMOTE_STREAM_RECEIVED":
             onRemoteStreamReceived?.(data.peerSocketId);
             break;
-
           default:
             break;
         }
       } catch {
-        // Ignore unparseable messages
+        // Ignore non-JSON messages
       }
     };
 
-    // Embedded HTML with Apple WKWebView Hardware WebRTC Engine
-    const htmlContent = `
-<!DOCTYPE html>
+    // ─── Embedded WKWebView HTML/JS ────────────────────────────────────────────
+    const htmlContent = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      background-color: #070b13;
-      color: #ffffff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    #stage {
-      flex: 1;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px;
-      padding: 12px;
-      align-content: center;
-      justify-content: center;
-      width: 100%;
-      height: 100%;
-    }
-    .video-card {
-      position: relative;
-      background: #0f172a;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 18px;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 200px;
-      max-height: 100%;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .video-card.speaking {
-      border-color: #6366f1;
-      box-shadow: 0 0 16px rgba(99, 102, 241, 0.5);
-    }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-    }
-    video.mirrored {
-      transform: scaleX(-1);
-    }
-    .name-badge {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: rgba(15, 23, 42, 0.78);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #f8fafc;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      z-index: 2;
-    }
-    .avatar-placeholder {
-      position: absolute;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      background: radial-gradient(circle at center, #1e1b4b, #070b13);
-      z-index: 1;
-    }
-    .avatar-circle {
-      width: 68px;
-      height: 68px;
-      border-radius: 34px;
-      background: linear-gradient(135deg, #6366f1, #3b82f6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 8px;
-      box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
-    }
-    .cam-off-label {
-      font-size: 11px;
-      color: #94a3b8;
-      letter-spacing: 0.5px;
-    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:#070b13;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden;width:100vw;height:100vh;display:flex;flex-direction:column}
+    #stage{flex:1;display:grid;grid-template-columns:1fr;gap:12px;padding:12px;width:100%;height:100%;align-content:stretch;justify-content:stretch}
+    .video-card{position:relative;background:#0f172a;border:1.5px solid rgba(255,255,255,0.14);border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0;box-shadow:0 8px 30px rgba(0,0,0,0.5);transition:border-color .2s,box-shadow .2s}
+    .video-card.speaking{border-color:#6366f1;box-shadow:0 0 20px rgba(99,102,241,0.6)}
+    video{width:100%;height:100%;object-fit:cover;background:#000;display:block}
+    video.mirrored{transform:scaleX(-1)}
+    .name-badge{position:absolute;bottom:12px;left:12px;background:rgba(15,23,42,0.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:5px 12px;border-radius:12px;font-size:12px;font-weight:600;color:#f8fafc;border:1px solid rgba(255,255,255,0.12);display:flex;align-items:center;gap:6px;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+    .name-badge .dot{width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981}
+    .avatar-placeholder{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(circle at center,#1e1b4b,#070b13);z-index:2}
+    .avatar-circle{width:76px;height:76px;border-radius:38px;background:linear-gradient(135deg,#6366f1,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff;margin-bottom:8px;box-shadow:0 0 24px rgba(99,102,241,0.45)}
+    .cam-off-label{font-size:11px;color:#94a3b8;letter-spacing:.5px}
   </style>
 </head>
 <body>
   <div id="stage">
-    <!-- Local Participant Card -->
     <div id="card-local" class="video-card">
-      <video id="localVideo" autoplay playsinline muted class="mirrored"></video>
+      <video id="localVideo" autoplay playsinline webkit-playsinline muted class="mirrored"></video>
       <div id="avatar-local" class="avatar-placeholder">
         <div class="avatar-circle">${initialLetter}</div>
         <div class="cam-off-label">Camera Off</div>
       </div>
-      <div class="name-badge">
-        <span>${userName} (You)</span>
-      </div>
+      <div class="name-badge"><div class="dot"></div><span>${userName} (You)</span></div>
     </div>
   </div>
 
   <script>
-    let localStream = null;
-    let peerConnections = {};
-    let remoteStreams = {};
-    let iceQueues = {};
-    let iceServers = [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" }
+    var localStream = null;
+    var peerConnections = {};
+    var remoteStreams = {};
+    var iceQueues = {};
+    var signalingQueue = [];
+    var localStreamReady = false;
+
+    // Default STUN and robust Metered TURN relays for reliable multi-network P2P connections
+    var iceServers = [
+      {urls:"stun:stun.l.google.com:19302"},
+      {urls:"stun:stun1.l.google.com:19302"},
+      {urls:"stun:stun.relay.metered.ca:80"},
+      {urls:"turn:global.relay.metered.ca:80",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
+      {urls:"turn:global.relay.metered.ca:80?transport=tcp",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
+      {urls:"turn:global.relay.metered.ca:443",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
+      {urls:"turns:global.relay.metered.ca:443?transport=tcp",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"}
     ];
-    let facingMode = "user";
-    let isVideoMuted = ${Boolean(isVideoMuted)};
-    let isAudioMuted = ${Boolean(isAudioMuted)};
+
+    var facingMode = "user";
+    var isVideoMuted = ${Boolean(isVideoMuted)};
+    var isAudioMuted = ${Boolean(isAudioMuted)};
 
     function postToRN(data) {
       if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
@@ -263,94 +211,245 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       }
     }
 
-    // Flush any queued ICE candidates once remote description is set
+    function updateLayout() {
+      var stage = document.getElementById("stage");
+      if (!stage) return;
+      var cards = stage.querySelectorAll(".video-card");
+      var count = cards.length;
+      var isLandscape = window.innerWidth > window.innerHeight;
+
+      if (count <= 1) {
+        stage.style.gridTemplateColumns = "1fr";
+        stage.style.gridTemplateRows = "1fr";
+      } else if (count === 2) {
+        if (isLandscape) {
+          stage.style.gridTemplateColumns = "1fr 1fr";
+          stage.style.gridTemplateRows = "1fr";
+        } else {
+          stage.style.gridTemplateColumns = "1fr";
+          stage.style.gridTemplateRows = "1fr 1fr";
+        }
+      } else {
+        stage.style.gridTemplateColumns = "1fr 1fr";
+        stage.style.gridTemplateRows = count > 4 ? "repeat(auto-fit, minmax(180px, 1fr))" : "1fr 1fr";
+      }
+      postToRN({type:"PEER_COUNT",count:count});
+    }
+    window.addEventListener("resize", updateLayout);
+
     async function flushIceQueue(socketId) {
-      const pc = peerConnections[socketId];
-      const queue = iceQueues[socketId] || [];
+      var pc = peerConnections[socketId];
+      var queue = iceQueues[socketId] || [];
       if (pc && pc.remoteDescription && queue.length > 0) {
-        for (const cand of queue) {
-          try {
-            await pc.addIceCandidate(cand);
-          } catch (e) {
-            console.warn("Error applying queued ICE:", e);
-          }
+        for (var i = 0; i < queue.length; i++) {
+          try { await pc.addIceCandidate(queue[i]); } catch(e) { console.warn("Queued ICE err:",e); }
         }
         iceQueues[socketId] = [];
       }
     }
 
-    // Capture Local Camera & Microphone
-    async function initLocalStream() {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-        });
-
-        const localVideo = document.getElementById("localVideo");
-        if (localVideo) {
-          localVideo.srcObject = localStream;
-          localVideo.play().catch(() => {});
-        }
-
-        // Apply initial mute states
-        if (isAudioMuted) {
-          localStream.getAudioTracks().forEach(t => { t.enabled = false; });
-        }
-        if (isVideoMuted) {
-          localStream.getVideoTracks().forEach(t => { t.enabled = false; });
-          const av = document.getElementById("avatar-local");
-          if (av) av.style.display = "flex";
-        }
-
-        postToRN({ type: "LOCAL_STREAM_READY" });
-      } catch (err) {
-        console.error("Local media error:", err);
-        postToRN({ type: "MEDIA_ERROR", error: err.message });
+    async function flushSignalingQueue() {
+      var queue = signalingQueue.splice(0);
+      for (var i = 0; i < queue.length; i++) {
+        try { await handleRNMessage(queue[i]); } catch(e) { console.error("Signaling queue err:", e); }
       }
     }
 
-    // Get or Create RTCPeerConnection for a remote peer
-    function getOrCreatePC(peerSocketId, peerName) {
-      if (peerConnections[peerSocketId]) {
-        return peerConnections[peerSocketId];
+    // High-performance canvas fallback stream with animated user avatar
+    function createFallbackCanvasStream(initial, name, micAudioTrack) {
+      var canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 480;
+      var ctx = canvas.getContext("2d");
+      var angle = 0;
+
+      function renderFrame() {
+        if (!ctx) return;
+        ctx.fillStyle = "#070b13";
+        ctx.fillRect(0, 0, 640, 480);
+
+        // Ambient background glow
+        var radGrad = ctx.createRadialGradient(320, 220, 10, 320, 220, 240);
+        radGrad.addColorStop(0, "rgba(99, 102, 241, 0.28)");
+        radGrad.addColorStop(1, "rgba(7, 11, 19, 0)");
+        ctx.fillStyle = radGrad;
+        ctx.fillRect(0, 0, 640, 480);
+
+        // Center Avatar Circle
+        var grad = ctx.createLinearGradient(240, 140, 400, 300);
+        grad.addColorStop(0, "#6366f1");
+        grad.addColorStop(1, "#3b82f6");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(320, 220, 75, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 64px -apple-system, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initial || "U", 320, 224);
+
+        ctx.font = "600 20px -apple-system, sans-serif";
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(name || "Mobile User", 320, 340);
+
+        ctx.font = "500 13px -apple-system, sans-serif";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("Camera Off • Audio Active", 320, 370);
+      }
+      renderFrame();
+
+      var stream = canvas.captureStream ? canvas.captureStream(15) : null;
+      if (!stream) {
+        stream = new MediaStream();
       }
 
-      const pc = new RTCPeerConnection({ iceServers: iceServers });
+      // Add real microphone audio track if available, else create silent audio track
+      if (micAudioTrack) {
+        stream.addTrack(micAudioTrack);
+      } else {
+        try {
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            var audioCtx = new AudioCtx();
+            var osc = audioCtx.createOscillator();
+            var dst = audioCtx.createMediaStreamDestination();
+            var gain = audioCtx.createGain();
+            gain.gain.value = 0;
+            osc.connect(gain);
+            gain.connect(dst);
+            osc.start();
+            var silentTrack = dst.stream.getAudioTracks()[0];
+            if (silentTrack) stream.addTrack(silentTrack);
+          }
+        } catch(e) {}
+      }
+      return stream;
+    }
+
+    // Robust multi-tier getUserMedia with timeout guarantee
+    async function initLocalStream() {
+      var acquired = null;
+      var micTrack = null;
+
+      var acquireWithTimeout = new Promise(async function(resolve) {
+        var timer = setTimeout(function() {
+          console.warn("[Media] getUserMedia timed out after 2500ms, falling back gracefully");
+          resolve(null);
+        }, 2500);
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          clearTimeout(timer);
+          resolve(null);
+          return;
+        }
+
+        // Tier 1: User-facing video + audio
+        try {
+          var s1 = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          });
+          clearTimeout(timer);
+          resolve(s1);
+          return;
+        } catch (e1) {
+          console.warn("Tier 1 getUserMedia rejected:", e1?.name || e1);
+        }
+
+        // Tier 2: Generic video + audio
+        try {
+          var s2 = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          clearTimeout(timer);
+          resolve(s2);
+          return;
+        } catch (e2) {
+          console.warn("Tier 2 getUserMedia rejected:", e2?.name || e2);
+        }
+
+        // Tier 3: Audio only
+        try {
+          var s3 = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          clearTimeout(timer);
+          resolve(s3);
+          return;
+        } catch (e3) {
+          console.warn("Tier 3 audio-only rejected:", e3?.name || e3);
+        }
+
+        clearTimeout(timer);
+        resolve(null);
+      });
+
+      acquired = await acquireWithTimeout;
+
+      if (acquired && acquired.getVideoTracks().length > 0) {
+        localStream = acquired;
+      } else {
+        if (acquired && acquired.getAudioTracks().length > 0) {
+          micTrack = acquired.getAudioTracks()[0];
+        }
+        localStream = createFallbackCanvasStream("${initialLetter}", "${userName}", micTrack);
+      }
+
+      var lv = document.getElementById("localVideo");
+      if (lv) {
+        lv.srcObject = localStream;
+        lv.play().catch(function(){});
+      }
+
+      if (isAudioMuted && localStream) {
+        localStream.getAudioTracks().forEach(function(t) { t.enabled = false; });
+      }
+      if (isVideoMuted && localStream) {
+        localStream.getVideoTracks().forEach(function(t) { t.enabled = false; });
+        var av = document.getElementById("avatar-local");
+        if (av) av.style.display = "flex";
+      }
+
+      localStreamReady = true;
+      postToRN({type: "LOCAL_STREAM_READY"});
+      await flushSignalingQueue();
+      updateLayout();
+    }
+
+    function getOrCreatePC(peerSocketId, peerName) {
+      if (peerConnections[peerSocketId]) return peerConnections[peerSocketId];
+      var pc = new RTCPeerConnection({ iceServers: iceServers });
       peerConnections[peerSocketId] = pc;
       iceQueues[peerSocketId] = [];
 
-      // Add local tracks to the connection
       if (localStream) {
-        localStream.getTracks().forEach(track => {
-          pc.addTrack(track, localStream);
+        localStream.getTracks().forEach(function(t) {
+          try { pc.addTrack(t, localStream); } catch(e) {}
         });
       }
 
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          postToRN({
-            type: "ICE_CANDIDATE_GENERATED",
-            to: peerSocketId,
-            candidate: event.candidate
-          });
+      pc.onicecandidate = function(e) {
+        if (e.candidate) {
+          postToRN({ type: "ICE_CANDIDATE_GENERATED", to: peerSocketId, candidate: e.candidate });
         }
       };
 
-      pc.ontrack = (event) => {
-        let stream = event.streams && event.streams[0] ? event.streams[0] : null;
-        if (!stream && event.track) {
-          stream = new MediaStream([event.track]);
-        }
-        if (stream) {
+      pc.ontrack = function(e) {
+        var stream = (e.streams && e.streams[0]) ? e.streams[0] : null;
+        if (!stream) {
+          if (!remoteStreams[peerSocketId]) {
+            remoteStreams[peerSocketId] = new MediaStream();
+          }
+          if (e.track) remoteStreams[peerSocketId].addTrack(e.track);
+          stream = remoteStreams[peerSocketId];
+        } else {
           remoteStreams[peerSocketId] = stream;
-          renderRemoteVideo(peerSocketId, peerName, stream);
-          postToRN({ type: "REMOTE_STREAM_RECEIVED", peerSocketId });
         }
+
+        renderRemoteVideo(peerSocketId, peerName, stream);
+        postToRN({ type: "REMOTE_STREAM_RECEIVED", peerSocketId: peerSocketId });
       };
 
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      pc.onconnectionstatechange = function() {
+        if (pc.connectionState === 'closed') {
           removeRemoteVideo(peerSocketId);
         }
       };
@@ -358,127 +457,122 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       return pc;
     }
 
-    // Render remote peer card in grid
     function renderRemoteVideo(peerSocketId, peerName, stream) {
-      const stage = document.getElementById("stage");
-      let card = document.getElementById("card-" + peerSocketId);
+      var stage = document.getElementById("stage");
+      var card = document.getElementById("card-" + peerSocketId);
 
       if (!card) {
         card = document.createElement("div");
         card.id = "card-" + peerSocketId;
         card.className = "video-card";
 
-        const video = document.createElement("video");
+        var video = document.createElement("video");
         video.id = "video-" + peerSocketId;
         video.autoplay = true;
         video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.setAttribute("webkit-playsinline", "");
         video.srcObject = stream;
 
-        const nameBadge = document.createElement("div");
-        nameBadge.className = "name-badge";
-        nameBadge.innerText = peerName || "Participant";
+        var avatar = document.createElement("div");
+        avatar.id = "avatar-" + peerSocketId;
+        avatar.className = "avatar-placeholder";
+        var letter = (peerName || "P")[0].toUpperCase();
+        avatar.innerHTML = '<div class="avatar-circle">' + letter + '</div><div class="cam-off-label">Camera Off</div>';
+
+        var badge = document.createElement("div");
+        badge.className = "name-badge";
+        badge.innerHTML = '<div class="dot"></div><span>' + (peerName || "Participant") + '</span>';
 
         card.appendChild(video);
-        card.appendChild(nameBadge);
+        card.appendChild(avatar);
+        card.appendChild(badge);
         stage.appendChild(card);
-        video.play().catch(() => {});
+
+        video.play().catch(function(){});
       } else {
-        const video = card.querySelector("video");
+        var video = card.querySelector("video");
         if (video) {
           video.srcObject = stream;
-          video.play().catch(() => {});
+          video.play().catch(function(){});
         }
       }
-
-      updatePeerCount();
+      updateLayout();
     }
 
     function removeRemoteVideo(peerSocketId) {
-      const card = document.getElementById("card-" + peerSocketId);
+      var card = document.getElementById("card-" + peerSocketId);
       if (card) card.remove();
       if (peerConnections[peerSocketId]) {
-        try { peerConnections[peerSocketId].close(); } catch (e) {}
+        try { peerConnections[peerSocketId].close(); } catch(e) {}
         delete peerConnections[peerSocketId];
       }
       delete remoteStreams[peerSocketId];
       delete iceQueues[peerSocketId];
-      updatePeerCount();
+      updateLayout();
     }
 
-    function updatePeerCount() {
-      const count = Object.keys(peerConnections).length + 1;
-      postToRN({ type: "PEER_COUNT", count });
-    }
-
-    // Handle messages sent from React Native
     window.handleRNMessage = async function(msg) {
       if (!msg || !msg.type) return;
 
-      switch (msg.type) {
+      // Signaling that requires local tracks waits for stream init
+      if ((msg.type === "INITIATE_PEER" || msg.type === "HANDLE_OFFER") && !localStreamReady) {
+        signalingQueue.push(msg);
+        return;
+      }
+
+      switch(msg.type) {
         case "SET_ICE_SERVERS":
-          if (msg.iceServers && Array.isArray(msg.iceServers)) {
+          if (msg.iceServers && Array.isArray(msg.iceServers) && msg.iceServers.length > 0) {
             iceServers = msg.iceServers;
           }
           break;
 
         case "INITIATE_PEER": {
-          if (msg.iceServers) iceServers = msg.iceServers;
-          const pc = getOrCreatePC(msg.peerSocketId, msg.peerName);
-          try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            postToRN({
-              type: "OFFER_CREATED",
-              to: msg.peerSocketId,
-              offer: offer
-            });
-          } catch (e) {
-            console.error("Error creating offer:", e);
+          if (msg.iceServers && Array.isArray(msg.iceServers) && msg.iceServers.length > 0) {
+            iceServers = msg.iceServers;
           }
+          var pc = getOrCreatePC(msg.peerSocketId, msg.peerName);
+          try {
+            var offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            postToRN({ type: "OFFER_CREATED", to: msg.peerSocketId, offer: offer });
+          } catch(e) { console.error("createOffer err:", e); }
           break;
         }
 
         case "HANDLE_OFFER": {
-          if (msg.iceServers) iceServers = msg.iceServers;
-          const pc = getOrCreatePC(msg.from, msg.name);
+          if (msg.iceServers && Array.isArray(msg.iceServers) && msg.iceServers.length > 0) {
+            iceServers = msg.iceServers;
+          }
+          var pc = getOrCreatePC(msg.from, msg.name);
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
             await flushIceQueue(msg.from);
-            const answer = await pc.createAnswer();
+            var answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            postToRN({
-              type: "ANSWER_CREATED",
-              to: msg.from,
-              answer: answer
-            });
-          } catch (e) {
-            console.error("Error handling offer:", e);
-          }
+            await flushIceQueue(msg.from);
+            postToRN({ type: "ANSWER_CREATED", to: msg.from, answer: answer });
+          } catch(e) { console.error("handleOffer err:", e); }
           break;
         }
 
         case "HANDLE_ANSWER": {
-          const pc = peerConnections[msg.from];
+          var pc = peerConnections[msg.from];
           if (pc) {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
               await flushIceQueue(msg.from);
-            } catch (e) {
-              console.error("Error handling answer:", e);
-            }
+            } catch(e) { console.error("handleAnswer err:", e); }
           }
           break;
         }
 
         case "HANDLE_ICE_CANDIDATE": {
-          const pc = peerConnections[msg.from];
-          const cand = new RTCIceCandidate(msg.candidate);
+          var pc = peerConnections[msg.from];
+          var cand = new RTCIceCandidate(msg.candidate);
           if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-            try {
-              await pc.addIceCandidate(cand);
-            } catch (e) {
-              console.warn("Direct ICE error:", e);
-            }
+            try { await pc.addIceCandidate(cand); } catch(e) { console.warn("ICE err:", e); }
           } else {
             if (!iceQueues[msg.from]) iceQueues[msg.from] = [];
             iceQueues[msg.from].push(cand);
@@ -493,61 +587,51 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         case "TOGGLE_AUDIO":
           isAudioMuted = Boolean(msg.muted);
           if (localStream) {
-            localStream.getAudioTracks().forEach(t => { t.enabled = !isAudioMuted; });
+            localStream.getAudioTracks().forEach(function(t) { t.enabled = !isAudioMuted; });
           }
           break;
 
         case "TOGGLE_VIDEO": {
           isVideoMuted = Boolean(msg.muted);
-          const av = document.getElementById("avatar-local");
-          const v = document.getElementById("localVideo");
+          var av = document.getElementById("avatar-local");
+          var v  = document.getElementById("localVideo");
           if (av) av.style.display = isVideoMuted ? "flex" : "none";
-          if (v) v.style.opacity = isVideoMuted ? "0" : "1";
+          if (v)  v.style.opacity  = isVideoMuted ? "0" : "1";
           if (localStream) {
-            localStream.getVideoTracks().forEach(t => { t.enabled = !isVideoMuted; });
+            localStream.getVideoTracks().forEach(function(t) { t.enabled = !isVideoMuted; });
           }
           break;
         }
 
         case "FLIP_CAMERA": {
           facingMode = facingMode === "user" ? "environment" : "user";
-          const v = document.getElementById("localVideo");
+          var v = document.getElementById("localVideo");
           if (v) {
-            if (facingMode === "user") {
-              v.classList.add("mirrored");
-            } else {
-              v.classList.remove("mirrored");
-            }
+            facingMode === "user" ? v.classList.add("mirrored") : v.classList.remove("mirrored");
           }
-
           if (localStream) {
-            const oldTrack = localStream.getVideoTracks()[0];
-            if (oldTrack) oldTrack.stop();
+            var ot = localStream.getVideoTracks()[0];
+            if (ot) ot.stop();
           }
-
           try {
-            const newStream = await navigator.mediaDevices.getUserMedia({
+            var ns = await navigator.mediaDevices.getUserMedia({
               video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } }
             });
-            const newTrack = newStream.getVideoTracks()[0];
-            if (localStream && newTrack) {
-              localStream.removeTrack(localStream.getVideoTracks()[0]);
-              localStream.addTrack(newTrack);
+            var nt = ns.getVideoTracks()[0];
+            if (localStream && nt) {
+              var ovt = localStream.getVideoTracks();
+              if (ovt[0]) localStream.removeTrack(ovt[0]);
+              localStream.addTrack(nt);
               if (v) {
                 v.srcObject = localStream;
-                v.play().catch(() => {});
+                v.play().catch(function(){});
               }
-
-              Object.values(peerConnections).forEach(pc => {
-                const sender = pc.getSenders().find(s => s.track && s.track.kind === "video");
-                if (sender) {
-                  sender.replaceTrack(newTrack);
-                }
+              Object.values(peerConnections).forEach(function(pc) {
+                var s = pc.getSenders().find(function(s) { return s.track && s.track.kind === "video"; });
+                if (s) s.replaceTrack(nt);
               });
             }
-          } catch (e) {
-            console.error("Flip camera error:", e);
-          }
+          } catch(e) { console.error("Flip camera err:", e); }
           break;
         }
 
@@ -556,12 +640,14 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       }
     };
 
-    // Self-executing setup without waiting for DOMContentLoaded (safe for inline HTML)
+    // Signal to React Native that the JS bridge is ready
+    postToRN({ type: "READY" });
+
+    // Begin capturing local media immediately
     initLocalStream();
   </script>
 </body>
-</html>
-    `;
+</html>`;
 
     const RNWebView = WebView as any;
 
@@ -570,7 +656,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         {isLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.loadingText}>Initializing Camera & Audio...</Text>
+            <Text style={styles.loadingText}>Connecting HD Call…</Text>
           </View>
         )}
         <RNWebView
