@@ -63,6 +63,8 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
 
   // Participant & Room state
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const participantsRef = useRef<Participant[]>([]);
+  participantsRef.current = participants;
   const [isHost, setIsHost] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -1031,9 +1033,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             <View style={styles.participantCountPill}>
               <Ionicons name="people" size={13} color={Colors.accent} />
               <Text style={styles.participantCountText}>
-                {!isNativeWebRTC && webViewParticipantCount !== null
-                  ? webViewParticipantCount
-                  : participants.length + 1}
+                {Math.max(participants.length + 1, webViewParticipantCount || 1)}
               </Text>
             </View>
           </View>
@@ -1078,7 +1078,7 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           }}
           onLocalStreamReady={() => {
             // Once local stream is active, ensure all known remote peers are initiated
-            participants.forEach((p) => {
+            participantsRef.current.forEach((p) => {
               if (p.socketId) {
                 webRTCStageRef.current?.sendSignalingEvent({
                   type: "INITIATE_PEER",

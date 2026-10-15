@@ -67,7 +67,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       }
       const json = JSON.stringify(data);
       webViewRef.current?.injectJavaScript(
-        `if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}true;`
+        `try{if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}}catch(e){if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify({type:'WEBVIEW_ERROR',message:e.message}));}}true;`
       );
     }, []);
 
@@ -77,7 +77,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       for (const data of queue) {
         const json = JSON.stringify(data);
         webViewRef.current?.injectJavaScript(
-          `if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}true;`
+          `try{if(typeof window.handleRNMessage==='function'){window.handleRNMessage(${json});}}catch(e){if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify({type:'WEBVIEW_ERROR',message:e.message}));}}true;`
         );
       }
     }, []);
@@ -140,6 +140,9 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
             break;
           case "REMOTE_STREAM_RECEIVED":
             onRemoteStreamReceived?.(data.peerSocketId);
+            break;
+          case "WEBVIEW_ERROR":
+            console.warn("[WKWebView Stage Error]:", data.message);
             break;
           default:
             break;
@@ -409,6 +412,21 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       }
 
       localStreamReady = true;
+      // Attach local tracks to any already-created peer connections
+      if (localStream) {
+        Object.keys(peerConnections).forEach(function(pId) {
+          var pc = peerConnections[pId];
+          if (pc && pc.getSenders) {
+            var senders = pc.getSenders();
+            localStream.getTracks().forEach(function(track) {
+              var exists = senders.some(function(s) { return s.track && s.track.id === track.id; });
+              if (!exists) {
+                try { pc.addTrack(track, localStream); } catch(e) {}
+              }
+            });
+          }
+        });
+      }
       postToRN({type: "LOCAL_STREAM_READY"});
       await flushSignalingQueue();
       updateLayout();

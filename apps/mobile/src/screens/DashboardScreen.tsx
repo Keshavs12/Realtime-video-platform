@@ -97,13 +97,20 @@ export const DashboardScreen = ({
       Alert.alert("Missing Room Code", "Please enter a valid room code or link.");
       return;
     }
-    const clean = raw
-      .replace(/^https?:\/\/[^\/]+\/room\//i, "")
-      .replace(/^https?:\/\/[^\/]+\//i, "")
-      .replace(/^room[:\s\/-]*/i, "")
-      .replace(/[^a-zA-Z0-9_-]/g, "")
-      .trim()
-      .toLowerCase();
+    // Extract 8-char hex room code if present in pasted link/text, or clean input
+    const hexMatch = raw.match(/\b([a-f0-9]{8})\b/i);
+    let clean = "";
+    if (hexMatch) {
+      clean = hexMatch[1].toLowerCase();
+    } else {
+      clean = raw
+        .replace(/^https?:\/\/[^\/]+\/room\//i, "")
+        .replace(/^https?:\/\/[^\/]+\//i, "")
+        .replace(/^room[:\s\/-]*/i, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "")
+        .trim()
+        .toLowerCase();
+    }
 
     if (!clean) {
       Alert.alert("Invalid Room Code", "Please enter a valid 8-character meeting code.");
