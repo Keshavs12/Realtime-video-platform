@@ -151,14 +151,20 @@ export const FALLBACK_ICE_SERVERS = [
  */
 export const fetchIceServers = async (): Promise<any[]> => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(
-      `https://${METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`
+      `https://${METERED_DOMAIN}/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`,
+      { signal: controller.signal }
     );
+    clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`Metered request returned status: ${res.status}`);
     const turnServers = await res.json();
-    return [...FALLBACK_ICE_SERVERS, ...turnServers];
+    if (Array.isArray(turnServers) && turnServers.length > 0) {
+      return [...FALLBACK_ICE_SERVERS, ...turnServers];
+    }
+    return FALLBACK_ICE_SERVERS;
   } catch (err) {
-    console.warn("[WebRTC] Metered TURN fetch failed, falling back to Google STUN servers:", err);
     return FALLBACK_ICE_SERVERS;
   }
 };

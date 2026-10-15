@@ -489,16 +489,39 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         card.appendChild(badge);
         stage.appendChild(card);
 
-        video.play().catch(function(){});
+        var playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(function(err) {
+            console.warn("Unmuted video autoplay restricted on iOS, trying muted:", err);
+            video.muted = true;
+            video.play().catch(function(e) { console.error("Muted playback failed:", e); });
+          });
+        }
       } else {
         var video = card.querySelector("video");
         if (video) {
           video.srcObject = stream;
-          video.play().catch(function(){});
+          var p = video.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(function() {
+              video.muted = true;
+              video.play().catch(function(){});
+            });
+          }
         }
       }
       updateLayout();
     }
+
+    function unmuteAllVideos() {
+      document.querySelectorAll("video").forEach(function(v) {
+        if (v.id !== "localVideo" && v.muted) {
+          v.muted = false;
+        }
+      });
+    }
+    document.addEventListener("touchstart", unmuteAllVideos, { passive: true });
+    document.addEventListener("click", unmuteAllVideos, { passive: true });
 
     function removeRemoteVideo(peerSocketId) {
       var card = document.getElementById("card-" + peerSocketId);
@@ -516,7 +539,7 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       if (!msg || !msg.type) return;
 
       // Signaling that requires local tracks waits for stream init
-      if ((msg.type === "INITIATE_PEER" || msg.type === "HANDLE_OFFER") && !localStreamReady) {
+      if ((msg.type === "INITIATE_PEER" || msg.type === "HANDLE_OFFER" || msg.type === "PEER_JOINED") && !localStreamReady) {
         signalingQueue.push(msg);
         return;
       }
@@ -527,6 +550,24 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
             iceServers = msg.iceServers;
           }
           break;
+
+        case "PEER_JOINED": {
+          // If no offer is received from this peer within 1500ms, initiate offer ourselves
+          var targetId = msg.peerSocketId;
+          var targetName = msg.peerName;
+          setTimeout(async function() {
+            if (!peerConnections[targetId] || !peerConnections[targetId].remoteDescription) {
+              console.log("[WebRTC] Auto-initiating offer to peer:", targetId);
+              var pc = getOrCreatePC(targetId, targetName);
+              try {
+                var offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                postToRN({ type: "OFFER_CREATED", to: targetId, offer: offer });
+              } catch(e) { console.error("Auto initiate offer err:", e); }
+            }
+          }, 1500);
+          break;
+        }
 
         case "INITIATE_PEER": {
           if (msg.iceServers && Array.isArray(msg.iceServers) && msg.iceServers.length > 0) {
@@ -569,14 +610,18 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         }
 
         case "HANDLE_ICE_CANDIDATE": {
+          if (!msg.candidate) break;
           var pc = peerConnections[msg.from];
-          var cand = new RTCIceCandidate(msg.candidate);
-          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-            try { await pc.addIceCandidate(cand); } catch(e) { console.warn("ICE err:", e); }
-          } else {
-            if (!iceQueues[msg.from]) iceQueues[msg.from] = [];
-            iceQueues[msg.from].push(cand);
-          }
+          if (!pc) break;
+          try {
+            var cand = new RTCIceCandidate(msg.candidate);
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+              await pc.addIceCandidate(cand);
+            } else {
+              if (!iceQueues[msg.from]) iceQueues[msg.from] = [];
+              iceQueues[msg.from].push(cand);
+            }
+          } catch(e) { console.warn("ICE err:", e); }
           break;
         }
 

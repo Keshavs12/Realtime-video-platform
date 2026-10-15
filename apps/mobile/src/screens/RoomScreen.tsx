@@ -391,8 +391,17 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             ];
           });
 
-          // Prepare peer connection to receive offer from joined user
-          createPeerConnection(joinedUser.socketId, joinedUser.userId, joinedUser.name);
+          // Inform WebRTC stage of joined peer
+          if (!isNativeWebRTC) {
+            webRTCStageRef.current?.sendSignalingEvent({
+              type: "PEER_JOINED",
+              peerSocketId: joinedUser.socketId,
+              peerName: joinedUser.name || "Participant",
+            });
+          } else {
+            // Prepare peer connection to receive offer from joined user
+            createPeerConnection(joinedUser.socketId, joinedUser.userId, joinedUser.name);
+          }
         }
       );
 
@@ -1066,6 +1075,19 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             if (count > 0) {
               setWebViewParticipantCount(count);
             }
+          }}
+          onLocalStreamReady={() => {
+            // Once local stream is active, ensure all known remote peers are initiated
+            participants.forEach((p) => {
+              if (p.socketId) {
+                webRTCStageRef.current?.sendSignalingEvent({
+                  type: "INITIATE_PEER",
+                  peerSocketId: p.socketId,
+                  peerName: p.name || "Participant",
+                  iceServers: iceServersRef.current,
+                });
+              }
+            });
           }}
         />
       ) : (
