@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, ActivityIndicator, StyleSheet, StatusBar } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, ActivityIndicator, StyleSheet, StatusBar, Linking } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -8,15 +8,58 @@ import { DashboardScreen } from "./src/screens/DashboardScreen";
 import { ScheduleScreen } from "./src/screens/ScheduleScreen";
 import { HistoryScreen } from "./src/screens/HistoryScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { LobbyScreen } from "./src/screens/LobbyScreen";
 import { RoomScreen } from "./src/screens/RoomScreen";
 import { Colors } from "./src/theme/colors";
+import { extractRoomCodeFromUrl } from "./src/services/linking.service";
 
-type ScreenName = "login" | "signup" | "dashboard" | "schedule" | "history" | "settings" | "room";
+type ScreenName = "login" | "signup" | "dashboard" | "schedule" | "history" | "settings" | "lobby" | "room";
 
 const MainNavigator = () => {
   const { user, isLoading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<ScreenName>("dashboard");
   const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
+  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null);
+  const [initialMuteConfig, setInitialMuteConfig] = useState<{ isAudioMuted: boolean; isVideoMuted: boolean }>({
+    isAudioMuted: false,
+    isVideoMuted: false,
+  });
+
+  // Handle incoming deep links (cold start and runtime)
+  useEffect(() => {
+    const processUrl = (incomingUrl: string | null) => {
+      const code = extractRoomCodeFromUrl(incomingUrl);
+      if (code) {
+        if (user) {
+          setActiveRoomCode(code);
+          setCurrentScreen("lobby");
+        } else {
+          setPendingRoomCode(code);
+        }
+      }
+    };
+
+    // Cold start (app opened by tapping a link when app was closed)
+    Linking.getInitialURL().then(processUrl);
+
+    // Runtime listener (app in foreground or background)
+    const sub = Linking.addEventListener("url", (event) => {
+      processUrl(event.url);
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [user]);
+
+  // When user completes login/signup and there is a pending room from deep link
+  useEffect(() => {
+    if (user && pendingRoomCode) {
+      setActiveRoomCode(pendingRoomCode);
+      setCurrentScreen("lobby");
+      setPendingRoomCode(null);
+    }
+  }, [user, pendingRoomCode]);
 
   if (isLoading) {
     return (
@@ -31,6 +74,8 @@ const MainNavigator = () => {
     return (
       <RoomScreen
         roomCode={activeRoomCode}
+        initialAudioMuted={initialMuteConfig.isAudioMuted}
+        initialVideoMuted={initialMuteConfig.isVideoMuted}
         onLeaveRoom={() => {
           setActiveRoomCode(null);
           setCurrentScreen("dashboard");
@@ -42,58 +87,108 @@ const MainNavigator = () => {
   // Not authenticated
   if (!user) {
     if (currentScreen === "signup") {
-      return <SignupScreen onNavigateToLogin={() => setCurrentScreen("login")} />;
+      return (
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <SignupScreen onNavigateToLogin={() => setCurrentScreen("login")} />
+        </SafeAreaView>
+      );
     }
     if (currentScreen === "settings") {
-      return <SettingsScreen onBack={() => setCurrentScreen("login")} />;
+      return (
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <SettingsScreen onBack={() => setCurrentScreen("login")} />
+        </SafeAreaView>
+      );
     }
     return (
-      <LoginScreen
-        onNavigateToSignup={() => setCurrentScreen("signup")}
-        onNavigateToSettings={() => setCurrentScreen("settings")}
-      />
+      <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+        <LoginScreen
+          onNavigateToSignup={() => setCurrentScreen("signup")}
+          onNavigateToSettings={() => setCurrentScreen("settings")}
+        />
+      </SafeAreaView>
     );
   }
 
   // Authenticated Screen Switcher
   switch (currentScreen) {
-    case "schedule":
+    case "lobby":
+      if (!activeRoomCode) {
+        return (
+          <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+            <DashboardScreen
+              onJoinRoom={(code) => {
+                setActiveRoomCode(code);
+                setCurrentScreen("lobby");
+              }}
+              onNavigateToSchedule={() => setCurrentScreen("schedule")}
+              onNavigateToHistory={() => setCurrentScreen("history")}
+              onNavigateToSettings={() => setCurrentScreen("settings")}
+            />
+          </SafeAreaView>
+        );
+      }
       return (
-        <ScheduleScreen
-          onBack={() => setCurrentScreen("dashboard")}
-          onJoinRoom={(code) => {
-            setActiveRoomCode(code);
+        <LobbyScreen
+          roomCode={activeRoomCode}
+          onJoin={({ isAudioMuted, isVideoMuted }) => {
+            setInitialMuteConfig({ isAudioMuted, isVideoMuted });
             setCurrentScreen("room");
           }}
+          onCancel={() => {
+            setActiveRoomCode(null);
+            setCurrentScreen("dashboard");
+          }}
         />
+      );
+
+    case "schedule":
+      return (
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <ScheduleScreen
+            onBack={() => setCurrentScreen("dashboard")}
+            onJoinRoom={(code) => {
+              setActiveRoomCode(code);
+              setCurrentScreen("lobby");
+            }}
+          />
+        </SafeAreaView>
       );
 
     case "history":
       return (
-        <HistoryScreen
-          onBack={() => setCurrentScreen("dashboard")}
-          onJoinRoom={(code) => {
-            setActiveRoomCode(code);
-            setCurrentScreen("room");
-          }}
-        />
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <HistoryScreen
+            onBack={() => setCurrentScreen("dashboard")}
+            onJoinRoom={(code) => {
+              setActiveRoomCode(code);
+              setCurrentScreen("lobby");
+            }}
+          />
+        </SafeAreaView>
       );
 
     case "settings":
-      return <SettingsScreen onBack={() => setCurrentScreen("dashboard")} />;
+      return (
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <SettingsScreen onBack={() => setCurrentScreen("dashboard")} />
+        </SafeAreaView>
+      );
 
     case "dashboard":
     default:
       return (
-        <DashboardScreen
-          onJoinRoom={(code) => {
-            setActiveRoomCode(code);
-            setCurrentScreen("room");
-          }}
-          onNavigateToSchedule={() => setCurrentScreen("schedule")}
-          onNavigateToHistory={() => setCurrentScreen("history")}
-          onNavigateToSettings={() => setCurrentScreen("settings")}
-        />
+        <SafeAreaView style={styles.root} edges={["top", "bottom", "left", "right"]}>
+          <DashboardScreen
+            onJoinRoom={(code) => {
+              setActiveRoomCode(code);
+              setCurrentScreen("lobby");
+            }}
+            onNavigateToSchedule={() => setCurrentScreen("schedule")}
+            onNavigateToHistory={() => setCurrentScreen("history")}
+            onNavigateToSettings={() => setCurrentScreen("settings")}
+          />
+        </SafeAreaView>
       );
   }
 };
@@ -103,9 +198,9 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor="#070b13" />
       <AuthProvider>
-        <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
+        <View style={styles.root}>
           <MainNavigator />
-        </SafeAreaView>
+        </View>
       </AuthProvider>
     </SafeAreaProvider>
   );

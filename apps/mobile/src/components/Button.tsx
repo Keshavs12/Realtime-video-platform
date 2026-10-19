@@ -1,5 +1,5 @@
 import React from "react";
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from "react-native";
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, Vibration } from "react-native";
 import { Colors } from "../theme/colors";
 
 interface ButtonProps {
@@ -25,6 +25,11 @@ export const Button = ({
   textStyle,
   icon,
 }: ButtonProps) => {
+  const handlePress = () => {
+    if (disabled || loading) return;
+    try { Vibration.vibrate(18); } catch {}
+    onPress();
+  };
   const getBackgroundColor = () => {
     if (disabled) return "rgba(30, 41, 59, 0.4)";
     switch (variant) {
@@ -78,7 +83,7 @@ export const Button = ({
   return (
     <TouchableOpacity
       activeOpacity={0.82}
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled || loading}
       style={[
         styles.base,

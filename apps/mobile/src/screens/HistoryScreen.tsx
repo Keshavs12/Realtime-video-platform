@@ -15,6 +15,8 @@ import { roomService } from "../services/room.service";
 import { RoomHistoryEntry } from "../types";
 import { Ionicons } from "@expo/vector-icons";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 interface HistoryScreenProps {
   onBack: () => void;
   onJoinRoom: (roomCode: string) => void;
@@ -31,8 +33,24 @@ export const HistoryScreen = ({ onBack, onJoinRoom }: HistoryScreenProps) => {
   const loadHistory = async () => {
     try {
       setLoading(true);
-      const data = await roomService.getRoomHistory();
-      setHistory(data);
+      const [cloudData, localRaw] = await Promise.all([
+        roomService.getRoomHistory().catch(() => []),
+        AsyncStorage.getItem("@supercall_history").catch(() => null),
+      ]);
+      const localList: RoomHistoryEntry[] = localRaw ? JSON.parse(localRaw) : [];
+      // Combine and deduplicate by roomCode + joinedAt
+      const seen = new Set<string>();
+      const combined: RoomHistoryEntry[] = [];
+      [...localList, ...(cloudData || [])].forEach((item) => {
+        const key = `${item.roomCode}-${item.joinedAt}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(item);
+        }
+      });
+      // Sort newest first
+      combined.sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
+      setHistory(combined);
     } catch {
       // Ignore
     } finally {
