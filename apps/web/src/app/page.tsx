@@ -16,6 +16,11 @@ import {
   Mic,
   MessageSquare,
   Lock,
+  Smartphone,
+  Download,
+  CheckCircle2,
+  Share2,
+  ExternalLink,
 } from "lucide-react";
 import styles from "../styles/landing.module.scss";
 
@@ -41,6 +46,10 @@ export default function Home() {
         </Link>
 
         <div className={styles.navActions}>
+          <a href="#mobile-app" className={styles.loginBtn} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Smartphone size={16} />
+            <span>Mobile App</span>
+          </a>
           <Link href="/login" className={styles.loginBtn}>
             Sign In
           </Link>
@@ -197,6 +206,115 @@ export default function Home() {
           <p>
             Real-time instant messaging, floating emoji reaction streams, and low-bandwidth audio-priority fallback.
           </p>
+        </div>
+      </section>
+
+      {/* Mobile Apps Showcase Section */}
+      <section id="mobile-app" className={styles.mobileSection}>
+        <div className={styles.mobileSectionHeader}>
+          <div className={styles.sectionPill}>
+            <Smartphone size={14} />
+            <span>Mobile Companion</span>
+          </div>
+          <h2>Take SuperCall Everywhere</h2>
+          <p>
+            Join crystal-clear HD meetings, chat, and collaborate on the go. Available for both Android and iOS devices.
+          </p>
+        </div>
+
+        <div className={styles.mobileCardsGrid}>
+          {/* Android Card */}
+          <div className={`${styles.mobileCard} ${styles.androidCard}`}>
+            <div>
+              <div className={styles.cardTop}>
+                <span className={`${styles.platformBadge} ${styles.androidBadge}`}>Android Edition</span>
+                <div className={`${styles.cardIcon} ${styles.androidIcon}`}>
+                  <Smartphone size={26} />
+                </div>
+              </div>
+
+              <h3 className={styles.cardTitle}>Android Standalone (.APK)</h3>
+              <p className={styles.cardDesc}>
+                Native React Native app with hardware-accelerated WebRTC, background call connectivity, and device camera switching.
+              </p>
+
+              <ul className={styles.featureBullets}>
+                <li>
+                  <CheckCircle2 size={16} />
+                  <span>Full HD P2P Mesh WebRTC video &amp; audio</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={16} />
+                  <span>Front &amp; back camera flipping + mic mute controls</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={16} />
+                  <span>Live room sync with Web and Render backend</span>
+                </li>
+                <li>
+                  <CheckCircle2 size={16} />
+                  <span>Instant 1-tap install (No Google Play login needed)</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className={styles.cardActionArea}>
+              <a
+                href="https://expo.dev/accounts/keshavsqa/projects/supercall/builds/28faaa51-b410-46b9-868a-20eecf94a5d9"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.btnDownloadApk}
+              >
+                <Download size={18} />
+                <span>Download Android App (.APK)</span>
+                <ExternalLink size={15} style={{ opacity: 0.8 }} />
+              </a>
+            </div>
+          </div>
+
+          {/* iOS Card */}
+          <div className={styles.mobileCard}>
+            <div>
+              <div className={styles.cardTop}>
+                <span className={`${styles.platformBadge} ${styles.iosBadge}`}>Apple iOS Edition</span>
+                <div className={`${styles.cardIcon} ${styles.iosIcon}`}>
+                  <Share2 size={26} />
+                </div>
+              </div>
+
+              <h3 className={styles.cardTitle}>iPhone &amp; iPad (Instant Web App)</h3>
+              <p className={styles.cardDesc}>
+                Zero App Store wait and 100% free. Install SuperCall directly to your iOS Home Screen for an instant native app experience.
+              </p>
+
+              <div className={styles.iosSteps}>
+                <div className={styles.stepItem}>
+                  <div className={styles.stepNum}>1</div>
+                  <div>
+                    Open this SuperCall website in <strong>Safari</strong> on your iPhone or iPad.
+                  </div>
+                </div>
+                <div className={styles.stepItem}>
+                  <div className={styles.stepNum}>2</div>
+                  <div>
+                    Tap the <strong>Share</strong> button (box with an arrow pointing up at the bottom).
+                  </div>
+                </div>
+                <div className={styles.stepItem}>
+                  <div className={styles.stepNum}>3</div>
+                  <div>
+                    Select <strong>&quot;Add to Home Screen&quot;</strong> and tap <strong>Add</strong>.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.cardActionArea}>
+              <div className={styles.iosNoteBadge}>
+                <span>✨ Launches full-screen with native camera &amp; mic access</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

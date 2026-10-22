@@ -220,7 +220,7 @@ export const DashboardScreen = ({
               <View style={styles.joinInputRow}>
                 <TextInput
                   style={styles.joinInput}
-                  placeholder="Enter 6-char code or link"
+                  placeholder="Enter 8-digit code or link"
                   placeholderTextColor={Colors.textSubtle}
                   value={roomCodeInput}
                   onChangeText={setRoomCodeInput}

@@ -9,6 +9,11 @@ export interface WebRTCStageWebViewRef {
   toggleAudio: (muted: boolean) => void;
   toggleVideo: (muted: boolean) => void;
   flipCamera: () => void;
+  setHandRaise?: (peerSocketId: string, isRaised: boolean) => void;
+  setLayoutMode?: (mode: "grid" | "spotlight") => void;
+  pinParticipant?: (socketId: string) => void;
+  startScreenShare?: () => void;
+  stopScreenShare?: () => void;
 }
 
 interface WebRTCStageWebViewProps {
@@ -23,6 +28,8 @@ interface WebRTCStageWebViewProps {
   onParticipantCountChange?: (count: number) => void;
   onRemoteStreamReceived?: (peerSocketId: string) => void;
   onLocalStreamReady?: () => void;
+  onScreenShareStateChange?: (isSharing: boolean) => void;
+  onScreenShareError?: (message: string) => void;
 }
 
 export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageWebViewProps>(
@@ -39,6 +46,8 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       onParticipantCountChange,
       onRemoteStreamReceived,
       onLocalStreamReady,
+      onScreenShareStateChange,
+      onScreenShareError,
     },
     ref
   ) => {
@@ -96,6 +105,21 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       flipCamera: () => {
         injectMessage({ type: "FLIP_CAMERA" });
       },
+      setHandRaise: (peerSocketId: string, isRaised: boolean) => {
+        injectMessage({ type: "SET_HAND_RAISE", peerSocketId, isRaised });
+      },
+      setLayoutMode: (mode: "grid" | "spotlight") => {
+        injectMessage({ type: "SET_LAYOUT_MODE", mode });
+      },
+      pinParticipant: (socketId: string) => {
+        injectMessage({ type: "PIN_PARTICIPANT", socketId });
+      },
+      startScreenShare: () => {
+        injectMessage({ type: "START_SCREEN_SHARE" });
+      },
+      stopScreenShare: () => {
+        injectMessage({ type: "STOP_SCREEN_SHARE" });
+      },
     }));
 
     // Forward ICE servers whenever updated
@@ -140,6 +164,12 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
             break;
           case "REMOTE_STREAM_RECEIVED":
             onRemoteStreamReceived?.(data.peerSocketId);
+            break;
+          case "SCREEN_SHARE_STATE":
+            onScreenShareStateChange?.(Boolean(data.isSharing));
+            break;
+          case "SCREEN_SHARE_ERROR":
+            onScreenShareError?.(data.message || "Screen sharing failed");
             break;
           case "WEBVIEW_ERROR":
             console.warn("[WKWebView Stage Error]:", data.message);
@@ -207,6 +237,8 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
     var facingMode = "user";
     var isVideoMuted = ${Boolean(isVideoMuted)};
     var isAudioMuted = ${Boolean(isAudioMuted)};
+    var cameraVideoTrack = null;
+    var isScreenSharing = false;
 
     function postToRN(data) {
       if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
@@ -338,9 +370,9 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
 
       var acquireWithTimeout = new Promise(async function(resolve) {
         var timer = setTimeout(function() {
-          console.warn("[Media] getUserMedia timed out after 2500ms, falling back gracefully");
+          console.warn("[Media] getUserMedia timed out after 15000ms, falling back gracefully");
           resolve(null);
-        }, 2500);
+        }, 15000);
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           clearTimeout(timer);
@@ -348,11 +380,11 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
           return;
         }
 
-        // Tier 1: User-facing video + audio
+        // Tier 1: User-facing video + clean audio
         try {
           var s1 = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            audio: true
           });
           clearTimeout(timer);
           resolve(s1);
@@ -402,8 +434,8 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         lv.play().catch(function(){});
       }
 
-      if (isAudioMuted && localStream) {
-        localStream.getAudioTracks().forEach(function(t) { t.enabled = false; });
+      if (localStream) {
+        localStream.getAudioTracks().forEach(function(t) { t.enabled = !isAudioMuted; });
       }
       if (isVideoMuted && localStream) {
         localStream.getVideoTracks().forEach(function(t) { t.enabled = false; });
@@ -479,6 +511,25 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
       var stage = document.getElementById("stage");
       var card = document.getElementById("card-" + peerSocketId);
 
+      // 1. Dedicated audio element to guarantee mobile WebKit routes audio to speaker/earpiece
+      var audio = document.getElementById("audio-" + peerSocketId);
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.id = "audio-" + peerSocketId;
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.setAttribute("playsinline", "");
+        audio.setAttribute("webkit-playsinline", "");
+        document.body.appendChild(audio);
+      }
+      if (audio.srcObject !== stream) {
+        audio.srcObject = stream;
+      }
+      audio.play().catch(function(err) {
+        console.log("Audio auto-play pending touch unlock:", err);
+      });
+
+      // 2. Video element (strictly unmuted for remote participants)
       if (!card) {
         card = document.createElement("div");
         card.id = "card-" + peerSocketId;
@@ -510,40 +561,61 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         var playPromise = video.play();
         if (playPromise && typeof playPromise.catch === "function") {
           playPromise.catch(function(err) {
-            console.warn("Unmuted video autoplay restricted on iOS, trying muted:", err);
-            video.muted = true;
-            video.play().catch(function(e) { console.error("Muted playback failed:", e); });
+            console.log("Remote video play pending user touch:", err);
           });
         }
       } else {
         var video = card.querySelector("video");
         if (video) {
-          video.srcObject = stream;
+          if (video.srcObject !== stream) {
+            video.srcObject = stream;
+          }
           var p = video.play();
           if (p && typeof p.catch === "function") {
-            p.catch(function() {
-              video.muted = true;
-              video.play().catch(function(){});
-            });
+            p.catch(function() {});
           }
         }
       }
+
+      // 3. Play immediately whenever incoming media tracks unmute
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(function(track) {
+          track.onunmute = function() {
+            var v = document.getElementById("video-" + peerSocketId);
+            var a = document.getElementById("audio-" + peerSocketId);
+            if (v && v.paused) v.play().catch(function(){});
+            if (a && a.paused) a.play().catch(function(){});
+          };
+        });
+      }
+
       updateLayout();
     }
 
-    function unmuteAllVideos() {
+    // Touch/click audio unlocker for mobile WebKit
+    function unlockAllAudio() {
+      document.querySelectorAll("audio").forEach(function(a) {
+        if (a.paused) a.play().catch(function(){});
+      });
       document.querySelectorAll("video").forEach(function(v) {
-        if (v.id !== "localVideo" && v.muted) {
-          v.muted = false;
+        if (v.id !== "localVideo" && v.paused) {
+          v.play().catch(function(){});
         }
       });
     }
-    document.addEventListener("touchstart", unmuteAllVideos, { passive: true });
-    document.addEventListener("click", unmuteAllVideos, { passive: true });
+    document.addEventListener("touchstart", unlockAllAudio, { passive: true });
+    document.addEventListener("click", unlockAllAudio, { passive: true });
 
     function removeRemoteVideo(peerSocketId) {
       var card = document.getElementById("card-" + peerSocketId);
       if (card) card.remove();
+
+      var audio = document.getElementById("audio-" + peerSocketId);
+      if (audio) {
+        audio.srcObject = null;
+        try { audio.remove(); } catch(e){}
+      }
+
       if (peerConnections[peerSocketId]) {
         try { peerConnections[peerSocketId].close(); } catch(e) {}
         delete peerConnections[peerSocketId];
@@ -698,10 +770,110 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
           break;
         }
 
+        case "START_SCREEN_SHARE": {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            postToRN({ type: "SCREEN_SHARE_ERROR", message: "Screen sharing is not supported by this device or browser engine." });
+            break;
+          }
+          try {
+            var screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            var screenTrack = screenStream.getVideoTracks()[0];
+            if (!screenTrack) {
+              postToRN({ type: "SCREEN_SHARE_ERROR", message: "No screen video track captured." });
+              break;
+            }
+
+            if (localStream && localStream.getVideoTracks().length > 0) {
+              cameraVideoTrack = localStream.getVideoTracks()[0];
+              localStream.removeTrack(cameraVideoTrack);
+            }
+            localStream.addTrack(screenTrack);
+
+            var lv = document.getElementById("localVideo");
+            if (lv) {
+              lv.srcObject = localStream;
+              lv.classList.remove("mirrored");
+              lv.play().catch(function(){});
+            }
+
+            Object.values(peerConnections).forEach(function(pc) {
+              if (pc.getSenders) {
+                var s = pc.getSenders().find(function(sender) {
+                  return sender.track && sender.track.kind === "video";
+                });
+                if (s) {
+                  s.replaceTrack(screenTrack);
+                }
+              }
+            });
+
+            isScreenSharing = true;
+            postToRN({ type: "SCREEN_SHARE_STATE", isSharing: true });
+
+            screenTrack.onended = function() {
+              revertScreenShare();
+            };
+          } catch(err) {
+            console.warn("Screen share error:", err);
+            if (err && err.name !== "NotAllowedError") {
+              postToRN({ type: "SCREEN_SHARE_ERROR", message: err.message || "Could not start screen share" });
+            }
+            postToRN({ type: "SCREEN_SHARE_STATE", isSharing: false });
+          }
+          break;
+        }
+
+        case "STOP_SCREEN_SHARE": {
+          revertScreenShare();
+          break;
+        }
+
         default:
           break;
       }
     };
+
+    function revertScreenShare() {
+      if (!isScreenSharing) return;
+      isScreenSharing = false;
+
+      if (localStream) {
+        var tracks = localStream.getVideoTracks();
+        tracks.forEach(function(t) {
+          if (t !== cameraVideoTrack) {
+            try { t.stop(); } catch(e){}
+            localStream.removeTrack(t);
+          }
+        });
+        if (cameraVideoTrack) {
+          localStream.addTrack(cameraVideoTrack);
+        }
+      }
+
+      var lv = document.getElementById("localVideo");
+      if (lv) {
+        lv.srcObject = localStream;
+        if (facingMode === "user") {
+          lv.classList.add("mirrored");
+        }
+        lv.play().catch(function(){});
+      }
+
+      if (cameraVideoTrack) {
+        Object.values(peerConnections).forEach(function(pc) {
+          if (pc.getSenders) {
+            var s = pc.getSenders().find(function(sender) {
+              return sender.track && sender.track.kind === "video";
+            });
+            if (s) {
+              s.replaceTrack(cameraVideoTrack);
+            }
+          }
+        });
+      }
+
+      postToRN({ type: "SCREEN_SHARE_STATE", isSharing: false });
+    }
 
     // Signal to React Native that the JS bridge is ready
     postToRN({ type: "READY" });
