@@ -7,21 +7,26 @@ import {
   ScrollView,
   Alert,
   useWindowDimensions,
-  SafeAreaView,
   StatusBar,
   Modal,
   Share,
+  Vibration,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { io, Socket } from "socket.io-client";
 import { Colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { getSocketBaseUrl, getStoredToken, DEFAULT_API_URL } from "../config/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useKeepAwake } from "expo-keep-awake";
 import { ChatModal } from "../components/ChatModal";
 import { ReactionOverlay } from "../components/ReactionOverlay";
 import { PollsModal } from "../components/PollsModal";
 import { NotesModal } from "../components/NotesModal";
 import { HostControlsModal } from "../components/HostControlsModal";
 import { WhiteboardModal } from "../components/WhiteboardModal";
+import { ParticipantsModal } from "../components/ParticipantsModal";
+import { CallSettingsModal } from "../components/CallSettingsModal";
 import { WebRTCStageWebView, WebRTCStageWebViewRef } from "../components/WebRTCStageWebView";
 import { ChatMessage, Participant, FloatingReaction, PollItem } from "../types";
 import { Ionicons } from "@expo/vector-icons";
@@ -40,13 +45,24 @@ import {
 
 interface RoomScreenProps {
   roomCode: string;
+  initialAudioMuted?: boolean;
+  initialVideoMuted?: boolean;
   onLeaveRoom: () => void;
 }
 
-export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
+export const RoomScreen = ({
+  roomCode,
+  initialAudioMuted = false,
+  initialVideoMuted = false,
+  onLeaveRoom,
+}: RoomScreenProps) => {
+  useKeepAwake();
   const { user, serverUrl } = useAuth();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+
+  const [summaryModalVisible, setSummaryModalVisible] = useState(false);
+  const [finalCallStats, setFinalCallStats] = useState<{ duration: number; participantCount: number } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const webRTCStageRef = useRef<WebRTCStageWebViewRef | null>(null);
@@ -67,8 +83,8 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   participantsRef.current = participants;
   const [isHost, setIsHost] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [isAudioMuted, setIsAudioMuted] = useState(initialAudioMuted);
+  const [isVideoMuted, setIsVideoMuted] = useState(initialVideoMuted);
   const [isBackCamera, setIsBackCamera] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
@@ -80,6 +96,13 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+  const [participantsModalVisible, setParticipantsModalVisible] = useState(false);
+  const [pinnedSocketId, setPinnedSocketId] = useState<string | null>(null);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [callSettingsVisible, setCallSettingsVisible] = useState(false);
+  const [dataSaverMode, setDataSaverMode] = useState(false);
+  const [mirrorVideo, setMirrorVideo] = useState(true);
+  const [noiseSuppression, setNoiseSuppression] = useState(true);
 
   // Polls, Notes, Whiteboard, Host Controls
   const [polls, setPolls] = useState<PollItem[]>([]);
@@ -225,26 +248,28 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
         setIceServers(servers);
       }
 
-      // 2. Request local camera & mic
-      const stream = await getLocalMediaStream(true, true);
-      if (isMounted && stream) {
-        localStreamRef.current = stream;
-        setLocalStream(stream);
+      // 2. Request local camera & mic (only if native WebRTC is active; WebView handles its own camera in Expo Go)
+      if (isNativeWebRTC) {
+        const stream = await getLocalMediaStream(true, true);
+        if (isMounted && stream) {
+          localStreamRef.current = stream;
+          setLocalStream(stream);
 
-        // Dynamically add tracks to any already-created peer connections
-        Object.values(peerConnectionsRef.current).forEach((pc: any) => {
-          try {
-            const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
-            stream.getTracks().forEach((track: any) => {
-              const alreadyAdded = senders.some((s: any) => s.track && s.track.id === track.id);
-              if (!alreadyAdded) {
-                pc.addTrack(track, stream);
-              }
-            });
-          } catch (e) {
-            console.warn("[WebRTC] Error attaching track to PC:", e);
-          }
-        });
+          // Dynamically add tracks to any already-created peer connections
+          Object.values(peerConnectionsRef.current).forEach((pc: any) => {
+            try {
+              const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
+              stream.getTracks().forEach((track: any) => {
+                const alreadyAdded = senders.some((s: any) => s.track && s.track.id === track.id);
+                if (!alreadyAdded) {
+                  pc.addTrack(track, stream);
+                }
+              });
+            } catch (e) {
+              console.warn("[WebRTC] Error attaching track to PC:", e);
+            }
+          });
+        }
       }
 
       // 3. Connect to Socket.IO signaling server
@@ -258,11 +283,11 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           guestName: user?.name || "Mobile User",
           userId: user?.id,
         },
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
         reconnection: true,
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,
-        extraHeaders: { "ngrok-skip-browser-warning": "true" },
+        timeout: 20000,
       });
 
       socketRef.current = socket;
@@ -275,12 +300,16 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           roomId: cleanRoomCode,
           userId,
           name: userName,
-          isVideoMuted: false,
-          isAudioMuted: false,
+          isVideoMuted: initialVideoMuted,
+          isAudioMuted: initialAudioMuted,
         });
       };
 
-      socket.on("connect", emitJoin);
+      socket.on("connect", () => {
+        console.log("[Socket] Successfully connected to signaling server, socketId:", socket.id);
+        emitJoin();
+      });
+
       if (socket.connected) {
         emitJoin();
       }
@@ -739,6 +768,16 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
     }
   };
 
+  // Toggle Screen Sharing
+  const handleToggleScreenShare = () => {
+    try { Vibration.vibrate(25); } catch {}
+    if (isScreenSharing) {
+      webRTCStageRef.current?.stopScreenShare?.();
+    } else {
+      webRTCStageRef.current?.startScreenShare?.();
+    }
+  };
+
   // Raise hand toggle
   const toggleHandRaise = () => {
     const next = !isHandRaised;
@@ -871,7 +910,28 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             socketRef.current.emit("leave-room");
             socketRef.current.disconnect();
           }
-          onLeaveRoom();
+
+          // Record session to local history
+          const durationMins = Math.max(1, Math.round(callDuration / 60));
+          const sessionEntry = {
+            roomCode,
+            joinedAt: new Date(Date.now() - callDuration * 1000).toISOString(),
+            isHost,
+            durationMinutes: durationMins,
+            otherParticipantsCount: participants.length,
+          };
+          AsyncStorage.getItem("@supercall_history")
+            .then((raw) => {
+              const list = raw ? JSON.parse(raw) : [];
+              AsyncStorage.setItem(
+                "@supercall_history",
+                JSON.stringify([sessionEntry, ...list.slice(0, 40)])
+              ).catch(() => {});
+            })
+            .catch(() => {});
+
+          setFinalCallStats({ duration: callDuration, participantCount: participants.length + 1 });
+          setSummaryModalVisible(true);
         },
       },
     ]);
@@ -1030,15 +1090,38 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
               <Ionicons name="camera-reverse" size={18} color={Colors.text} />
             </TouchableOpacity>
 
-            <View style={styles.participantCountPill}>
+            <TouchableOpacity
+              onPress={() => {
+                try { Vibration.vibrate(25); } catch {}
+                setParticipantsModalVisible(true);
+              }}
+              activeOpacity={0.7}
+              style={styles.participantCountPill}
+            >
               <Ionicons name="people" size={13} color={Colors.accent} />
               <Text style={styles.participantCountText}>
                 {Math.max(participants.length + 1, webViewParticipantCount || 1)}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      {/* Floating Screen Share Banner */}
+      {isScreenSharing && (
+        <View style={styles.screenShareBanner}>
+          <View style={styles.screenShareDot} />
+          <Ionicons name="tv" size={15} color="#10b981" style={{ marginRight: 6 }} />
+          <Text style={styles.screenShareText}>You are sharing your screen</Text>
+          <TouchableOpacity
+            onPress={handleToggleScreenShare}
+            style={styles.screenShareStopBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.screenShareStopBtnText}>Stop</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Participant Video Grid - Uses hardware-accelerated WKWebView in Expo Go or native RTCView in compiled builds */}
       {!isNativeWebRTC ? (
@@ -1075,6 +1158,17 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             if (count > 0) {
               setWebViewParticipantCount(count);
             }
+          }}
+          onScreenShareStateChange={(sharing) => {
+            setIsScreenSharing(sharing);
+            socketRef.current?.emit("screen-share-status", { isSharing: sharing });
+            socketRef.current?.emit("media-status-change", {
+              isVideoMuted: isVideoMuted,
+              isAudioMuted: isAudioMuted,
+            });
+          }}
+          onScreenShareError={(msg) => {
+            Alert.alert("Screen Share", msg || "Screen sharing is not supported by your current device engine.");
           }}
           onLocalStreamReady={() => {
             // Once local stream is active, ensure all known remote peers are initiated
@@ -1241,6 +1335,21 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
             </View>
 
             <View style={styles.moreGrid}>
+              {/* Participants Roster */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setParticipantsModalVisible(true);
+                }}
+                activeOpacity={0.75}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(99, 102, 241, 0.15)", borderColor: "rgba(99, 102, 241, 0.35)" }]}>
+                  <Ionicons name="people" size={22} color="#818cf8" />
+                </View>
+                <Text style={styles.moreTileLabel}>Participants ({participants.length + 1})</Text>
+              </TouchableOpacity>
+
               {/* Polls */}
               <TouchableOpacity
                 onPress={() => {
@@ -1301,6 +1410,34 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                 <Text style={styles.moreTileLabel}>Reactions</Text>
               </TouchableOpacity>
 
+              {/* Share Screen */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  handleToggleScreenShare();
+                }}
+                activeOpacity={0.75}
+                style={styles.moreTile}
+              >
+                <View
+                  style={[
+                    styles.moreTileIcon,
+                    isScreenSharing
+                      ? { backgroundColor: "rgba(16, 185, 129, 0.2)", borderColor: "#10b981" }
+                      : { backgroundColor: "rgba(59, 130, 246, 0.15)", borderColor: "rgba(59, 130, 246, 0.35)" },
+                  ]}
+                >
+                  <Ionicons
+                    name={isScreenSharing ? "stop-circle" : "tv-outline"}
+                    size={22}
+                    color={isScreenSharing ? "#10b981" : "#60a5fa"}
+                  />
+                </View>
+                <Text style={[styles.moreTileLabel, isScreenSharing && { color: "#10b981", fontWeight: "700" }]}>
+                  {isScreenSharing ? "Stop Sharing" : "Share Screen"}
+                </Text>
+              </TouchableOpacity>
+
               {/* Flip Camera */}
               <TouchableOpacity
                 onPress={() => {
@@ -1329,6 +1466,21 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
                   <Ionicons name="share-social" size={22} color={Colors.primary} />
                 </View>
                 <Text style={styles.moreTileLabel}>Share Room</Text>
+              </TouchableOpacity>
+
+              {/* Call Settings & Data Saver */}
+              <TouchableOpacity
+                onPress={() => {
+                  setMoreMenuVisible(false);
+                  setCallSettingsVisible(true);
+                }}
+                activeOpacity={0.75}
+                style={styles.moreTile}
+              >
+                <View style={[styles.moreTileIcon, { backgroundColor: "rgba(129, 140, 248, 0.15)", borderColor: "rgba(129, 140, 248, 0.35)" }]}>
+                  <Ionicons name="options" size={22} color="#818cf8" />
+                </View>
+                <Text style={styles.moreTileLabel}>Call Settings</Text>
               </TouchableOpacity>
 
               {/* Host Controls (If Host) */}
@@ -1402,6 +1554,92 @@ export const RoomScreen = ({ roomCode, onLeaveRoom }: RoomScreenProps) => {
           onKickParticipant={handleKickParticipant}
         />
       ) : null}
+
+      {/* Participants Roster & Management Modal */}
+      <ParticipantsModal
+        visible={participantsModalVisible}
+        onClose={() => setParticipantsModalVisible(false)}
+        participants={participants}
+        currentUser={user}
+        isHost={isHost}
+        isAudioMuted={isAudioMuted}
+        isVideoMuted={isVideoMuted}
+        isHandRaised={isHandRaised}
+        pinnedSocketId={pinnedSocketId}
+        onPinParticipant={(socketId) => {
+          setPinnedSocketId(socketId === pinnedSocketId ? null : socketId);
+        }}
+        onMuteParticipant={(socketId) => {
+          socketRef.current?.emit("mute-participant", { targetSocketId: socketId });
+        }}
+        onKickParticipant={(socketId) => {
+          socketRef.current?.emit("kick-participant", { targetSocketId: socketId });
+        }}
+        onMuteAll={() => {
+          socketRef.current?.emit("mute-all");
+        }}
+      />
+
+      {/* In-Call Settings Modal (Data Saver, Mirror, Audio/Video Preferences) */}
+      <CallSettingsModal
+        visible={callSettingsVisible}
+        onClose={() => setCallSettingsVisible(false)}
+        dataSaverMode={dataSaverMode}
+        onToggleDataSaver={setDataSaverMode}
+        mirrorVideo={mirrorVideo}
+        onToggleMirrorVideo={setMirrorVideo}
+        noiseSuppression={noiseSuppression}
+        onToggleNoiseSuppression={setNoiseSuppression}
+        roomCode={roomCode}
+        participantCount={participants.length + 1}
+      />
+
+      {/* Meeting Ended Summary Modal */}
+      <Modal
+        visible={summaryModalVisible}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.summaryOverlay}>
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryIconCircle}>
+              <Ionicons name="checkmark-done" size={30} color="#34d399" />
+            </View>
+            <Text style={styles.summaryTitle}>You left the meeting</Text>
+            <Text style={styles.summarySubtitle}>Room: {roomCode}</Text>
+
+            <View style={styles.summaryStatsRow}>
+              <View style={styles.summaryStatItem}>
+                <Ionicons name="time-outline" size={18} color="#818cf8" style={{ marginBottom: 4 }} />
+                <Text style={styles.summaryStatValue}>
+                  {formatTimer(finalCallStats?.duration || callDuration)}
+                </Text>
+                <Text style={styles.summaryStatLabel}>Duration</Text>
+              </View>
+
+              <View style={styles.summaryStatItem}>
+                <Ionicons name="people-outline" size={18} color="#34d399" style={{ marginBottom: 4 }} />
+                <Text style={styles.summaryStatValue}>
+                  {finalCallStats?.participantCount || 1}
+                </Text>
+                <Text style={styles.summaryStatLabel}>Participants</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                try { Vibration.vibrate(25); } catch {}
+                setSummaryModalVisible(false);
+                onLeaveRoom();
+              }}
+              style={styles.summaryDoneBtn}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.summaryDoneText}>Return to Dashboard</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1860,5 +2098,130 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     textAlign: "center",
+  },
+  summaryOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  summaryCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "rgba(15, 23, 42, 0.98)",
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    padding: 26,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  summaryIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  summaryTitle: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: -0.3,
+  },
+  summarySubtitle: {
+    color: "#94a3b8",
+    fontSize: 13,
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  summaryStatsRow: {
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 20,
+    marginBottom: 24,
+    width: "100%",
+  },
+  summaryStatItem: {
+    flex: 1,
+    backgroundColor: "rgba(30, 41, 59, 0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 18,
+    padding: 14,
+    alignItems: "center",
+  },
+  summaryStatValue: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  summaryStatLabel: {
+    color: "#94a3b8",
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  summaryDoneBtn: {
+    width: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  summaryDoneText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  screenShareBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.14)",
+    borderColor: "rgba(16, 185, 129, 0.4)",
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  screenShareDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#10b981",
+    marginRight: 8,
+  },
+  screenShareText: {
+    flex: 1,
+    color: "#e2e8f0",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  screenShareStopBtn: {
+    backgroundColor: "#ef4444",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  screenShareStopBtnText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "800",
   },
 });
