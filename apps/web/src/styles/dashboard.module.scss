@@ -5,6 +5,57 @@
   color: #f8fafc;
   font-family: var(--font-sans);
   overflow-x: hidden;
+  position: relative;
+}
+
+.auroraContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 520px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auroraOrb1 {
+  position: absolute;
+  top: -120px;
+  left: 15%;
+  width: 550px;
+  height: 440px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.16) 0%, transparent 70%);
+  filter: blur(65px);
+  animation: auroraBreath 14s ease-in-out infinite alternate;
+}
+
+.auroraOrb2 {
+  position: absolute;
+  top: -90px;
+  right: 10%;
+  width: 500px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
+  filter: blur(75px);
+  animation: auroraBreath 18s ease-in-out infinite alternate-reverse;
+}
+
+.auroraOrb3 {
+  position: absolute;
+  top: 150px;
+  left: 45%;
+  width: 450px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.08) 0%, transparent 70%);
+  filter: blur(70px);
+  animation: auroraBreath 16s ease-in-out infinite alternate;
+}
+
+@keyframes auroraBreath {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(25px, -15px) scale(1.08); }
+  100% { transform: translate(-20px, 20px) scale(0.95); }
 }
 
 .main {
@@ -12,6 +63,8 @@
   min-width: 0;
   padding: 2.25rem 3rem;
   overflow-y: auto;
+  position: relative;
+  z-index: 1;
 
   @media (max-width: 1024px) {
     padding: 1.75rem 2rem;
@@ -158,6 +211,8 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
+  position: relative;
+  z-index: 2;
 
   .statValue {
     font-size: 2.25rem;
@@ -175,6 +230,29 @@
     background: rgba(16, 185, 129, 0.15);
     color: #34d399;
   }
+}
+
+.statSubtext {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.35rem;
+  display: block;
+}
+
+.statSparklineSvg {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 48px;
+  pointer-events: none;
+  opacity: 0.35;
+  transition: opacity 0.25s ease;
+}
+
+.statCard:hover .statSparklineSvg {
+  opacity: 0.65;
 }
 
 /* Action Hub Grid */
@@ -233,7 +311,133 @@
   color: #94a3b8;
   font-size: 0.875rem;
   line-height: 1.5;
-  margin: 0 0 1.25rem 0;
+  margin: 0 0 1rem 0;
+}
+
+/* Pre-flight Controls */
+.preflightControls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.preflightBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+  }
+
+  &.preflightActive {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.35);
+    color: #a5b4fc;
+  }
+
+  &.preflightMuted {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+  }
+}
+
+.inputGroupRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.btnPaste {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a5b4fc;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(99, 102, 241, 0.25);
+    color: white;
+  }
+}
+
+.btnTestStudio {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px dashed rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.75rem;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(99, 102, 241, 0.16);
+    border-color: rgba(99, 102, 241, 0.6);
+    color: white;
+    transform: translateY(-1px);
+  }
+}
+
+.slugSuggestionsRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+
+  .slugPromptText {
+    font-size: 0.72rem;
+    color: #64748b;
+  }
+
+  .slugPill {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+  }
 }
 
 .btnPrimary {
@@ -467,5 +671,77 @@
       background: #6366f1;
       color: white;
     }
+  }
+
+  .qualityBadge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    padding: 3px 8px;
+    border-radius: 8px;
+
+    @media (max-width: 768px) {
+      display: none;
+    }
+  }
+}
+
+.avatarStack {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+
+  .miniAvatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    border: 1.5px solid #0b101b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: white;
+    margin-left: -5px;
+
+    &:first-child {
+      margin-left: 0;
+    }
+  }
+
+  .avatarCount {
+    font-size: 0.68rem;
+    color: #64748b;
+    margin-left: 6px;
+  }
+}
+
+.skeletonPulse {
+  display: inline-block;
+  height: 1.8rem;
+  width: 60px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
