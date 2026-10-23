@@ -71,10 +71,69 @@
   }
 }
 
+.centerSection {
+  flex: 1;
+  max-width: 440px;
+  display: flex;
+  justify-content: center;
+
+  @media (max-width: 960px) {
+    display: none;
+  }
+}
+
+.commandSearchBar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(99, 102, 241, 0.35);
+    color: #e2e8f0;
+  }
+
+  .searchIcon {
+    color: #64748b;
+    flex-shrink: 0;
+  }
+
+  .searchText {
+    flex: 1;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cmdKey {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+  }
+}
+
 .rightSection {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1.15rem;
   flex-shrink: 0;
 }
 
@@ -105,6 +164,270 @@
 
   @media (max-width: 640px) {
     display: none;
+  }
+}
+
+.notificationWrapper {
+  position: relative;
+}
+
+.shortcutsButton,
+.bellButton {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+
+  &:hover,
+  &.bellActive {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #f8fafc;
+  }
+
+  .unreadDot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ef4444;
+    border: 1px solid #080c14;
+  }
+}
+
+.notificationsDropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 320px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  backdrop-filter: blur(24px);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  overflow: hidden;
+  animation: fadeInDown 0.2s ease;
+
+  .notifHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.15rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+    .notifTitle {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-right: 0.5rem;
+    }
+
+    .notifBadge {
+      font-size: 0.65rem;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+
+    .markRead {
+      font-size: 0.72rem;
+      color: #64748b;
+      cursor: pointer;
+
+      &:hover {
+        color: #a5b4fc;
+      }
+    }
+  }
+
+  .notifList {
+    display: flex;
+    flex-direction: column;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .notifItem {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem 1.15rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .notifIconWrap {
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .notifContent {
+      flex: 1;
+
+      .notifItemTitle {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #e2e8f0;
+      }
+
+      .notifItemDesc {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        line-height: 1.4;
+        margin-top: 2px;
+      }
+
+      .notifTime {
+        font-size: 0.65rem;
+        color: #64748b;
+        margin-top: 4px;
+      }
+    }
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Command Palette Modal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 999;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.modalBox {
+  width: 90%;
+  max-width: 580px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  backdrop-filter: blur(30px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  animation: fadeInDown 0.2s ease;
+}
+
+.modalSearchInputRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.15rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+  .modalSearchIcon {
+    color: #818cf8;
+    flex-shrink: 0;
+  }
+
+  .modalInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 1rem;
+    outline: none;
+
+    &::placeholder {
+      color: #64748b;
+    }
+  }
+
+  .modalCloseBtn {
+    background: transparent;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px;
+
+    &:hover {
+      color: white;
+    }
+  }
+}
+
+.quickCommandsList {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  .groupTitle {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #475569;
+    margin-bottom: 0.4rem;
+    padding-left: 0.5rem;
+  }
+
+  .commandItem {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 0.85rem;
+    border-radius: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #e2e8f0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+
+    svg:first-child {
+      color: #818cf8;
+    }
+
+    .commandArrow {
+      margin-left: auto;
+      color: #64748b;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    &:hover {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.3);
+      color: white;
+
+      .commandArrow {
+        opacity: 1;
+        color: #a5b4fc;
+      }
+    }
   }
 }
 

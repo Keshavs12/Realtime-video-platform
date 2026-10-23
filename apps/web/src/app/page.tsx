@@ -260,7 +260,10 @@ export default function Home() {
 
             <div className={styles.cardActionArea}>
               <a
-                href="https://expo.dev/accounts/keshavsqa/projects/supercall/builds/28faaa51-b410-46b9-868a-20eecf94a5d9"
+                href={
+                  process.env.NEXT_PUBLIC_APK_DOWNLOAD_URL ||
+                  "https://expo.dev/accounts/keshavsqa/projects/supercall/builds/28faaa51-b410-46b9-868a-20eecf94a5d9"
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.btnDownloadApk}
@@ -269,6 +272,18 @@ export default function Home() {
                 <span>Download Android App (.APK)</span>
                 <ExternalLink size={15} style={{ opacity: 0.8 }} />
               </a>
+              <div style={{ marginTop: "0.6rem", textAlign: "center" }}>
+                <a
+                  href="https://github.com/Keshavs12/Realtime-video-platform/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: "0.75rem", color: "#64748b", textDecoration: "none" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#a5b4fc")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "#64748b")}
+                >
+                  Alternate: GitHub Releases &amp; Version History ↗
+                </a>
+              </div>
             </div>
           </div>
 

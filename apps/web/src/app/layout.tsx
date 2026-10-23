@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/providers/Providers";
@@ -13,6 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#080c14",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: "SuperCall — Realtime Video & Collaboration Platform",
   description: "Next-generation HD video meetings, screen sharing, live whiteboard, and AI-powered collaboration tools.",
@@ -23,6 +32,8 @@ export const metadata: Metadata = {
     title: "SuperCall",
   },
   icons: {
+    icon: "/favicon.png",
+    shortcut: "/icons/icon-192x192.png",
     apple: "/apple-touch-icon.png",
   },
 };

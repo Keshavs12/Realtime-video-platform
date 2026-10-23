@@ -15,32 +15,46 @@ import { io, Socket } from "socket.io-client";
 const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
 ];
 
-// Fetches short-lived TURN credentials from Metered.ca. Falls back to
-// STUN-only (no TURN) if the env vars aren't set or the request fails —
-// direct P2P still works on permissive networks, but calls across strict
-// NATs/firewalls will fail without a working TURN relay.
+// Fetches short-lived TURN credentials from Metered.ca or custom direct TURN server.
+// Falls back to Google STUN servers if external TURN is unreachable.
 const fetchIceServers = async (): Promise<RTCIceServer[]> => {
+  const directTurnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  const directTurnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
+  const directTurnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+
+  const directServers: RTCIceServer[] = [];
+  if (directTurnUrl) {
+    directServers.push({
+      urls: directTurnUrl.includes(",") ? directTurnUrl.split(",") : directTurnUrl,
+      username: directTurnUser || undefined,
+      credential: directTurnCred || undefined,
+    });
+  }
+
   const domain = process.env.NEXT_PUBLIC_METERED_DOMAIN;
   const apiKey = process.env.NEXT_PUBLIC_METERED_API_KEY;
 
-  if (!domain || !apiKey) {
-    console.warn(
-      "[WebRTC] NEXT_PUBLIC_METERED_DOMAIN/NEXT_PUBLIC_METERED_API_KEY not set — using STUN-only ICE config. Cross-network calls behind strict NATs will fail without TURN."
-    );
-    return FALLBACK_ICE_SERVERS;
+  if (domain && apiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const turnServers: RTCIceServer[] = await res.json();
+        return [...FALLBACK_ICE_SERVERS, ...directServers, ...turnServers];
+      }
+    } catch (err) {
+      console.warn("[WebRTC] Could not fetch Metered TURN credentials, continuing with configured servers:", err);
+    }
   }
 
-  try {
-    const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${apiKey}`);
-    if (!res.ok) throw new Error(`Metered credentials request failed: ${res.status}`);
-    const turnServers: RTCIceServer[] = await res.json();
-    return [...FALLBACK_ICE_SERVERS, ...turnServers];
-  } catch (err) {
-    console.error("[WebRTC] Failed to fetch Metered TURN credentials, falling back to STUN-only:", err);
-    return FALLBACK_ICE_SERVERS;
-  }
+  return [...FALLBACK_ICE_SERVERS, ...directServers];
 };
 
 export interface Peer {
