@@ -9,6 +9,13 @@ import { useSpeechCaptions } from "@/hooks/useSpeechCaptions";
 import { formatDuration } from "@/lib/videoStorage";
 import { GreenRoomLobby } from "@/components/GreenRoomLobby";
 import { WhiteboardModal } from "@/components/WhiteboardModal";
+import {
+  playJoinChime,
+  playLeaveChime,
+  playMuteChime,
+  playUnmuteChime,
+  playPopChime,
+} from "@/utils/audioChimes";
 import styles from "@/styles/room.module.scss";
 
 import {
@@ -207,6 +214,39 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     } else {
       router.push("/dashboard");
     }
+  };
+
+  // Audio chime feedback for peer arrival/departure
+  const prevPresenceCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!hasJoinedLobby) return;
+    const currentCount = presenceList.length;
+    if (prevPresenceCountRef.current !== null) {
+      if (currentCount > prevPresenceCountRef.current) {
+        playJoinChime();
+      } else if (currentCount < prevPresenceCountRef.current) {
+        playLeaveChime();
+      }
+    }
+    prevPresenceCountRef.current = currentCount;
+  }, [presenceList.length, hasJoinedLobby]);
+
+  // Audio chime for incoming reactions
+  const prevReactionCountRef = useRef(0);
+  useEffect(() => {
+    if (reactions.length > prevReactionCountRef.current) {
+      playPopChime();
+    }
+    prevReactionCountRef.current = reactions.length;
+  }, [reactions.length]);
+
+  const handleToggleAudio = () => {
+    if (isAudioMuted) {
+      playUnmuteChime();
+    } else {
+      playMuteChime();
+    }
+    toggleAudio();
   };
 
   const handleSendMessage = (e: React.SyntheticEvent) => {
@@ -411,7 +451,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         audioDevices={audioDevices}
         selectedVideoDeviceId={selectedVideoDeviceId}
         selectedAudioDeviceId={selectedAudioDeviceId}
-        onToggleAudio={toggleAudio}
+        onToggleAudio={handleToggleAudio}
         onToggleVideo={toggleVideo}
         onToggleScreenShare={handleToggleScreenShare}
         onToggleRecording={isRecording ? stopRecording : startRecording}
@@ -419,6 +459,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
         onToggleRaiseHand={toggleRaiseHand}
         onToggleReactionsPicker={() => setShowReactionsPicker((prev) => !prev)}
         onSendReaction={(emoji) => {
+          playPopChime();
           sendReaction(emoji);
           setShowReactionsPicker(false);
         }}

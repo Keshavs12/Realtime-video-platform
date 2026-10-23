@@ -32,6 +32,8 @@ export const metadata: Metadata = {
     title: "SuperCall",
   },
   icons: {
+    icon: "/favicon.png",
+    shortcut: "/icons/icon-192x192.png",
     apple: "/apple-touch-icon.png",
   },
 };
