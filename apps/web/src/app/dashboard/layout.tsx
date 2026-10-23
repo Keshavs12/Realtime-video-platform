@@ -19,6 +19,13 @@ export default function DashboardLayout({ children }: Readonly<{ children: React
   return (
     <ProtectedRoute>
       <div className={styles.container}>
+        {/* Ambient Aurora Borealis Mesh Atmosphere */}
+        <div className={styles.auroraContainer}>
+          <div className={styles.auroraOrb1} />
+          <div className={styles.auroraOrb2} />
+          <div className={styles.auroraOrb3} />
+        </div>
+
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
         <main className={styles.main}>
           <Header onMenuClick={() => setIsSidebarOpen(true)} />

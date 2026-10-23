@@ -17,6 +17,7 @@ import {
   Camera,
   Subtitles,
   Sparkles,
+  PictureInPicture2,
 } from "lucide-react";
 import styles from "@/styles/room.module.scss";
 
@@ -216,6 +217,30 @@ export function RoomControlBar({
               <Sparkles size={20} />
             </button>
           )}
+
+          {/* Picture-in-Picture Floating Player */}
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                if (document.pictureInPictureElement) {
+                  await document.exitPictureInPicture();
+                } else {
+                  const videos = Array.from(document.querySelectorAll("video"));
+                  const activeVideo = videos.find((v) => v.readyState >= 2 && !v.paused) || videos[0];
+                  if (activeVideo && activeVideo.requestPictureInPicture) {
+                    await activeVideo.requestPictureInPicture();
+                  }
+                }
+              } catch (err) {
+                console.warn("PiP toggle:", err);
+              }
+            }}
+            className={styles.controlButton}
+            title="Picture-in-Picture Floating Player"
+          >
+            <PictureInPicture2 size={20} />
+          </button>
 
           {/* Toggle Sidebar */}
           <button
