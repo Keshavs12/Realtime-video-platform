@@ -1,0 +1,210 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  transition: background-color 0.3s ease, color 0.3s ease;
+
+  /* Dark Theme default */
+  background: radial-gradient(circle at 50% 40%, #0f172a 0%, #080c14 100%);
+  color: #f8fafc;
+}
+
+:global([data-theme="light"]) .container {
+  /* Clean, luxury modern light mode */
+  background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f1f5f9 100%);
+  color: #0f172a;
+}
+
+.spinnerCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.5rem 3rem;
+  border-radius: 28px;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.15);
+  animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 380px;
+  width: 90%;
+  text-align: center;
+}
+
+:global([data-theme="light"]) .spinnerCard {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08), 0 0 35px rgba(99, 102, 241, 0.12);
+}
+
+.orbitalWrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Outer Gradient Ring */
+.outerRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(from 0deg, #6366f1, #06b6d4, #a855f7, transparent 80%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: rotateClockwise 1.4s linear infinite;
+}
+
+/* Inner Counter-Rotating Ring */
+.innerRing {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(from 180deg, #ec4899, #8b5cf6, transparent 70%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: rotateCounterClockwise 2s linear infinite;
+}
+
+/* Core Icon Emblem */
+.coreEmblem {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(6, 182, 212, 0.25));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #818cf8;
+  animation: pulseCore 2s ease-in-out infinite;
+}
+
+:global([data-theme="light"]) .coreEmblem {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(6, 182, 212, 0.15));
+  border-color: rgba(99, 102, 241, 0.25);
+  color: #4f46e5;
+}
+
+.brandTitle {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.4rem 0;
+  background: linear-gradient(135deg, #ffffff 40%, #818cf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+:global([data-theme="light"]) .brandTitle {
+  background: linear-gradient(135deg, #0f172a 40%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.statusText {
+  font-size: 0.825rem;
+  font-weight: 500;
+  color: #94a3b8;
+  margin: 0 0 1.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+:global([data-theme="light"]) .statusText {
+  color: #64748b;
+}
+
+/* Progress indicator bar */
+.progressBarTrack {
+  width: 140px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  position: relative;
+}
+
+:global([data-theme="light"]) .progressBarTrack {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.progressBarFill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 45%;
+  background: linear-gradient(90deg, #6366f1, #06b6d4);
+  border-radius: 9999px;
+  animation: progressSlide 1.6s ease-in-out infinite;
+}
+
+@keyframes rotateClockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rotateCounterClockwise {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes pulseCore {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+  }
+}
+
+@keyframes progressSlide {
+  0% {
+    left: -45%;
+  }
+  50% {
+    left: 40%;
+    width: 60%;
+  }
+  100% {
+    left: 100%;
+    width: 30%;
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

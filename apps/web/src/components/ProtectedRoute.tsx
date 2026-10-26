@@ -3,6 +3,7 @@
 import { ReactNode, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { AppLoadingSpinner } from "@/components/AppLoadingSpinner";
 
 interface Props {
   children: ReactNode;
@@ -22,7 +23,7 @@ export default function ProtectedRoute({ children }: Readonly<Props>) {
   }, [loading, accessToken, router, isRoomPath]);
 
   if (loading && !isRoomPath) {
-    return <h1>Loading...</h1>;
+    return <AppLoadingSpinner subMessage="Verifying session &amp; workspace…" />;
   }
 
   if (!accessToken && !isRoomPath) {

@@ -16,9 +16,12 @@ import {
   X,
   ArrowRight,
   Keyboard,
+  Sun,
+  Moon,
 } from "lucide-react";
 import styles from "./Header.module.scss";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import { useTheme } from "@/context/ThemeContext";
 
 interface HeaderProps {
   title?: string;
@@ -32,6 +35,7 @@ export const Header = ({
   onMenuClick,
 }: HeaderProps) => {
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -147,6 +151,17 @@ export const Header = ({
           <ShieldCheck size={14} className={styles.statusIcon} />
           <span>Encrypted Mesh</span>
         </div>
+
+        {/* Theme Toggle (Dark / Light) */}
+        <button
+          type="button"
+          className={styles.themeToggleBtn}
+          onClick={toggleTheme}
+          title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
+          aria-label="Toggle Color Theme"
+        >
+          {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
 
         {/* Keyboard Shortcuts Trigger */}
         <button

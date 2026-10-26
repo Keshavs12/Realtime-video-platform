@@ -1,11 +1,12 @@
 .container {
   min-height: 100dvh;
   display: flex;
-  background-color: #080c14;
-  color: #f8fafc;
+  background-color: var(--background, #080c14);
+  color: var(--foreground, #f8fafc);
   font-family: var(--font-sans);
   overflow-x: hidden;
   position: relative;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .auroraContainer {
@@ -743,5 +744,120 @@
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+:global([data-theme="light"]) {
+  .auroraOrb1 {
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+  }
+
+  .auroraOrb2 {
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.06) 0%, transparent 70%);
+  }
+
+  .statCard,
+  .actionCard,
+  .activityCard {
+    background: rgba(255, 255, 255, 0.88);
+    border-color: rgba(226, 232, 240, 0.95);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+
+    &:hover {
+      box-shadow: 0 14px 35px rgba(99, 102, 241, 0.1);
+      border-color: rgba(99, 102, 241, 0.35);
+    }
+  }
+
+  .statLabel {
+    color: #64748b;
+  }
+
+  .statValue {
+    color: #0f172a;
+  }
+
+  .statSubtext {
+    color: #64748b;
+  }
+
+  .heroTitle {
+    color: #0f172a;
+  }
+
+  .heroDesc {
+    color: #64748b;
+  }
+
+  .heroBadge {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: rgba(99, 102, 241, 0.25);
+    color: #4f46e5;
+  }
+
+  .actionCard h3 {
+    color: #0f172a;
+  }
+
+  .actionDesc {
+    color: #64748b;
+  }
+
+  .inputField {
+    background: rgba(241, 245, 249, 0.9);
+    border-color: rgba(203, 213, 225, 0.8);
+    color: #0f172a;
+
+    &::placeholder {
+      color: #94a3b8;
+    }
+
+    &:focus {
+      background: #ffffff;
+      border-color: #10b981;
+    }
+  }
+
+  .preflightBtn {
+    background: rgba(241, 245, 249, 0.9);
+    border-color: rgba(226, 232, 240, 0.95);
+    color: #475569;
+  }
+
+  .activityCard {
+    .activityTitleRow h3 {
+      color: #0f172a;
+    }
+    .historyCount {
+      background: rgba(0, 0, 0, 0.06);
+      color: #64748b;
+    }
+  }
+
+  .activityItem {
+    background: rgba(248, 250, 252, 0.9);
+    border-color: rgba(226, 232, 240, 0.9);
+
+    &:hover {
+      background: #ffffff;
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+  }
+
+  .roomCodeBadge {
+    color: #0f172a;
+  }
+
+  .itemMeta {
+    color: #64748b;
+  }
+
+  .skeletonPulse {
+    background: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.04) 25%,
+      rgba(0, 0, 0, 0.09) 50%,
+      rgba(0, 0, 0, 0.04) 75%
+    );
   }
 }
