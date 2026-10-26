@@ -452,3 +452,68 @@
     box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
   }
 }
+
+:global([data-theme="light"]) {
+  .sidebar {
+    background-color: rgba(255, 255, 255, 0.95);
+    border-right-color: rgba(226, 232, 240, 0.9);
+  }
+
+  .logoText {
+    background: linear-gradient(135deg, #0f172a 40%, #4f46e5 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .navItem {
+    color: #475569;
+
+    &:hover {
+      background: rgba(241, 245, 249, 0.9);
+      color: #0f172a;
+    }
+
+    &.active {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08));
+      color: #4f46e5;
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+  }
+
+  .storageCard {
+    background: rgba(241, 245, 249, 0.85);
+    border-color: rgba(226, 232, 240, 0.9);
+
+    .storageTitle {
+      color: #0f172a;
+    }
+
+    .storageUsed {
+      color: #64748b;
+    }
+
+    .storageTrack {
+      background: rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  .mobileCompanionCard {
+    background: rgba(241, 245, 249, 0.9);
+    border-color: rgba(226, 232, 240, 0.9);
+
+    .companionTitle {
+      color: #0f172a;
+    }
+
+    .companionDesc {
+      color: #64748b;
+    }
+  }
+
+  .healthIndicator {
+    background: rgba(241, 245, 249, 0.9);
+    border-color: rgba(226, 232, 240, 0.9);
+    color: #475569;
+  }
+}
+
