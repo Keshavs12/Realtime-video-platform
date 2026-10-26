@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Radio, Mail, Lock, ArrowRight, Loader2, Sparkles, ShieldCheck } from "lucide-react";
 import styles from "../../styles/login.module.scss";
 import { login } from "../../services/auth.service";
 import { useAuth } from "@/context/AuthContext";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams.get("redirect");
   const { login: loginUser } = useAuth();
   const [formData, setFormData] = useState({
     email: "",
@@ -29,9 +31,11 @@ export default function LoginPage() {
 
     try {
       const response = await login(formData);
-      const { user, accessToken } = response.data.data;
-      loginUser(user, accessToken);
-      router.push("/dashboard");
+      const { user, accessToken, refreshToken } = response.data.data;
+      loginUser(user, accessToken, refreshToken);
+
+      const targetUrl = redirectParam && redirectParam.startsWith("/") ? redirectParam : "/dashboard";
+      router.push(targetUrl);
     } catch (err: any) {
       setError(err.response?.data?.message || "Invalid email or password. Please try again.");
     } finally {
@@ -131,5 +135,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

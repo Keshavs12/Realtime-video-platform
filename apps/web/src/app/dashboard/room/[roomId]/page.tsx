@@ -304,18 +304,20 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   }, [messages]);
 
   useEffect(() => {
-    if (roomNotFound) {
-      router.replace("/dashboard");
-    }
-  }, [roomNotFound, router]);
+    if (!roomNotFound) return;
+    const timer = setTimeout(() => {
+      router.replace(isGuest ? "/" : "/dashboard");
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [roomNotFound, router, isGuest]);
 
   useEffect(() => {
     if (!roomFull) return;
     const timer = setTimeout(() => {
-      router.replace("/dashboard");
+      router.replace(isGuest ? "/" : "/dashboard");
     }, 3000);
     return () => clearTimeout(timer);
-  }, [roomFull, router]);
+  }, [roomFull, router, isGuest]);
 
   useEffect(() => {
     if (!showRecordModal) return;
@@ -327,19 +329,19 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   }, [showRecordModal]);
 
   if (roomNotFound) {
-    return <RoomNotFoundScreen />;
+    return <RoomNotFoundScreen onReturn={() => router.replace(isGuest ? "/" : "/dashboard")} />;
   }
 
   if (roomFull) {
-    return <RoomFullScreen />;
+    return <RoomFullScreen onReturn={() => router.replace(isGuest ? "/" : "/dashboard")} />;
   }
 
   if (roomLockedError) {
-    return <RoomLockedScreen onReturn={() => router.replace("/dashboard")} />;
+    return <RoomLockedScreen onReturn={() => router.replace(isGuest ? "/" : "/dashboard")} />;
   }
 
   if (kickedFromRoom) {
-    return <KickedFromRoomScreen onReturn={() => router.replace("/dashboard")} />;
+    return <KickedFromRoomScreen onReturn={() => router.replace(isGuest ? "/" : "/dashboard")} />;
   }
 
   if (isWaitingForAdmission) {

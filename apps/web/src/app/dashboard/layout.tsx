@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }: Readonly<{ children: React
   const isRoom = Boolean(pathname?.includes("/room/"));
 
   if (isRoom) {
-    return <ProtectedRoute>{children}</ProtectedRoute>;
+    return <>{children}</>;
   }
 
   return (

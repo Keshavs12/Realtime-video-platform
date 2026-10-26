@@ -36,9 +36,20 @@ export const createMeeting = asyncHandler(async (req, res) => {
 });
 
 export const getMeetings = asyncHandler(async (req, res) => {
+    const rawOrigin = req.get("origin") || req.get("referer");
+    let clientOrigin: string | undefined;
+    if (rawOrigin) {
+        try {
+            clientOrigin = new URL(rawOrigin).origin;
+        } catch {
+            clientOrigin = stripTrailingSlashes(String(rawOrigin));
+        }
+    }
+
     const meetings = await scheduleService.getScheduledMeetings(
         req.user!.userId,
-        req.user!.email
+        req.user!.email,
+        clientOrigin
     );
 
     res.status(200).json({

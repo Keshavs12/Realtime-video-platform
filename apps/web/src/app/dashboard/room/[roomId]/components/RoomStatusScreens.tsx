@@ -2,20 +2,38 @@ import React from "react";
 import { Clock } from "lucide-react";
 import styles from "@/styles/room.module.scss";
 
-export function RoomNotFoundScreen() {
+export function RoomNotFoundScreen({ onReturn }: Readonly<{ onReturn?: () => void }>) {
   return (
     <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
-      <p style={{ color: "#94a3b8" }}>This room doesn&apos;t exist. Redirecting…</p>
+      <div style={{ textAlign: "center", background: "rgba(15, 23, 42, 0.8)", padding: "2.5rem", borderRadius: "16px", border: "1px solid #ef4444" }}>
+        <h2 style={{ color: "#ef4444", marginBottom: "0.75rem", fontSize: "1.4rem" }}>Meeting Room Not Found</h2>
+        <p style={{ color: "#94a3b8", marginBottom: "1.5rem" }}>
+          This meeting room does not exist, has ended, or the link is invalid. Redirecting…
+        </p>
+        {onReturn && (
+          <button onClick={onReturn} className={styles.returnButton}>
+            Return
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-export function RoomFullScreen() {
+export function RoomFullScreen({ onReturn }: Readonly<{ onReturn?: () => void }>) {
   return (
     <div className={styles.roomContainer} style={{ alignItems: "center", justifyContent: "center" }}>
-      <p style={{ color: "#f87171", fontSize: "1.1rem", fontWeight: 500 }}>
-        This room has reached maximum capacity (8 participants). Redirecting to dashboard…
-      </p>
+      <div style={{ textAlign: "center", background: "rgba(15, 23, 42, 0.8)", padding: "2.5rem", borderRadius: "16px", border: "1px solid #f59e0b" }}>
+        <h2 style={{ color: "#f59e0b", marginBottom: "0.75rem", fontSize: "1.4rem" }}>Room Full</h2>
+        <p style={{ color: "#94a3b8", marginBottom: "1.5rem" }}>
+          This room has reached maximum capacity (8 participants). Redirecting…
+        </p>
+        {onReturn && (
+          <button onClick={onReturn} className={styles.returnButton}>
+            Return
+          </button>
+        )}
+      </div>
     </div>
   );
 }

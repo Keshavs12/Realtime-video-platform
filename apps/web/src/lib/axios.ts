@@ -70,10 +70,20 @@ api.interceptors.response.use(
 
   async (error) => {
     const originalRequest = error.config;
+    const url = originalRequest?.url || "";
+
+    // Do NOT intercept auth endpoints (login, signup, refresh, send-otp, verify-otp)
+    const isAuthEndpoint =
+      url.includes("/auth/login") ||
+      url.includes("/auth/signup") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/send-otp") ||
+      url.includes("/auth/verify-otp");
 
     if (
       error.response?.status === 401 &&
-      !originalRequest._retry
+      !originalRequest._retry &&
+      !isAuthEndpoint
     ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -105,9 +115,13 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
 
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          window.location.href = "/login";
+        // Never redirect away from video rooms - guests can join freely without account
+        const isRoomPath = typeof window !== "undefined" && window.location.pathname.includes("/room/");
+        if (typeof window !== "undefined" && window.location.pathname !== "/login" && !isRoomPath) {
+          const currentPath = window.location.pathname + window.location.search;
+          window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
         }
 
         throw refreshError;

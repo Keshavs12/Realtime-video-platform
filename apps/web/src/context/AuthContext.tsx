@@ -22,7 +22,7 @@ interface AuthContextType {
   accessToken: string | null;
   loading: boolean;
 
-  login: (user: User, token: string) => void;
+  login: (user: User, token: string, refreshToken?: string) => void;
   logout: () => void;
   updateUser: (user: User) => void;
 }
@@ -70,8 +70,11 @@ const initializeAuth = async () => {
   }
 };
 
-  const memoizedLogin = useCallback((newUser: User, token: string) => {
+  const memoizedLogin = useCallback((newUser: User, token: string, refreshToken?: string) => {
     localStorage.setItem("accessToken", token);
+    if (refreshToken) {
+      localStorage.setItem("refreshToken", refreshToken);
+    }
     setUser(newUser);
     setAccessToken(token);
   }, []);

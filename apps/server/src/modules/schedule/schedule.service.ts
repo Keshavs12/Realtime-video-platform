@@ -38,25 +38,25 @@ const stripTrailingSlashes = (url: string): string => {
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/;
 
 export const resolveAppUrl = (clientOrigin?: string): string => {
-    const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
-
-    const isLocalhost = clientOrigin?.includes("localhost") || clientOrigin?.includes("127.0.0.1");
-    if (clientOrigin && !isLocalhost) {
+    // 1. If active clientOrigin passed from browser (window.location.origin), prioritize it
+    // so the email contains the exact domain/port the host and participants are actively using
+    if (clientOrigin && !clientOrigin.includes("undefined") && !clientOrigin.includes("null")) {
         return stripTrailingSlashes(clientOrigin);
     }
 
-    // 2. If FRONTEND_URL or APP_URL is configured in server .env
-    if (envUrl) {
+    // 2. If FRONTEND_URL or APP_URL is configured in server .env (and not an expired ngrok link)
+    const envUrl = process.env.FRONTEND_URL || process.env.APP_URL;
+    if (envUrl && !envUrl.includes("ngrok-free.dev") && !envUrl.includes("example.com")) {
         return stripTrailingSlashes(envUrl);
     }
 
-    // 3. If clientOrigin was localhost or missing, resolve to host machine's LAN IP so recipients can access
+    // 3. Fallback to host machine's LAN IP so recipients on local Wi-Fi can access
     const lanIp = getLanIpAddress();
     if (lanIp) {
         return `http://${lanIp}:3000`;
     }
 
-    return clientOrigin ? stripTrailingSlashes(clientOrigin) : "http://localhost:3000";
+    return "http://localhost:3000";
 };
 
 export interface CreateScheduledMeetingInput {
@@ -86,7 +86,7 @@ export const createScheduledMeeting = async (
     }
 
     // Generate clean room code
-    const roomCode = `room-${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
+    const roomCode = `${crypto.randomBytes(4).toString("hex")}-${Date.now().toString(36).slice(-4)}`;
 
     // Parse and sanitize invitee emails
     let inviteeList: string[] = [];
@@ -157,7 +157,7 @@ export const createScheduledMeeting = async (
     };
 };
 
-export const getScheduledMeetings = async (userId: string, userEmail: string) => {
+export const getScheduledMeetings = async (userId: string, userEmail: string, clientOrigin?: string) => {
     const meetings = await prisma.scheduledMeeting.findMany({
         where: {
             OR: [
@@ -179,7 +179,7 @@ export const getScheduledMeetings = async (userId: string, userEmail: string) =>
         },
     });
 
-    const appUrl = resolveAppUrl();
+    const appUrl = resolveAppUrl(clientOrigin);
 
     return meetings.map((m) => {
         const inviteeList = m.invitees ? m.invitees.split(",").map((e) => e.trim()).filter(Boolean) : [];

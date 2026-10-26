@@ -305,32 +305,78 @@ export const initSocketServer = (server: HttpServer): Server => {
         // 1. Join Room
         socket.on("join-room", async (payload: JoinRoomPayload) => {
             const rawRoomId = payload?.roomId;
-            const roomId = String(rawRoomId || "")
+            const raw = String(rawRoomId || "").trim();
+            const clean = raw
                 .replace(/^https?:\/\/[^\/]+\/room\//i, "")
                 .replace(/^https?:\/\/[^\/]+\//i, "")
-                .replace(/^room[:\s\/-]*/i, "")
                 .replace(/[^a-zA-Z0-9_-]/g, "")
                 .trim()
                 .toLowerCase();
+            const stripped = clean.replace(/^room[:\s\/-]*/i, "");
 
             const userId = (socket.data.userId as string) || payload?.userId || (socket.handshake.auth?.userId as string) || `guest-${socket.id.slice(0, 8)}`;
             socket.data.userId = userId;
 
             const name = await resolveJoinUserName(socket, userId, payload?.name);
 
-            const room = await prisma.room.findFirst({
+            let room = await prisma.room.findFirst({
                 where: {
                     OR: [
-                        { code: roomId },
-                        { code: { equals: roomId, mode: "insensitive" } },
-                        { code: roomId.replace(/-/g, "") },
-                        { code: { equals: roomId.replace(/-/g, ""), mode: "insensitive" } },
+                        { code: raw },
+                        { code: clean },
+                        { code: stripped },
+                        { code: `room-${stripped}` },
+                        { code: { equals: raw, mode: "insensitive" } },
+                        { code: { equals: clean, mode: "insensitive" } },
+                        { code: { equals: stripped, mode: "insensitive" } },
+                        { code: { equals: `room-${stripped}`, mode: "insensitive" } },
+                        { code: clean.replace(/-/g, "") },
+                        { code: { equals: clean.replace(/-/g, ""), mode: "insensitive" } },
                     ],
                 },
             });
+
             if (!room) {
-                console.warn(`⚠️ Rejected join-room for unknown room code: ${roomId} (raw: ${rawRoomId})`);
-                socket.emit("room-not-found", { roomId });
+                // Fallback: check if roomCode exists in ScheduledMeeting table
+                const scheduled = await prisma.scheduledMeeting.findFirst({
+                    where: {
+                        OR: [
+                            { roomCode: raw },
+                            { roomCode: clean },
+                            { roomCode: stripped },
+                            { roomCode: `room-${stripped}` },
+                            { roomCode: { equals: raw, mode: "insensitive" } },
+                            { roomCode: { equals: clean, mode: "insensitive" } },
+                            { roomCode: { equals: stripped, mode: "insensitive" } },
+                            { roomCode: { equals: `room-${stripped}`, mode: "insensitive" } },
+                        ],
+                    },
+                });
+
+                if (scheduled) {
+                    try {
+                        room = await prisma.room.create({
+                            data: {
+                                code: scheduled.roomCode,
+                                hostId: scheduled.hostId,
+                            },
+                        });
+                    } catch {
+                        room = await prisma.room.findFirst({
+                            where: {
+                                OR: [
+                                    { code: scheduled.roomCode },
+                                    { code: { equals: scheduled.roomCode, mode: "insensitive" } },
+                                ],
+                            },
+                        });
+                    }
+                }
+            }
+
+            if (!room) {
+                console.warn(`⚠️ Rejected join-room for unknown room code: ${clean} (raw: ${rawRoomId})`);
+                socket.emit("room-not-found", { roomId: clean });
                 return;
             }
 
