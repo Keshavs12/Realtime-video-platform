@@ -235,6 +235,58 @@ export const switchCameraFacing = (stream: any): boolean => {
   return false;
 };
 
+/**
+ * Requests a screen capture (display media) stream.
+ *
+ * On compiled Android/iOS native builds (isNativeWebRTC === true), react-native-webrtc's
+ * mediaDevices.getDisplayMedia is used — this is the ONLY path that works inside a real APK.
+ * Android WebView does NOT expose navigator.mediaDevices.getDisplayMedia, which is why
+ * screen sharing failed when it was routed through the WebView JS bridge.
+ *
+ * On browser / web targets (isBrowserWebRTC === true), navigator.mediaDevices.getDisplayMedia
+ * is used (works in modern desktop Chrome/Firefox/Safari).
+ *
+ * Returns null if screen capture is not supported or the user denies permission.
+ */
+export const getDisplayMediaStream = async (): Promise<any | null> => {
+  // Native path: compiled APK (Android / iOS) using react-native-webrtc
+  if (isNativeWebRTC && mediaDevices) {
+    try {
+      if (typeof mediaDevices.getDisplayMedia !== "function") {
+        console.warn(
+          "[ScreenShare] react-native-webrtc mediaDevices.getDisplayMedia is not available. " +
+          "Ensure react-native-webrtc >= 111.0.0 and the app is running as a compiled build (not Expo Go)."
+        );
+        return null;
+      }
+      const stream = await mediaDevices.getDisplayMedia({ video: true });
+      return stream;
+    } catch (err: any) {
+      console.warn("[ScreenShare] Native getDisplayMedia error:", err?.name || err);
+      throw err; // re-throw so caller can distinguish NotAllowedError from real errors
+    }
+  }
+
+  // Browser path: desktop Chrome/Firefox/Safari (works in Expo web or browser builds)
+  if (
+    isBrowserWebRTC &&
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices &&
+    typeof (navigator.mediaDevices as any).getDisplayMedia === "function"
+  ) {
+    try {
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true });
+      return stream;
+    } catch (err: any) {
+      console.warn("[ScreenShare] Browser getDisplayMedia error:", err?.name || err);
+      throw err;
+    }
+  }
+
+  console.warn("[ScreenShare] getDisplayMedia is not supported on this platform/runtime.");
+  return null;
+};
+
 export {
   RTCPeerConnection,
   RTCIceCandidate,

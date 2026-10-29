@@ -41,6 +41,7 @@ import {
   isWebRTCSupported,
   isNativeWebRTC,
   FALLBACK_ICE_SERVERS,
+  getDisplayMediaStream,
 } from "../services/webrtc.service";
 
 interface RoomScreenProps {
@@ -103,6 +104,10 @@ export const RoomScreen = ({
   const [dataSaverMode, setDataSaverMode] = useState(false);
   const [mirrorVideo, setMirrorVideo] = useState(true);
   const [noiseSuppression, setNoiseSuppression] = useState(true);
+
+  // Native screen share refs (used when isNativeWebRTC === true, e.g., compiled Android APK)
+  const screenStreamRef = useRef<any | null>(null);
+  const cameraTrackBeforeShareRef = useRef<any | null>(null);
 
   // Polls, Notes, Whiteboard, Host Controls
   const [polls, setPolls] = useState<PollItem[]>([]);
@@ -690,6 +695,15 @@ export const RoomScreen = ({
       });
       peerConnectionsRef.current = {};
 
+      // Stop screen share stream if active (native Android path)
+      if (screenStreamRef.current) {
+        try {
+          screenStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        } catch (_) {}
+        screenStreamRef.current = null;
+      }
+      cameraTrackBeforeShareRef.current = null;
+
       // Stop local tracks
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track: any) => {
@@ -768,9 +782,128 @@ export const RoomScreen = ({
     }
   };
 
+  // Native screen share stop — restores camera track across all peer connections
+  const stopNativeScreenShare = () => {
+    if (!isScreenSharing) return;
+
+    // Stop the screen capture stream tracks
+    if (screenStreamRef.current) {
+      try {
+        screenStreamRef.current.getTracks().forEach((t: any) => t.stop());
+      } catch (_) {}
+      screenStreamRef.current = null;
+    }
+
+    // Restore camera video track in all peer connections
+    const camTrack = cameraTrackBeforeShareRef.current;
+    if (camTrack && localStreamRef.current) {
+      try {
+        localStreamRef.current.addTrack(camTrack);
+      } catch (_) {}
+      Object.values(peerConnectionsRef.current).forEach((pc: any) => {
+        try {
+          const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
+          const videoSender = senders.find((s: any) => s.track && s.track.kind === "video");
+          if (videoSender) {
+            videoSender.replaceTrack(camTrack);
+          }
+        } catch (e) {
+          console.warn("[ScreenShare] Error restoring camera track:", e);
+        }
+      });
+    }
+    cameraTrackBeforeShareRef.current = null;
+
+    setIsScreenSharing(false);
+    if (socketRef.current) {
+      socketRef.current.emit("screen-share-status", { isSharing: false });
+    }
+  };
+
   // Toggle Screen Sharing
-  const handleToggleScreenShare = () => {
+  const handleToggleScreenShare = async () => {
     try { Vibration.vibrate(25); } catch {}
+
+    // --- Native path: compiled Android APK (react-native-webrtc supports getDisplayMedia) ---
+    if (isNativeWebRTC) {
+      if (isScreenSharing) {
+        stopNativeScreenShare();
+        return;
+      }
+
+      try {
+        const screenStream = await getDisplayMediaStream();
+        if (!screenStream) {
+          Alert.alert(
+            "Screen Share",
+            "Screen sharing could not be started. Please grant the screen capture permission when prompted."
+          );
+          return;
+        }
+
+        const screenTrack = screenStream.getVideoTracks()[0];
+        if (!screenTrack) {
+          Alert.alert("Screen Share", "No screen video track was captured.");
+          return;
+        }
+
+        screenStreamRef.current = screenStream;
+
+        // Stash the current camera track so we can restore it later
+        if (localStreamRef.current) {
+          const camTracks = localStreamRef.current.getVideoTracks();
+          if (camTracks.length > 0) {
+            cameraTrackBeforeShareRef.current = camTracks[0];
+            try {
+              localStreamRef.current.removeTrack(camTracks[0]);
+            } catch (_) {}
+          }
+          try {
+            localStreamRef.current.addTrack(screenTrack);
+          } catch (_) {}
+        }
+
+        // Replace video track in every active peer connection
+        Object.values(peerConnectionsRef.current).forEach((pc: any) => {
+          try {
+            const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
+            const videoSender = senders.find((s: any) => s.track && s.track.kind === "video");
+            if (videoSender) {
+              videoSender.replaceTrack(screenTrack);
+            } else {
+              // No existing video sender — add a new track
+              if (localStreamRef.current) {
+                pc.addTrack(screenTrack, localStreamRef.current);
+              }
+            }
+          } catch (e) {
+            console.warn("[ScreenShare] Error replacing track for peer:", e);
+          }
+        });
+
+        // Auto-stop when the user closes the system screen picker
+        screenTrack.onended = () => {
+          stopNativeScreenShare();
+        };
+
+        setIsScreenSharing(true);
+        if (socketRef.current) {
+          socketRef.current.emit("screen-share-status", { isSharing: true });
+        }
+      } catch (err: any) {
+        console.warn("[ScreenShare] Native getDisplayMedia error:", err);
+        // User cancelled (NotAllowedError) — no alert needed
+        if (err?.name !== "NotAllowedError" && err?.code !== 0) {
+          Alert.alert(
+            "Screen Share",
+            "Screen sharing failed: " + (err?.message || "Unknown error. Please try again.")
+          );
+        }
+      }
+      return;
+    }
+
+    // --- WebView path: Expo Go / iOS WKWebView (getDisplayMedia works on Safari/desktop) ---
     if (isScreenSharing) {
       webRTCStageRef.current?.stopScreenShare?.();
     } else {
