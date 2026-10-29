@@ -771,8 +771,11 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
         }
 
         case "START_SCREEN_SHARE": {
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-            postToRN({ type: "SCREEN_SHARE_ERROR", message: "Screen sharing is not supported by this device or browser engine." });
+          if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+            postToRN({
+              type: "SCREEN_SHARE_ERROR",
+              message: "Screen sharing is not supported inside the Android WebView engine. This is handled natively by the app on Android — if you see this, please restart and try again."
+            });
             break;
           }
           try {
@@ -906,6 +909,9 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
           mediaCapturePermissionGrantType="grant"
           javaScriptEnabled={true}
           domStorageEnabled={true}
+          allowFileAccess={true}
+          allowUniversalAccessFromFileURLs={true}
+          mixedContentMode="always"
           onMessage={handleMessage}
           style={styles.webview}
           scrollEnabled={false}
