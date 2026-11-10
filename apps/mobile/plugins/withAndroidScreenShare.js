@@ -130,12 +130,13 @@ function copyNotificationIcon(config) {
         fs.mkdirSync(drawableDir, { recursive: true });
       }
 
+      // Write vector drawable XML into res/drawable/ic_notification.xml
       const iconXmlPath = path.join(drawableDir, "ic_notification.xml");
       fs.writeFileSync(iconXmlPath, IC_NOTIFICATION_XML, "utf8");
 
+      // Write raster fallback PNGs ONLY into density folders (mdpi, hdpi, etc.), NOT root drawable/
       const pngBuffer = Buffer.from(IC_NOTIFICATION_PNG_BASE64, "base64");
-      const targetDirs = [
-        "drawable",
+      const densityDirs = [
         "drawable-mdpi",
         "drawable-hdpi",
         "drawable-xhdpi",
@@ -143,7 +144,7 @@ function copyNotificationIcon(config) {
         "drawable-xxxhdpi",
       ];
 
-      for (const dirName of targetDirs) {
+      for (const dirName of densityDirs) {
         const targetDir = path.join(resPath, dirName);
         if (!fs.existsSync(targetDir)) {
           fs.mkdirSync(targetDir, { recursive: true });
