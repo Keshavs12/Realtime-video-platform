@@ -11,6 +11,9 @@ import {
   Modal,
   Share,
   Vibration,
+  Platform,
+  PermissionsAndroid,
+  NativeModules,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { io, Socket } from "socket.io-client";
@@ -108,6 +111,7 @@ export const RoomScreen = ({
   // Native screen share refs (used when isNativeWebRTC === true, e.g., compiled Android APK)
   const screenStreamRef = useRef<any | null>(null);
   const cameraTrackBeforeShareRef = useRef<any | null>(null);
+  const wasVideoMutedBeforeShareRef = useRef<boolean>(false);
 
   // Polls, Notes, Whiteboard, Host Controls
   const [polls, setPolls] = useState<PollItem[]>([]);
@@ -116,6 +120,9 @@ export const RoomScreen = ({
   const [notesUpdatedBy, setNotesUpdatedBy] = useState<string | null>(null);
   const [notesVisible, setNotesVisible] = useState(false);
   const [whiteboardVisible, setWhiteboardVisible] = useState(false);
+  const [remoteDrawStep, setRemoteDrawStep] = useState<any | null>(null);
+  const [remoteClearTimestamp, setRemoteClearTimestamp] = useState<number>(0);
+  const [remoteWhiteboardHistory, setRemoteWhiteboardHistory] = useState<any[]>([]);
   const [hostControlsVisible, setHostControlsVisible] = useState(false);
 
   // Call timer & auth token load
@@ -245,7 +252,48 @@ export const RoomScreen = ({
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Activates Android AudioManager for VoIP communication mode.
+     *
+     * Without this, the Android system routes all WebRTC audio to the earpiece
+     * (phone-call mode) instead of the loudspeaker, making remote participants
+     * completely inaudible when the phone is not held to the ear.
+     *
+     * We call WebRTCModule.setAudioEnabled(true) which triggers react-native-webrtc's
+     * built-in Android audio focus acquisition and sets AudioManager to
+     * MODE_IN_COMMUNICATION with setSpeakerphoneOn(true).
+     * This is the documented approach for react-native-webrtc >= 111.
+     */
+    const activateAndroidAudioSession = () => {
+      if (Platform.OS !== "android" || !isNativeWebRTC) return;
+      try {
+        const { WebRTCModule } = NativeModules;
+        if (WebRTCModule && typeof WebRTCModule.setAudioEnabled === "function") {
+          WebRTCModule.setAudioEnabled(true);
+        }
+      } catch (err) {
+        console.warn("[Audio] Failed to activate Android audio session:", err);
+      }
+    };
+
+    const deactivateAndroidAudioSession = () => {
+      if (Platform.OS !== "android" || !isNativeWebRTC) return;
+      try {
+        const { WebRTCModule } = NativeModules;
+        if (WebRTCModule && typeof WebRTCModule.setAudioEnabled === "function") {
+          WebRTCModule.setAudioEnabled(false);
+        }
+      } catch (err) {
+        console.warn("[Audio] Failed to deactivate Android audio session:", err);
+      }
+    };
+
     const setupCall = async () => {
+      // 0. Activate Android audio session BEFORE acquiring mic stream.
+      //    This sets AudioManager to MODE_IN_COMMUNICATION and routes audio
+      //    to the loudspeaker so remote participants are audible.
+      activateAndroidAudioSession();
+
       // 1. Fetch ICE Servers (STUN/TURN)
       const servers = await fetchIceServers();
       if (isMounted && servers && servers.length > 0) {
@@ -573,7 +621,13 @@ export const RoomScreen = ({
         if (!isMounted) return;
         setParticipants((prev) =>
           prev.map((p) =>
-            p.socketId === payload.socketId ? { ...p, isSharing: payload.isSharing } : p
+            p.socketId === payload.socketId
+              ? {
+                  ...p,
+                  isSharing: payload.isSharing,
+                  isVideoMuted: payload.isSharing ? false : p.isVideoMuted,
+                }
+              : p
           )
         );
       });
@@ -643,6 +697,28 @@ export const RoomScreen = ({
         if (by) setNotesUpdatedBy(by);
       });
 
+      // Whiteboard Sync
+      socket.on("whiteboard-draw", (step: any) => {
+        if (!isMounted) return;
+        setRemoteDrawStep(step);
+      });
+
+      socket.on("whiteboard-clear", () => {
+        if (!isMounted) return;
+        setRemoteClearTimestamp(Date.now());
+        setRemoteWhiteboardHistory([]);
+      });
+
+      socket.on("whiteboard-history", ({ elements: histElements }: { elements: any[] }) => {
+        if (!isMounted) return;
+        setRemoteWhiteboardHistory(histElements || []);
+      });
+
+      socket.on("whiteboard-element-add", (elem: any) => {
+        if (!isMounted) return;
+        setRemoteWhiteboardHistory((prev) => [...prev, elem]);
+      });
+
       // Muted / Kicked by Host
       socket.on("muted-by-host", ({ message }: { message: string }) => {
         setIsAudioMuted(true);
@@ -685,6 +761,9 @@ export const RoomScreen = ({
     return () => {
       isMounted = false;
 
+      // Deactivate Android audio session so the system reverts to normal audio routing
+      deactivateAndroidAudioSession();
+
       // Close all peer connections
       Object.values(peerConnectionsRef.current).forEach((pc) => {
         try {
@@ -703,6 +782,7 @@ export const RoomScreen = ({
         screenStreamRef.current = null;
       }
       cameraTrackBeforeShareRef.current = null;
+      wasVideoMutedBeforeShareRef.current = false;
 
       // Stop local tracks
       if (localStreamRef.current) {
@@ -786,26 +866,45 @@ export const RoomScreen = ({
   const stopNativeScreenShare = () => {
     if (!isScreenSharing) return;
 
-    // Stop the screen capture stream tracks
+    // Stop and remove the screen capture stream tracks
     if (screenStreamRef.current) {
       try {
-        screenStreamRef.current.getTracks().forEach((t: any) => t.stop());
+        screenStreamRef.current.getTracks().forEach((t: any) => {
+          try { t.stop(); } catch (_) {}
+          if (localStreamRef.current) {
+            try { localStreamRef.current.removeTrack(t); } catch (_) {}
+          }
+        });
       } catch (_) {}
       screenStreamRef.current = null;
     }
 
     // Restore camera video track in all peer connections
     const camTrack = cameraTrackBeforeShareRef.current;
+    const prevMuted = wasVideoMutedBeforeShareRef.current;
+
     if (camTrack && localStreamRef.current) {
+      camTrack.enabled = !prevMuted;
       try {
         localStreamRef.current.addTrack(camTrack);
       } catch (_) {}
+
+      try {
+        const restoredStream = new MediaStream(localStreamRef.current.getTracks());
+        localStreamRef.current = restoredStream;
+        setLocalStream(restoredStream);
+      } catch (e) {
+        console.warn("[ScreenShare] Error updating localStream after share:", e);
+      }
+
       Object.values(peerConnectionsRef.current).forEach((pc: any) => {
         try {
           const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
-          const videoSender = senders.find((s: any) => s.track && s.track.kind === "video");
+          const videoSender =
+            senders.find((s: any) => s.track && s.track.kind === "video") ||
+            senders.find((s: any) => !s.track);
           if (videoSender) {
-            videoSender.replaceTrack(camTrack);
+            void videoSender.replaceTrack(camTrack);
           }
         } catch (e) {
           console.warn("[ScreenShare] Error restoring camera track:", e);
@@ -814,9 +913,14 @@ export const RoomScreen = ({
     }
     cameraTrackBeforeShareRef.current = null;
 
+    setIsVideoMuted(prevMuted);
     setIsScreenSharing(false);
     if (socketRef.current) {
       socketRef.current.emit("screen-share-status", { isSharing: false });
+      socketRef.current.emit("media-status-change", {
+        isVideoMuted: prevMuted,
+        isAudioMuted: isAudioMuted,
+      });
     }
   };
 
@@ -829,6 +933,22 @@ export const RoomScreen = ({
       if (isScreenSharing) {
         stopNativeScreenShare();
         return;
+      }
+
+      // On Android 13+ (API 33+), check and request POST_NOTIFICATIONS for foreground service notification
+      if (Platform.OS === "android" && typeof Platform.Version === "number" && Platform.Version >= 33) {
+        try {
+          const hasNotif = await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+          );
+          if (!hasNotif) {
+            await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+            );
+          }
+        } catch (permErr) {
+          console.warn("[ScreenShare] Notification permission check error:", permErr);
+        }
       }
 
       try {
@@ -847,7 +967,12 @@ export const RoomScreen = ({
           return;
         }
 
+        screenTrack.enabled = true;
         screenStreamRef.current = screenStream;
+
+        // Remember muted state before screen sharing and un-mute video so screen is displayed
+        wasVideoMutedBeforeShareRef.current = isVideoMuted;
+        setIsVideoMuted(false);
 
         // Stash the current camera track so we can restore it later
         if (localStreamRef.current) {
@@ -861,17 +986,26 @@ export const RoomScreen = ({
           try {
             localStreamRef.current.addTrack(screenTrack);
           } catch (_) {}
+
+          try {
+            const updatedStream = new MediaStream(localStreamRef.current.getTracks());
+            localStreamRef.current = updatedStream;
+            setLocalStream(updatedStream);
+          } catch (e) {
+            console.warn("[ScreenShare] Error updating localStream for share:", e);
+          }
         }
 
         // Replace video track in every active peer connection
         Object.values(peerConnectionsRef.current).forEach((pc: any) => {
           try {
             const senders = typeof pc.getSenders === "function" ? pc.getSenders() : [];
-            const videoSender = senders.find((s: any) => s.track && s.track.kind === "video");
+            const videoSender =
+              senders.find((s: any) => s.track && s.track.kind === "video") ||
+              senders.find((s: any) => !s.track);
             if (videoSender) {
-              videoSender.replaceTrack(screenTrack);
+              void videoSender.replaceTrack(screenTrack);
             } else {
-              // No existing video sender — add a new track
               if (localStreamRef.current) {
                 pc.addTrack(screenTrack, localStreamRef.current);
               }
@@ -881,7 +1015,7 @@ export const RoomScreen = ({
           }
         });
 
-        // Auto-stop when the user closes the system screen picker
+        // Auto-stop when the user closes the system screen picker or notification
         screenTrack.onended = () => {
           stopNativeScreenShare();
         };
@@ -889,11 +1023,20 @@ export const RoomScreen = ({
         setIsScreenSharing(true);
         if (socketRef.current) {
           socketRef.current.emit("screen-share-status", { isSharing: true });
+          socketRef.current.emit("media-status-change", {
+            isVideoMuted: false,
+            isAudioMuted: isAudioMuted,
+          });
         }
       } catch (err: any) {
         console.warn("[ScreenShare] Native getDisplayMedia error:", err);
-        // User cancelled (NotAllowedError) — no alert needed
-        if (err?.name !== "NotAllowedError" && err?.code !== 0) {
+        // Suppress the alert for user-cancelled requests.
+        // NotAllowedError is the standard name; some Android WebRTC builds
+        // also surface cancellation as a MediaStreamError with code 0.
+        const isUserCancel =
+          err?.name === "NotAllowedError" ||
+          (typeof err?.code === "number" && err.code === 0);
+        if (!isUserCancel) {
           Alert.alert(
             "Screen Share",
             "Screen sharing failed: " + (err?.message || "Unknown error. Please try again.")
@@ -1019,6 +1162,18 @@ export const RoomScreen = ({
     }
   };
 
+  const handleAddWhiteboardElement = (elem: any) => {
+    if (socketRef.current) {
+      socketRef.current.emit("whiteboard-element-add", elem);
+    }
+  };
+
+  const handleRequestWhiteboardHistory = () => {
+    if (socketRef.current) {
+      socketRef.current.emit("whiteboard-request-history");
+    }
+  };
+
   const handleClearWhiteboard = () => {
     if (socketRef.current) {
       socketRef.current.emit("whiteboard-clear");
@@ -1129,7 +1284,8 @@ export const RoomScreen = ({
     key?: string
   ) => {
     const initial = (participantName || "U")[0].toUpperCase();
-    const canShowVideo = isWebRTCSupported && stream && !isCameraMuted;
+    const isSharingActive = Boolean(hasScreenShare || (isLocal && isScreenSharing));
+    const canShowVideo = isWebRTCSupported && stream && (!isCameraMuted || isSharingActive);
 
     return (
       <View key={key} style={[styles.peerCard, cardDimensions]}>
@@ -1138,8 +1294,8 @@ export const RoomScreen = ({
             streamURL={typeof stream?.toURL === "function" ? stream.toURL() : stream}
             stream={stream}
             style={styles.rtcVideo}
-            objectFit="cover"
-            mirror={isLocal && !isBackCamera}
+            objectFit={isSharingActive ? "contain" : "cover"}
+            mirror={isLocal && !isBackCamera && !isScreenSharing}
             zOrder={0}
           />
         ) : (
@@ -1160,7 +1316,7 @@ export const RoomScreen = ({
         )}
 
         {/* Screen sharing badge */}
-        {hasScreenShare ? (
+        {isSharingActive ? (
           <View style={styles.screenShareBadge}>
             <Ionicons name="tv-outline" size={12} color="#ffffff" />
             <Text style={styles.screenShareBadgeText}>Screen Share</Text>
@@ -1332,7 +1488,7 @@ export const RoomScreen = ({
             isVideoMuted,
             isAudioMuted,
             isHandRaised,
-            false,
+            isScreenSharing,
             "local-user"
           )}
 
@@ -1672,6 +1828,11 @@ export const RoomScreen = ({
         onDrawSegment={handleDrawSegment}
         onClearBoard={handleClearWhiteboard}
         onUndoBoard={handleUndoWhiteboard}
+        onAddElement={handleAddWhiteboardElement}
+        onRequestHistory={handleRequestWhiteboardHistory}
+        remoteDrawStep={remoteDrawStep}
+        remoteClearTimestamp={remoteClearTimestamp}
+        remoteHistory={remoteWhiteboardHistory}
       />
 
       {/* Host Controls Modal */}
