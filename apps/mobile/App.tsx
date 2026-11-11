@@ -30,12 +30,8 @@ const MainNavigator = () => {
     const processUrl = (incomingUrl: string | null) => {
       const code = extractRoomCodeFromUrl(incomingUrl);
       if (code) {
-        if (user) {
-          setActiveRoomCode(code);
-          setCurrentScreen("lobby");
-        } else {
-          setPendingRoomCode(code);
-        }
+        setActiveRoomCode(code);
+        setCurrentScreen("lobby");
       }
     };
 
@@ -69,7 +65,7 @@ const MainNavigator = () => {
     );
   }
 
-  // Active in a video room
+  // Active in a video room (authenticated or guest)
   if (activeRoomCode && currentScreen === "room") {
     return (
       <RoomScreen
@@ -78,7 +74,24 @@ const MainNavigator = () => {
         initialVideoMuted={initialMuteConfig.isVideoMuted}
         onLeaveRoom={() => {
           setActiveRoomCode(null);
-          setCurrentScreen("dashboard");
+          setCurrentScreen(user ? "dashboard" : "login");
+        }}
+      />
+    );
+  }
+
+  // Active in a lobby (authenticated or guest)
+  if (activeRoomCode && currentScreen === "lobby") {
+    return (
+      <LobbyScreen
+        roomCode={activeRoomCode}
+        onJoin={({ isAudioMuted, isVideoMuted }) => {
+          setInitialMuteConfig({ isAudioMuted, isVideoMuted });
+          setCurrentScreen("room");
+        }}
+        onCancel={() => {
+          setActiveRoomCode(null);
+          setCurrentScreen(user ? "dashboard" : "login");
         }}
       />
     );
@@ -105,6 +118,11 @@ const MainNavigator = () => {
         <LoginScreen
           onNavigateToSignup={() => setCurrentScreen("signup")}
           onNavigateToSettings={() => setCurrentScreen("settings")}
+          pendingRoomCode={pendingRoomCode}
+          onJoinAsGuest={(code) => {
+            setActiveRoomCode(code);
+            setCurrentScreen("lobby");
+          }}
         />
       </SafeAreaView>
     );

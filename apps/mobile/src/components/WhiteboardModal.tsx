@@ -1,29 +1,13 @@
-import React, { useState, useRef } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import {
   Modal,
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
-  PanResponder,
-  GestureResponderEvent,
-  PanResponderGestureState,
   useWindowDimensions,
 } from "react-native";
-import { Colors } from "../theme/colors";
-import { Ionicons } from "@expo/vector-icons";
+import { WebView } from "react-native-webview";
 
-interface LineSegment {
-  id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  color: string;
-  size: number;
-}
-
-interface WhiteboardModalProps {
+export interface WhiteboardModalProps {
   visible: boolean;
   onClose: () => void;
   onDrawSegment: (segment: {
@@ -37,224 +21,717 @@ interface WhiteboardModalProps {
   }) => void;
   onClearBoard: () => void;
   onUndoBoard: () => void;
+  onAddElement?: (element: any) => void;
+  onRequestHistory?: () => void;
+  remoteDrawStep?: {
+    prevX: number;
+    prevY: number;
+    currX: number;
+    currY: number;
+    color: string;
+    size: number;
+    tool: string;
+  } | null;
+  remoteClearTimestamp?: number;
+  remoteHistory?: any[];
 }
 
-const COLORS = ["#ffffff", "#6366f1", "#10b981", "#ef4444", "#f59e0b"];
-
-export const WhiteboardModal = ({
+export const WhiteboardModal: React.FC<WhiteboardModalProps> = ({
   visible,
   onClose,
   onDrawSegment,
   onClearBoard,
   onUndoBoard,
-}: WhiteboardModalProps) => {
-  const [segments, setSegments] = useState<LineSegment[]>([]);
-  const [selectedColor, setSelectedColor] = useState("#ffffff");
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
-  const [strokeSize, setStrokeSize] = useState(3);
+  onAddElement,
+  onRequestHistory,
+  remoteDrawStep,
+  remoteClearTimestamp,
+  remoteHistory,
+}) => {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
+  const webViewRef = useRef<WebView | null>(null);
+  const isWebViewReadyRef = useRef<boolean>(false);
+  const pendingMessagesRef = useRef<any[]>([]);
 
-  const prevPointRef = useRef<{ x: number; y: number } | null>(null);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt: GestureResponderEvent) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        prevPointRef.current = { x: locationX, y: locationY };
-      },
-      onPanResponderMove: (evt: GestureResponderEvent, _gestureState: PanResponderGestureState) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        if (!prevPointRef.current) {
-          prevPointRef.current = { x: locationX, y: locationY };
-          return;
+  const postToWebView = useCallback((data: any) => {
+    if (!isWebViewReadyRef.current) {
+      pendingMessagesRef.current.push(data);
+      return;
+    }
+    const jsonStr = JSON.stringify(data);
+    webViewRef.current?.injectJavaScript(`
+      try {
+        if (window.handleNativeMessage) {
+          window.handleNativeMessage(${jsonStr});
         }
+      } catch (err) {
+        console.error("injectJavaScript error:", err);
+      }
+      true;
+    `);
+  }, []);
 
-        const prevX = prevPointRef.current.x;
-        const prevY = prevPointRef.current.y;
-        const currX = locationX;
-        const currY = locationY;
+  // Flush queued messages when WebView signals READY
+  const flushPendingQueue = useCallback(() => {
+    const queue = pendingMessagesRef.current.splice(0);
+    for (const msg of queue) {
+      const jsonStr = JSON.stringify(msg);
+      webViewRef.current?.injectJavaScript(`
+        try {
+          if (window.handleNativeMessage) {
+            window.handleNativeMessage(${jsonStr});
+          }
+        } catch (err) {}
+        true;
+      `);
+    }
+  }, []);
 
-        // Skip micro movements to keep rendering fast
-        const dist = Math.hypot(currX - prevX, currY - prevY);
-        if (dist < 2) return;
+  // Forward incoming remote draw step
+  useEffect(() => {
+    if (!remoteDrawStep) return;
+    postToWebView({ type: "REMOTE_DRAW", step: remoteDrawStep });
+  }, [remoteDrawStep, postToWebView]);
 
-        const activeColor = tool === "eraser" ? "#070b13" : selectedColor;
-        const activeSize = tool === "eraser" ? 20 : strokeSize;
+  // Forward incoming remote clear
+  useEffect(() => {
+    if (!remoteClearTimestamp) return;
+    postToWebView({ type: "REMOTE_CLEAR" });
+  }, [remoteClearTimestamp, postToWebView]);
 
-        const newSegment: LineSegment = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          x1: prevX,
-          y1: prevY,
-          x2: currX,
-          y2: currY,
-          color: activeColor,
-          size: activeSize,
-        };
+  // Forward incoming remote history
+  useEffect(() => {
+    if (!remoteHistory) return;
+    postToWebView({ type: "REMOTE_HISTORY", elements: remoteHistory });
+  }, [remoteHistory, postToWebView]);
 
-        setSegments((prev) => [...prev.slice(-400), newSegment]);
+  const handleMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      switch (data.type) {
+        case "READY":
+          isWebViewReadyRef.current = true;
+          flushPendingQueue();
+          onRequestHistory?.();
+          break;
+        case "DRAW_STEP":
+          onDrawSegment(data.payload);
+          break;
+        case "ADD_ELEMENT":
+          onAddElement?.(data.payload);
+          break;
+        case "CLEAR":
+          onClearBoard();
+          break;
+        case "UNDO":
+          onUndoBoard();
+          break;
+        case "CLOSE":
+          onClose();
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      console.warn("[WhiteboardModal] Message parse error:", err);
+    }
+  };
 
-        // Sync with backend & web participants
-        onDrawSegment({
-          prevX,
-          prevY,
-          currX,
-          currY,
-          color: activeColor,
-          size: activeSize,
-          tool,
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #070b13;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(18, 25, 45, 0.95);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 10;
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .icon-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .title-text h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+    .title-text p {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .action-btn {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #f8fafc;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .action-btn:active {
+      transform: scale(0.92);
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .clear-btn {
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.25);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .close-btn {
+      color: #94a3b8;
+    }
+
+    /* Canvas Stage */
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      background: #070b13;
+      touch-action: none;
+      overflow: hidden;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    #previewCanvas {
+      z-index: 2;
+    }
+    #mainCanvas {
+      z-index: 1;
+    }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(18, 25, 45, 0.95);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      z-index: 10;
+    }
+    .tool-group {
+      display: flex;
+      background: rgba(30, 41, 59, 0.6);
+      border-radius: 12px;
+      padding: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 2px;
+    }
+    .tool-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s;
+    }
+    .tool-btn.active {
+      background: #6366f1;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Colors */
+    .color-palette {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .color-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 11px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .color-dot.active {
+      border-color: #6366f1;
+      transform: scale(1.25);
+    }
+    .eraser-hint {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      padding: 0 4px;
+    }
+
+    /* Stroke sizes */
+    .size-group {
+      display: flex;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.6);
+      border-radius: 12px;
+      padding: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 2px;
+    }
+    .size-btn {
+      width: 32px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    .size-btn.active {
+      background: rgba(99, 102, 241, 0.25);
+      border: 1px solid #6366f1;
+    }
+    .size-indicator {
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .size-btn.active .size-indicator {
+      background: #6366f1;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="title-row">
+      <div class="icon-badge">🎨</div>
+      <div class="title-text">
+        <h3>Shared Whiteboard</h3>
+        <p>Synced with all meeting participants</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="action-btn" id="undoBtn" title="Undo">↩</button>
+      <button class="action-btn clear-btn" id="clearBtn" title="Clear All">🗑</button>
+      <button class="action-btn close-btn" id="closeBtn" title="Close">✕</button>
+    </div>
+  </div>
+
+  <!-- Interactive Canvas Container -->
+  <div class="canvas-container" id="container">
+    <canvas id="mainCanvas"></canvas>
+    <canvas id="previewCanvas"></canvas>
+  </div>
+
+  <!-- Bottom Toolbar -->
+  <div class="toolbar">
+    <div class="tool-group">
+      <button class="tool-btn active" id="penBtn" title="Pen">✏️</button>
+      <button class="tool-btn" id="eraserBtn" title="Eraser">🧹</button>
+    </div>
+
+    <div class="color-palette" id="palette">
+      <div class="color-dot active" style="background:#ffffff;" data-color="#ffffff"></div>
+      <div class="color-dot" style="background:#6366f1;" data-color="#6366f1"></div>
+      <div class="color-dot" style="background:#10b981;" data-color="#10b981"></div>
+      <div class="color-dot" style="background:#f59e0b;" data-color="#f59e0b"></div>
+      <div class="color-dot" style="background:#ef4444;" data-color="#ef4444"></div>
+    </div>
+
+    <div class="size-group">
+      <button class="size-btn active" data-size="2"><div class="size-indicator" style="width:4px;height:4px;"></div></button>
+      <button class="size-btn" data-size="4"><div class="size-indicator" style="width:7px;height:7px;"></div></button>
+      <button class="size-btn" data-size="8"><div class="size-indicator" style="width:11px;height:11px;"></div></button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var container = document.getElementById("container");
+      var mainCanvas = document.getElementById("mainCanvas");
+      var previewCanvas = document.getElementById("previewCanvas");
+      var mainCtx = mainCanvas.getContext("2d");
+      var prevCtx = previewCanvas.getContext("2d");
+
+      var currentTool = "pen";
+      var currentColor = "#ffffff";
+      var currentSize = 2;
+      var isDrawing = false;
+      var prevPoint = null;
+      var currentPathPoints = [];
+      var elements = [];
+
+      function sendToRN(data) {
+        if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+          window.ReactNativeWebView.postMessage(JSON.stringify(data));
+        }
+      }
+
+      function resizeCanvases() {
+        var rect = container.getBoundingClientRect();
+        var dpr = window.devicePixelRatio || 1;
+        var w = rect.width;
+        var h = rect.height;
+        if (w === 0 || h === 0) return;
+
+        mainCanvas.width = w * dpr;
+        mainCanvas.height = h * dpr;
+        mainCanvas.style.width = w + "px";
+        mainCanvas.style.height = h + "px";
+        mainCtx.scale(dpr, dpr);
+
+        previewCanvas.width = w * dpr;
+        previewCanvas.height = h * dpr;
+        previewCanvas.style.width = w + "px";
+        previewCanvas.style.height = h + "px";
+        prevCtx.scale(dpr, dpr);
+
+        redrawAll();
+      }
+
+      window.addEventListener("resize", resizeCanvases);
+      setTimeout(resizeCanvases, 50);
+
+      function redrawAll() {
+        var rect = container.getBoundingClientRect();
+        var w = rect.width;
+        var h = rect.height;
+        if (w === 0 || h === 0) return;
+
+        mainCtx.clearRect(0, 0, w, h);
+
+        for (var i = 0; i < elements.length; i++) {
+          var el = elements[i];
+          var scaledSize = Math.max(1.5, el.size * Math.max(0.65, w / 1200));
+          mainCtx.save();
+          if (el.tool === "eraser") {
+            mainCtx.globalCompositeOperation = "destination-out";
+            mainCtx.strokeStyle = "rgba(0,0,0,1)";
+            mainCtx.lineWidth = scaledSize * 3;
+          } else {
+            mainCtx.globalCompositeOperation = "source-over";
+            mainCtx.strokeStyle = el.color;
+            mainCtx.lineWidth = scaledSize;
+          }
+          mainCtx.lineCap = "round";
+          mainCtx.lineJoin = "round";
+
+          if (el.type === "path" && el.points && el.points.length > 0) {
+            mainCtx.beginPath();
+            mainCtx.moveTo(el.points[0].x * w, el.points[0].y * h);
+            for (var p = 1; p < el.points.length; p++) {
+              mainCtx.lineTo(el.points[p].x * w, el.points[p].y * h);
+            }
+            mainCtx.stroke();
+          } else if (el.type === "line" && el.startX !== undefined) {
+            mainCtx.beginPath();
+            mainCtx.moveTo(el.startX * w, el.startY * h);
+            mainCtx.lineTo(el.endX * w, el.endY * h);
+            mainCtx.stroke();
+          } else if (el.type === "rect" && el.startX !== undefined) {
+            var rx = Math.min(el.startX, el.endX) * w;
+            var ry = Math.min(el.startY, el.endY) * h;
+            var rw = Math.abs(el.endX - el.startX) * w;
+            var rh = Math.abs(el.endY - el.startY) * h;
+            mainCtx.strokeRect(rx, ry, rw, rh);
+          } else if (el.type === "circle" && el.startX !== undefined) {
+            var cx = ((el.startX + el.endX) / 2) * w;
+            var cy = ((el.startY + el.endY) / 2) * h;
+            var radX = Math.abs(el.endX - el.startX) * w / 2;
+            var radY = Math.abs(el.endY - el.startY) * h / 2;
+            mainCtx.beginPath();
+            mainCtx.ellipse(cx, cy, Math.max(1, radX), Math.max(1, radY), 0, 0, 2 * Math.PI);
+            mainCtx.stroke();
+          }
+          mainCtx.restore();
+        }
+      }
+
+      function renderStep(prev, curr, tool, color, size) {
+        var rect = container.getBoundingClientRect();
+        var w = rect.width;
+        var h = rect.height;
+        var scaledSize = Math.max(1.5, size * Math.max(0.65, w / 1200));
+
+        mainCtx.save();
+        if (tool === "eraser") {
+          mainCtx.globalCompositeOperation = "destination-out";
+          mainCtx.strokeStyle = "rgba(0,0,0,1)";
+          mainCtx.lineWidth = scaledSize * 3;
+        } else {
+          mainCtx.globalCompositeOperation = "source-over";
+          mainCtx.strokeStyle = color;
+          mainCtx.lineWidth = scaledSize;
+        }
+        mainCtx.lineCap = "round";
+        mainCtx.lineJoin = "round";
+        mainCtx.beginPath();
+        mainCtx.moveTo(prev.x * w, prev.y * h);
+        mainCtx.lineTo(curr.x * w, curr.y * h);
+        mainCtx.stroke();
+        mainCtx.restore();
+      }
+
+      // Pointer Event Handlers for smooth and responsive drawing
+      previewCanvas.addEventListener("pointerdown", function(e) {
+        e.preventDefault();
+        try { previewCanvas.setPointerCapture(e.pointerId); } catch(err) {}
+
+        var rect = container.getBoundingClientRect();
+        var w = rect.width;
+        var h = rect.height;
+        if (w === 0 || h === 0) return;
+
+        var normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / w));
+        var normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / h));
+
+        isDrawing = true;
+        prevPoint = { x: normX, y: normY };
+        currentPathPoints = [{ x: normX, y: normY }];
+
+        var scaledSize = Math.max(1.5, currentSize * Math.max(0.65, w / 1200));
+        mainCtx.save();
+        if (currentTool === "eraser") {
+          mainCtx.globalCompositeOperation = "destination-out";
+          mainCtx.fillStyle = "rgba(0,0,0,1)";
+          mainCtx.beginPath();
+          mainCtx.arc(normX * w, normY * h, scaledSize * 1.5, 0, Math.PI * 2);
+          mainCtx.fill();
+        } else {
+          mainCtx.globalCompositeOperation = "source-over";
+          mainCtx.fillStyle = currentColor;
+          mainCtx.beginPath();
+          mainCtx.arc(normX * w, normY * h, scaledSize / 2, 0, Math.PI * 2);
+          mainCtx.fill();
+        }
+        mainCtx.restore();
+      });
+
+      previewCanvas.addEventListener("pointermove", function(e) {
+        if (!isDrawing || !prevPoint) return;
+        e.preventDefault();
+
+        var rect = container.getBoundingClientRect();
+        var w = rect.width;
+        var h = rect.height;
+        if (w === 0 || h === 0) return;
+
+        var normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / w));
+        var normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / h));
+
+        // Skip jitter
+        if (Math.hypot(normX - prevPoint.x, normY - prevPoint.y) < 0.001) return;
+
+        var curr = { x: normX, y: normY };
+        renderStep(prevPoint, curr, currentTool, currentColor, currentSize);
+
+        sendToRN({
+          type: "DRAW_STEP",
+          payload: {
+            prevX: prevPoint.x,
+            prevY: prevPoint.y,
+            currX: curr.x,
+            currY: curr.y,
+            color: currentColor,
+            size: currentSize,
+            tool: currentTool
+          }
         });
 
-        prevPointRef.current = { x: currX, y: currY };
-      },
-      onPanResponderRelease: () => {
-        prevPointRef.current = null;
-      },
-    })
-  ).current;
+        currentPathPoints.push(curr);
+        prevPoint = curr;
+      });
 
-  const handleClear = () => {
-    setSegments([]);
-    onClearBoard();
-  };
+      function handlePointerEnd(e) {
+        if (!isDrawing) return;
+        isDrawing = false;
+        try { previewCanvas.releasePointerCapture(e.pointerId); } catch(err) {}
 
-  const handleUndo = () => {
-    setSegments((prev) => prev.slice(0, Math.max(0, prev.length - 20)));
-    onUndoBoard();
-  };
+        if (currentPathPoints.length > 0) {
+          var elem = {
+            id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 6),
+            type: "path",
+            tool: currentTool,
+            color: currentColor,
+            size: currentSize,
+            points: currentPathPoints
+          };
+          elements.push(elem);
+          sendToRN({ type: "ADD_ELEMENT", payload: elem });
+        }
+        currentPathPoints = [];
+        prevPoint = null;
+      }
+
+      previewCanvas.addEventListener("pointerup", handlePointerEnd);
+      previewCanvas.addEventListener("pointercancel", handlePointerEnd);
+
+      // Handle Toolbar UI
+      var penBtn = document.getElementById("penBtn");
+      var eraserBtn = document.getElementById("eraserBtn");
+      var palette = document.getElementById("palette");
+
+      penBtn.addEventListener("click", function() {
+        currentTool = "pen";
+        penBtn.classList.add("active");
+        eraserBtn.classList.remove("active");
+        palette.style.display = "flex";
+      });
+
+      eraserBtn.addEventListener("click", function() {
+        currentTool = "eraser";
+        eraserBtn.classList.add("active");
+        penBtn.classList.remove("active");
+      });
+
+      palette.addEventListener("click", function(e) {
+        var dot = e.target.closest(".color-dot");
+        if (!dot) return;
+        document.querySelectorAll(".color-dot").forEach(function(d) { d.classList.remove("active"); });
+        dot.classList.add("active");
+        currentColor = dot.dataset.color;
+        if (currentTool === "eraser") {
+          currentTool = "pen";
+          penBtn.classList.add("active");
+          eraserBtn.classList.remove("active");
+        }
+      });
+
+      document.querySelectorAll(".size-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          document.querySelectorAll(".size-btn").forEach(function(b) { b.classList.remove("active"); });
+          btn.classList.add("active");
+          currentSize = parseInt(btn.dataset.size, 10);
+        });
+      });
+
+      document.getElementById("undoBtn").addEventListener("click", function() {
+        if (elements.length > 0) {
+          elements.pop();
+          redrawAll();
+          sendToRN({ type: "UNDO" });
+        }
+      });
+
+      document.getElementById("clearBtn").addEventListener("click", function() {
+        elements = [];
+        var rect = container.getBoundingClientRect();
+        mainCtx.clearRect(0, 0, rect.width, rect.height);
+        sendToRN({ type: "CLEAR" });
+      });
+
+      document.getElementById("closeBtn").addEventListener("click", function() {
+        sendToRN({ type: "CLOSE" });
+      });
+
+      // Handle messages incoming from React Native
+      window.handleNativeMessage = function(data) {
+        if (!data) return;
+        switch(data.type) {
+          case "REMOTE_DRAW":
+            if (data.step) {
+              renderStep(
+                { x: data.step.prevX, y: data.step.prevY },
+                { x: data.step.currX, y: data.step.currY },
+                data.step.tool,
+                data.step.color,
+                data.step.size
+              );
+            }
+            break;
+          case "REMOTE_CLEAR":
+            elements = [];
+            var rect = container.getBoundingClientRect();
+            mainCtx.clearRect(0, 0, rect.width, rect.height);
+            break;
+          case "REMOTE_HISTORY":
+            if (Array.isArray(data.elements)) {
+              elements = data.elements;
+              redrawAll();
+            }
+            break;
+          default:
+            break;
+        }
+      };
+
+      // Signal ready
+      sendToRN({ type: "READY" });
+    })();
+  </script>
+</body>
+</html>`;
+
+  const RNWebView = WebView as any;
 
   return (
     <Modal visible={visible} animationType={isTablet ? "fade" : "slide"} transparent onRequestClose={onClose}>
       <View style={[styles.overlay, isTablet && styles.overlayTablet]}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
         <View style={[styles.container, isTablet && styles.containerTablet]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="color-palette" size={18} color={Colors.warning} />
-              </View>
-              <View>
-                <Text style={styles.title}>Live Shared Whiteboard</Text>
-                <Text style={styles.subtitle}>Collaborative canvas synced live</Text>
-              </View>
-            </View>
-
-            <View style={styles.headerRight}>
-              <TouchableOpacity onPress={handleUndo} style={styles.iconBtn} activeOpacity={0.7}>
-                <Ionicons name="arrow-undo" size={17} color="#ffffff" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleClear} style={[styles.iconBtn, styles.clearBtn]} activeOpacity={0.7}>
-                <Ionicons name="trash-outline" size={17} color={Colors.danger} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
-                <Ionicons name="close" size={18} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Interactive Canvas Area */}
-          <View style={styles.canvas} {...panResponder.panHandlers}>
-            {segments.map((seg) => {
-              const dx = seg.x2 - seg.x1;
-              const dy = seg.y2 - seg.y1;
-              const length = Math.hypot(dx, dy);
-              const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-              return (
-                <View
-                  key={seg.id}
-                  style={[
-                    styles.lineSegment,
-                    {
-                      left: seg.x1,
-                      top: seg.y1 - seg.size / 2,
-                      width: Math.max(length, 1),
-                      height: seg.size,
-                      backgroundColor: seg.color,
-                      transform: [{ rotateZ: `${angle}deg` }],
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
-
-          {/* Whiteboard Toolbar */}
-          <View style={styles.toolbar}>
-            {/* Tool Selection (Pen / Eraser) */}
-            <View style={styles.toolGroup}>
-              <TouchableOpacity
-                onPress={() => setTool("pen")}
-                style={[styles.toolBtn, tool === "pen" && styles.toolBtnActive]}
-                activeOpacity={0.75}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={tool === "pen" ? "#ffffff" : "#94a3b8"}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setTool("eraser")}
-                style={[styles.toolBtn, tool === "eraser" && styles.toolBtnActive]}
-                activeOpacity={0.75}
-              >
-                <Ionicons
-                  name="cut-outline"
-                  size={16}
-                  color={tool === "eraser" ? "#ffffff" : "#94a3b8"}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Color Palette (Pen mode only) */}
-            {tool === "pen" ? (
-              <View style={styles.colorPalette}>
-                {COLORS.map((col) => (
-                  <TouchableOpacity
-                    key={col}
-                    onPress={() => setSelectedColor(col)}
-                    activeOpacity={0.8}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: col },
-                      selectedColor === col && styles.colorDotSelected,
-                    ]}
-                  />
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.eraserHint}>Eraser Active</Text>
-            )}
-
-            {/* Stroke Thickness */}
-            <View style={styles.sizeGroup}>
-              {[2, 4, 8].map((size) => (
-                <TouchableOpacity
-                  key={size}
-                  onPress={() => setStrokeSize(size)}
-                  style={[styles.sizeBtn, strokeSize === size && styles.sizeBtnActive]}
-                  activeOpacity={0.75}
-                >
-                  <View
-                    style={{
-                      width: size * 1.8,
-                      height: size * 1.8,
-                      borderRadius: (size * 1.8) / 2,
-                      backgroundColor: strokeSize === size ? Colors.primary : "#94a3b8",
-                    }}
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          <RNWebView
+            ref={webViewRef}
+            originWhitelist={["*"]}
+            source={{ html: htmlContent }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            scrollEnabled={false}
+            bounces={false}
+            overScrollMode="never"
+            onMessage={handleMessage}
+            style={styles.webview}
+          />
         </View>
       </View>
     </Modal>
@@ -276,7 +753,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#070b13",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    height: "82%",
+    height: "85%",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     overflow: "hidden",
@@ -295,159 +772,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 28,
     shadowOffset: { width: 0, height: 10 },
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
-    backgroundColor: "rgba(18, 25, 45, 0.85)",
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(245, 158, 11, 0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#ffffff",
-    letterSpacing: -0.2,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: "#94a3b8",
-    fontWeight: "500",
-    marginTop: 1,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(30, 41, 59, 0.6)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clearBtn: {
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
-    borderColor: "rgba(239, 68, 68, 0.25)",
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 2,
-  },
-  canvas: {
+  webview: {
     flex: 1,
     backgroundColor: "#070b13",
-    overflow: "hidden",
-    position: "relative",
-  },
-  lineSegment: {
-    position: "absolute",
-    borderRadius: 2,
-    transformOrigin: "left center",
-  },
-  toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "rgba(18, 25, 45, 0.9)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
-  },
-  toolGroup: {
-    flexDirection: "row",
-    backgroundColor: "rgba(30, 41, 59, 0.6)",
-    borderRadius: 14,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    gap: 4,
-  },
-  toolBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  toolBtnActive: {
-    backgroundColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  colorPalette: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  colorDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  colorDotSelected: {
-    borderColor: Colors.accent,
-    transform: [{ scale: 1.25 }],
-  },
-  eraserHint: {
-    color: "#94a3b8",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  sizeGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(30, 41, 59, 0.6)",
-    borderRadius: 14,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    gap: 4,
-  },
-  sizeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sizeBtnActive: {
-    backgroundColor: "rgba(99, 102, 241, 0.2)",
-    borderWidth: 1,
-    borderColor: Colors.primary,
   },
 });

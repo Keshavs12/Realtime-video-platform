@@ -69,7 +69,7 @@ export const LobbyScreen = ({ roomCode, onJoin, onCancel }: LobbyScreenProps) =>
     try { Vibration.vibrate(25); } catch {}
     try {
       await Share.share({
-        message: `Join my SuperCall video meeting!\nRoom Code: ${cleanCode}\nLink: https://realtime-video-platform.onrender.com/room/${cleanCode}`,
+        message: `Join my SuperCall video meeting!\nRoom Code: ${cleanCode}\nLink: https://realtime-video-platform.onrender.com/dashboard/room/${cleanCode}`,
         title: "SuperCall Meeting Code",
       });
     } catch {

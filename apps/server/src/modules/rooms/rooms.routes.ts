@@ -15,12 +15,14 @@
 import { Router } from "express";
 import { createRoom, checkRoomExists, getRoomHistory, getDashboardStats, summarizeMeeting } from "./rooms.controller";
 import { authenticate } from "../auth/auth.middleware";
+import { validate } from "../../middleware/validate";
+import { summarizeMeetingSchema } from "./rooms.validator";
 
 const roomsRouter = Router();
 
 // Public endpoints (allows guests or authenticated users to check room and summarize)
 roomsRouter.get("/:code/exists", checkRoomExists);
-roomsRouter.post("/summarize", summarizeMeeting);
+roomsRouter.post("/summarize", validate(summarizeMeetingSchema), summarizeMeeting);
 
 roomsRouter.use(authenticate);
 

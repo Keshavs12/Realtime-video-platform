@@ -113,25 +113,36 @@ export const getRoomHistory = async (userId: string) => {
     });
 
     const now = new Date();
+    const roomIds = Array.from(new Set(participations.map((p) => p.roomId)));
 
-    return Promise.all(
-        participations.map(async (p) => {
-            const otherParticipants = await prisma.roomParticipant.findMany({
-                where: { roomId: p.roomId, userId: { not: userId } },
-                select: { userId: true },
-                distinct: ["userId"],
-            });
-
-            return {
-                roomCode: p.room.code,
-                joinedAt: p.joinedAt,
-                leftAt: p.leftAt,
-                durationMinutes: Math.round(minutesBetween(p.joinedAt, p.leftAt ?? now)),
-                isHost: p.room.hostId === userId,
-                otherParticipantsCount: otherParticipants.length,
-            };
+    // Fetch other participant counts in a single batch query (BUG-008 resolution: eliminates N+1 queries)
+    const otherParticipants = roomIds.length > 0
+        ? await prisma.roomParticipant.findMany({
+            where: { roomId: { in: roomIds }, userId: { not: userId } },
+            select: { roomId: true, userId: true },
+            distinct: ["roomId", "userId"],
         })
-    );
+        : [];
+
+    const otherCountsByRoom = new Map<string, number>();
+    for (const op of otherParticipants) {
+        otherCountsByRoom.set(op.roomId, (otherCountsByRoom.get(op.roomId) || 0) + 1);
+    }
+
+    return participations.map((p) => {
+        const rawMinutes = minutesBetween(p.joinedAt, p.leftAt ?? now);
+        // Cap single call duration display to 12 hours (720 mins) if session was abruptly terminated (BUG-007)
+        const durationMinutes = Math.min(Math.max(1, Math.round(rawMinutes)), 720);
+
+        return {
+            roomCode: p.room.code,
+            joinedAt: p.joinedAt,
+            leftAt: p.leftAt,
+            durationMinutes,
+            isHost: p.room.hostId === userId,
+            otherParticipantsCount: otherCountsByRoom.get(p.roomId) || 0,
+        };
+    });
 };
 
 export const getDashboardStats = async (userId: string) => {
@@ -156,7 +167,12 @@ export const getDashboardStats = async (userId: string) => {
     ]);
 
     const callMinutes = Math.round(
-        myParticipations.reduce((sum, p) => sum + minutesBetween(p.joinedAt, p.leftAt ?? now), 0)
+        myParticipations.reduce((sum, p) => {
+            const raw = minutesBetween(p.joinedAt, p.leftAt ?? now);
+            // Cap orphaned sessions to 720 minutes to prevent stats corruption (BUG-007)
+            const safe = Math.min(Math.max(0, raw), 720);
+            return sum + safe;
+        }, 0)
     );
 
     return {

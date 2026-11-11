@@ -37,6 +37,8 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   const router = useRouter();
   const { user } = useAuth();
   const [guestName, setGuestName] = useState("");
+  // Pre-Join "Green Room" Lobby state (declared before useRoom to avoid premature join BUG-005)
+  const [hasJoinedLobby, setHasJoinedLobby] = useState(false);
   const isGuest = !user;
   const localDisplayName = user?.name || guestName?.trim() || "You";
 
@@ -83,6 +85,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     hostMutePeer,
     hostMuteAll,
     hostKickPeer,
+    hostEndMeeting,
     // Real-Time Polls & Notes
     polls,
     createPoll,
@@ -98,7 +101,7 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
     toggleWaitingRoom,
     hostAdmitGuest,
     hostDenyGuest,
-  } = useRoom(roomId, user, guestName);
+  } = useRoom(roomId, user, guestName, hasJoinedLobby);
 
   const [chatInput, setChatInput] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
@@ -110,9 +113,6 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   // In-Call Meeting Recording & Studio hook
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [recordVideoUrl, setRecordVideoUrl] = useState<string | null>(null);
-
-  // Pre-Join "Green Room" Lobby state
-  const [hasJoinedLobby, setHasJoinedLobby] = useState(false);
 
   // Real-Time Collaborative Whiteboard state
   const [showWhiteboard, setShowWhiteboard] = useState(false);
@@ -209,6 +209,16 @@ export default function RoomPage({ params }: Readonly<{ params: Promise<{ roomId
   }, [lastSavedRecording]);
 
   const handleLeave = () => {
+    if (isHost && presenceList.length > 0) {
+      if (typeof window !== "undefined") {
+        const confirmEnd = window.confirm(
+          "Do you want to END the meeting for all participants?\n\n• OK = End Meeting for All\n• Cancel = Leave without ending"
+        );
+        if (confirmEnd) {
+          hostEndMeeting();
+        }
+      }
+    }
     if (isGuest) {
       router.push("/login");
     } else {

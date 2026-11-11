@@ -9,7 +9,7 @@ import {
   useCallback,
   ReactNode,
 } from "react";
-import { getMe } from "@/services/auth.service";
+import { getMe, logout as apiLogout } from "@/services/auth.service";
 
 interface User {
   id: string;
@@ -84,6 +84,7 @@ const initializeAuth = async () => {
   }, []);
 
   const memoizedLogout = useCallback(() => {
+    void apiLogout().catch(() => {});
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     setUser(null);

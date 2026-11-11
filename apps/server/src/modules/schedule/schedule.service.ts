@@ -158,11 +158,13 @@ export const createScheduledMeeting = async (
 };
 
 export const getScheduledMeetings = async (userId: string, userEmail: string, clientOrigin?: string) => {
+    const cleanUserEmail = (userEmail || "").trim().toLowerCase();
+
     const meetings = await prisma.scheduledMeeting.findMany({
         where: {
             OR: [
                 { hostId: userId },
-                { invitees: { contains: userEmail } },
+                { invitees: { contains: cleanUserEmail } },
             ],
         },
         orderBy: {
@@ -181,15 +183,22 @@ export const getScheduledMeetings = async (userId: string, userEmail: string, cl
 
     const appUrl = resolveAppUrl(clientOrigin);
 
-    return meetings.map((m) => {
-        const inviteeList = m.invitees ? m.invitees.split(",").map((e) => e.trim()).filter(Boolean) : [];
-        return {
-            ...m,
-            inviteeList,
-            isHost: m.hostId === userId,
-            meetingUrl: `${appUrl}/dashboard/room/${m.roomCode}`,
-        };
-    });
+    // Filter strictly by exact email match to prevent substring collision vulnerabilities (BUG-011)
+    return meetings
+        .filter((m) => {
+            if (m.hostId === userId) return true;
+            const list = m.invitees ? m.invitees.split(",").map((e) => e.trim().toLowerCase()) : [];
+            return list.includes(cleanUserEmail);
+        })
+        .map((m) => {
+            const inviteeList = m.invitees ? m.invitees.split(",").map((e) => e.trim()).filter(Boolean) : [];
+            return {
+                ...m,
+                inviteeList,
+                isHost: m.hostId === userId,
+                meetingUrl: `${appUrl}/dashboard/room/${m.roomCode}`,
+            };
+        });
 };
 
 export const deleteScheduledMeeting = async (meetingId: string, userId: string) => {

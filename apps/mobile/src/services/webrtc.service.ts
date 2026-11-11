@@ -171,12 +171,27 @@ export const fetchIceServers = async (): Promise<any[]> => {
 
 /**
  * Requests local audio and camera media stream.
+ *
+ * Audio constraints include echoCancellation, noiseSuppression, and autoGainControl
+ * on both paths. On Android native these are passed through to the WebRTC audio
+ * processing pipeline and are required for the microphone track to be audible to
+ * remote peers (bare `audio: true` can produce a silent or very low-volume track
+ * on some Android devices due to missing audio-mode initialization).
  */
 export const getLocalMediaStream = async (video = true, audio = true): Promise<any | null> => {
+  // Detailed audio constraints used on both browser and native paths.
+  const audioConstraints = audio
+    ? {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    : false;
+
   if (isBrowserWebRTC && typeof navigator !== "undefined" && navigator.mediaDevices) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio,
+        audio: audioConstraints,
         video: video
           ? {
               facingMode: "user",
@@ -195,7 +210,7 @@ export const getLocalMediaStream = async (video = true, audio = true): Promise<a
   if (isNativeWebRTC && mediaDevices) {
     try {
       const stream = await mediaDevices.getUserMedia({
-        audio,
+        audio: audioConstraints,
         video: video
           ? {
               facingMode: "user",
@@ -259,7 +274,17 @@ export const getDisplayMediaStream = async (): Promise<any | null> => {
         );
         return null;
       }
-      const stream = await mediaDevices.getDisplayMedia({ video: true });
+      const stream = await mediaDevices.getDisplayMedia({
+        video: true,
+        android: {
+          // Must be true: instructs react-native-webrtc to use MediaProjection
+          // for the primary display. Setting this to false disables the
+          // display-capture config entirely, causing screen sharing to fail
+          // silently on Android.
+          createConfigForDefaultDisplay: true,
+          resolutionScale: 1.0,
+        },
+      } as any);
       return stream;
     } catch (err: any) {
       console.warn("[ScreenShare] Native getDisplayMedia error:", err?.name || err);

@@ -104,9 +104,15 @@ api.interceptors.response.use(
       try {
         const data = await refreshAccessToken();
 
-        const newAccessToken = data.data.accessToken;
+        const newAccessToken = data?.data?.accessToken;
+        const newRefreshToken = data?.data?.refreshToken;
 
-        localStorage.setItem("accessToken", newAccessToken);
+        if (newAccessToken) {
+          localStorage.setItem("accessToken", newAccessToken);
+        }
+        if (newRefreshToken) {
+          localStorage.setItem("refreshToken", newRefreshToken);
+        }
 
         processQueue(null, newAccessToken);
 
