@@ -290,7 +290,8 @@ const updateScreenSharingPeers = (
 export const useRoom = (
   roomId: string,
   user: { id: string; name: string; email?: string } | null,
-  guestName?: string
+  guestName?: string,
+  isJoined: boolean = true
 ) => {
   const [guestId] = useState(() => {
     const getSecureRandomId = () => {
@@ -489,6 +490,10 @@ export const useRoom = (
 
     // 1. Fetch Local Stream with fallback if camera is locked or mediaDevices is unavailable (e.g. insecure HTTP)
     const acquireUserMedia = async (): Promise<MediaStream> => {
+      if (localStreamRef.current && localStreamRef.current.getTracks().some((t) => t.readyState === "live")) {
+        return localStreamRef.current;
+      }
+
       if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
         console.warn("navigator.mediaDevices.getUserMedia is unavailable (insecure HTTP context or unsupported). Using canvas fallback.");
         return createFallbackCanvasStream(effectiveName || "Guest", "(Camera disabled by browser on HTTP)");
@@ -569,6 +574,11 @@ export const useRoom = (
           });
         }
 
+        // If user is in the Green Room lobby, do not connect to socket or join room yet (BUG-005)
+        if (!isJoined) {
+          return;
+        }
+
         // 2. Connect to Socket Server
         let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000";
         if (typeof window !== "undefined") {
@@ -598,12 +608,30 @@ export const useRoom = (
 
         // Join room once connected
         socket.on("connect", () => {
+          // Reset any stale or broken peer connections upon reconnection (BUG-006)
+          Object.keys(peerConnectionsRef.current).forEach((peerSocketId) => {
+            const pc = peerConnectionsRef.current[peerSocketId];
+            if (pc && pc.connectionState !== "connected") {
+              closePeerConnection(peerSocketId);
+            }
+          });
+          iceCandidatesQueueRef.current = {};
+
           socket.emit("join-room", {
             roomId,
             name: effectiveName,
             isVideoMuted: isVideoMuted,
             isAudioMuted: isAudioMutedRef.current,
           });
+        });
+
+        socket.on("meeting-ended", ({ message }: { message: string }) => {
+          setKickedFromRoom(true);
+          setHostNotification(message || "The meeting was ended by the host.");
+          if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach((t) => t.stop());
+          }
+          socket.disconnect();
         });
 
         socket.on("connect_error", (err) => {
@@ -973,11 +1001,13 @@ export const useRoom = (
         navigator.mediaDevices.removeEventListener("devicechange", refreshDeviceList);
       }
 
-      if (acquiredStream) {
-        acquiredStream.getTracks().forEach((track) => track.stop());
-      }
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
+      if (isJoined) {
+        if (acquiredStream) {
+          acquiredStream.getTracks().forEach((track) => track.stop());
+        }
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
       }
 
       Object.keys(peerConnectionsRef.current).forEach((socketId) => {
@@ -1000,7 +1030,7 @@ export const useRoom = (
         detachAudioAnalyser(key);
       });
     };
-  }, [roomId, user]);
+  }, [roomId, user, isJoined]);
 
   // Hook audio analyser to localStream
   useEffect(() => {
@@ -1427,20 +1457,30 @@ export const useRoom = (
     }
 
     try {
+      const isSafari =
+        typeof navigator !== "undefined" &&
+        /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
       let screenStream: MediaStream;
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" } as any,
-          audio: true,
-        });
-      } catch (audioErr: any) {
-        // Fallback without audio: Safari (iOS/macOS) and mobile browsers reject audio: true with NotSupportedError
-        if (audioErr?.name === "NotAllowedError") {
-          return;
-        }
+      if (isSafari) {
+        // Safari (iOS & macOS) rejects display audio constraints with NotSupportedError
         screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
         });
+      } else {
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: "always" } as any,
+            audio: true,
+          });
+        } catch (audioErr: any) {
+          if (audioErr?.name === "NotAllowedError") {
+            return;
+          }
+          screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+          });
+        }
       }
 
       const screenTrack = screenStream.getVideoTracks()[0];
@@ -1593,6 +1633,11 @@ export const useRoom = (
   const hostKickPeer = (targetSocketId: string) => {
     if (!isHost || !socketRef.current || !targetSocketId) return;
     socketRef.current.emit("host-kick-peer", { targetSocketId });
+  };
+
+  const hostEndMeeting = () => {
+    if (!isHost || !socketRef.current) return;
+    socketRef.current.emit("host-end-meeting");
   };
 
   // Sends a chat message to everyone else in the room
@@ -1758,6 +1803,7 @@ export const useRoom = (
     hostMutePeer,
     hostMuteAll,
     hostKickPeer,
+    hostEndMeeting,
     // Real-Time Polls & Notes
     polls,
     createPoll,

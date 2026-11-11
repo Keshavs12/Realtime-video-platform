@@ -147,28 +147,15 @@ export function RoomSidebar({
   onHostDenyGuest,
 }: Readonly<RoomSidebarProps>) {
   // Live Polls state: fallback to local if real-time not provided
-  const [localPolls, setLocalPolls] = useState<PollItem[]>([
-    {
-      id: "poll-default",
-      question: "Are we ready to proceed with the release?",
-      creatorName: "Host",
-      options: [
-        { id: "opt-1", text: "Yes, ready to deploy", votes: 3 },
-        { id: "opt-2", text: "Needs 1 more review", votes: 1 },
-        { id: "opt-3", text: "Hold until tomorrow", votes: 0 },
-      ],
-    },
-  ]);
+  const [localPolls, setLocalPolls] = useState<PollItem[]>([]);
   const activePolls = pollsProp && pollsProp.length > 0 ? pollsProp : localPolls;
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const [newQuestion, setNewQuestion] = useState("");
   const [newOptions, setNewOptions] = useState<string[]>(["", ""]);
 
   // Meeting Notes state
-  const [localNotes, setLocalNotes] = useState<string>(
-    `# Meeting Notes — ${roomId}\n\n- **Agenda:** Platform Walkthrough & Feature Review\n- **Key Discussion:**\n  1. HD WebRTC video pipeline\n  2. Live collaborative whiteboard & screen sharing\n  3. Client-side HD recording\n\n- **Next Steps:**\n  - Finalize release notes\n  - Share meeting link with team`
-  );
-  const activeNotes = sharedNotesProp !== undefined && sharedNotesProp !== "" ? sharedNotesProp : localNotes;
+  const [localNotes, setLocalNotes] = useState<string>("");
+  const activeNotes = sharedNotesProp !== undefined ? sharedNotesProp : localNotes;
   const [notesCopied, setNotesCopied] = useState(false);
 
   const handleVote = (pollId: string, optionId: string) => {

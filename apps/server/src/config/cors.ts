@@ -27,9 +27,8 @@ export const isOriginAllowed = (origin?: string): boolean => {
         const originUrl = new URL(origin);
         const originHostname = originUrl.hostname;
 
-        // Auto-allow all Vercel deployment preview and production domains, localhost, and local network IPs
+        // Auto-allow localhost and local network private IP ranges for local/LAN dev
         if (
-            originHostname.endsWith(".vercel.app") ||
             originHostname === "localhost" ||
             originHostname === "127.0.0.1" ||
             originHostname.startsWith("192.168.") ||

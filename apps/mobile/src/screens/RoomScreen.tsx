@@ -138,7 +138,7 @@ export const RoomScreen = ({
     const cleanCode = roomCode.trim().toLowerCase();
     try {
       await Share.share({
-        message: `Join my SuperCall video meeting!\nRoom Code: ${cleanCode}\nLink: https://realtime-video-platform.onrender.com/room/${cleanCode}`,
+        message: `Join my SuperCall video meeting!\nRoom Code: ${cleanCode}\nLink: https://realtime-video-platform.onrender.com/dashboard/room/${cleanCode}`,
         title: "SuperCall Meeting Code",
       });
     } catch {
@@ -736,6 +736,12 @@ export const RoomScreen = ({
         ]);
       });
 
+      socket.on("meeting-ended", ({ message }: { message: string }) => {
+        Alert.alert("Meeting Ended", message || "The meeting was ended by the host.", [
+          { text: "OK", onPress: onLeaveRoom },
+        ]);
+      });
+
       // Room errors
       socket.on("room-not-found", () => {
         Alert.alert("Room Not Found", "This meeting room does not exist.", [
@@ -1187,42 +1193,64 @@ export const RoomScreen = ({
   };
 
   // End Call
+  const finishCallTeardown = () => {
+    // Record session to local history
+    const durationMins = Math.max(1, Math.round(callDuration / 60));
+    const sessionEntry = {
+      roomCode,
+      joinedAt: new Date(Date.now() - callDuration * 1000).toISOString(),
+      isHost,
+      durationMinutes: durationMins,
+      otherParticipantsCount: participants.length,
+    };
+    AsyncStorage.getItem("@supercall_history")
+      .then((raw) => {
+        const list = raw ? JSON.parse(raw) : [];
+        AsyncStorage.setItem(
+          "@supercall_history",
+          JSON.stringify([sessionEntry, ...list.slice(0, 40)])
+        ).catch(() => {});
+      })
+      .catch(() => {});
+
+    setFinalCallStats({ duration: callDuration, participantCount: participants.length + 1 });
+    setSummaryModalVisible(true);
+  };
+
   const handleEndCall = () => {
-    Alert.alert("Leave Meeting", "Are you sure you want to leave this call?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Leave Call",
+    const buttons: any[] = [{ text: "Cancel", style: "cancel" }];
+
+    if (isHost && participants.length > 0) {
+      buttons.push({
+        text: "End for All",
         style: "destructive",
         onPress: () => {
           if (socketRef.current) {
-            socketRef.current.emit("leave-room");
+            socketRef.current.emit("host-end-meeting");
             socketRef.current.disconnect();
           }
-
-          // Record session to local history
-          const durationMins = Math.max(1, Math.round(callDuration / 60));
-          const sessionEntry = {
-            roomCode,
-            joinedAt: new Date(Date.now() - callDuration * 1000).toISOString(),
-            isHost,
-            durationMinutes: durationMins,
-            otherParticipantsCount: participants.length,
-          };
-          AsyncStorage.getItem("@supercall_history")
-            .then((raw) => {
-              const list = raw ? JSON.parse(raw) : [];
-              AsyncStorage.setItem(
-                "@supercall_history",
-                JSON.stringify([sessionEntry, ...list.slice(0, 40)])
-              ).catch(() => {});
-            })
-            .catch(() => {});
-
-          setFinalCallStats({ duration: callDuration, participantCount: participants.length + 1 });
-          setSummaryModalVisible(true);
+          finishCallTeardown();
         },
+      });
+    }
+
+    buttons.push({
+      text: "Leave Call",
+      style: isHost ? "default" : "destructive",
+      onPress: () => {
+        if (socketRef.current) {
+          socketRef.current.emit("leave-room");
+          socketRef.current.disconnect();
+        }
+        finishCallTeardown();
       },
-    ]);
+    });
+
+    Alert.alert(
+      "Leave Meeting",
+      isHost ? "End meeting for all participants or leave call?" : "Are you sure you want to leave this call?",
+      buttons
+    );
   };
 
   const formatTimer = (secs: number) => {

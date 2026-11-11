@@ -18,8 +18,21 @@ const server = http.createServer(app);
 // Initialize Socket.IO server
 const io = initSocketServer(server);
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
     logger.info(`Server running on http://localhost:${PORT}`);
+
+    // Reconcile any open RoomParticipant records from prior crash/restart (BUG-007)
+    try {
+        const closedCount = await prisma.roomParticipant.updateMany({
+            where: { leftAt: null },
+            data: { leftAt: new Date() },
+        });
+        if (closedCount.count > 0) {
+            logger.info(`[Startup] Reconciled ${closedCount.count} orphaned room participant records.`);
+        }
+    } catch (err) {
+        logger.warn({ err }, "[Startup] Warning: Could not reconcile orphaned participations.");
+    }
 });
 
 // Graceful Shutdown Handlers for Zero-Downtime Deployments

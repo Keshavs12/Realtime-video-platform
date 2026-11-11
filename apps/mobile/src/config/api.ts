@@ -111,6 +111,7 @@ export const apiClient = async <T = any>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
+    "X-Requested-With": "XMLHttpRequest",
     ...(options.headers as Record<string, string>),
   };
 
@@ -162,15 +163,22 @@ const attemptTokenRefresh = async (): Promise<boolean> => {
     const baseUrl = await getStoredServerUrl();
     const res = await fetch(`${baseUrl}/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
       body: JSON.stringify({ refreshToken }),
     });
 
     if (res.ok) {
       const data = await res.json();
       const newAccessToken = data?.data?.accessToken;
+      const newRefreshToken = data?.data?.refreshToken;
       if (newAccessToken) {
         await safeStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
+        if (newRefreshToken) {
+          await safeStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, newRefreshToken);
+        }
         return true;
       }
     }

@@ -223,15 +223,11 @@ export const WebRTCStageWebView = forwardRef<WebRTCStageWebViewRef, WebRTCStageW
     var signalingQueue = [];
     var localStreamReady = false;
 
-    // Default STUN and robust Metered TURN relays for reliable multi-network P2P connections
+    // Default public STUN servers (TURN servers are dynamically injected via SET_ICE_SERVERS)
     var iceServers = [
       {urls:"stun:stun.l.google.com:19302"},
       {urls:"stun:stun1.l.google.com:19302"},
-      {urls:"stun:stun.relay.metered.ca:80"},
-      {urls:"turn:global.relay.metered.ca:80",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
-      {urls:"turn:global.relay.metered.ca:80?transport=tcp",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
-      {urls:"turn:global.relay.metered.ca:443",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"},
-      {urls:"turns:global.relay.metered.ca:443?transport=tcp",username:"74874f47825c9fc59ca67c83",credential:"wZBB3lp6RrROlR+k"}
+      {urls:"stun:stun2.l.google.com:19302"}
     ];
 
     var facingMode = "user";

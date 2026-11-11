@@ -82,29 +82,35 @@ export const Header = ({
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const notifications = [
+  const [notifications, setNotifications] = useState([
     {
       id: "1",
-      title: "Signaling Server Connected",
-      desc: "Live connection to Render backend (latency: 28ms).",
+      title: "Realtime Signaling Connected",
+      desc: "WebRTC mesh network and signaling services are fully operational.",
       time: "Just now",
       type: "success",
     },
     {
       id: "2",
-      title: "Mobile App Ready",
-      desc: "Download SuperCall APK for Android or install PWA for iOS.",
-      time: "10m ago",
-      type: "info",
+      title: "End-to-End Encryption Active",
+      desc: "DTLS-SRTP media stream security is active for all peer connections.",
+      time: "Session active",
+      type: "shield",
     },
     {
       id: "3",
-      title: "WebRTC Mesh Encryption",
-      desc: "End-to-end DTLS-SRTP active on all room channels.",
-      time: "1h ago",
-      type: "shield",
+      title: "Audio & Video Devices Ready",
+      desc: "Media permission checks and device configurations verified.",
+      time: "Ready",
+      type: "info",
     },
-  ];
+  ]);
+  const [hasUnread, setHasUnread] = useState(true);
+
+  const handleMarkAllRead = () => {
+    setNotifications([]);
+    setHasUnread(false);
+  };
 
   const handleQuickNavigate = (path: string) => {
     setIsSearchOpen(false);
@@ -183,7 +189,7 @@ export const Header = ({
             aria-label="View notifications"
           >
             <Bell size={18} />
-            <span className={styles.unreadDot} />
+            {hasUnread && notifications.length > 0 && <span className={styles.unreadDot} />}
           </button>
 
           {isNotificationsOpen && (
@@ -191,26 +197,43 @@ export const Header = ({
               <div className={styles.notifHeader}>
                 <div>
                   <span className={styles.notifTitle}>Notifications</span>
-                  <span className={styles.notifBadge}>3 New</span>
+                  <span className={styles.notifBadge}>
+                    {notifications.length > 0 ? `${notifications.length} New` : "All caught up"}
+                  </span>
                 </div>
-                <span className={styles.markRead}>Mark all read</span>
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.markRead}
+                    onClick={handleMarkAllRead}
+                    style={{ background: "none", border: "none", cursor: "pointer" }}
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
 
               <div className={styles.notifList}>
-                {notifications.map((n) => (
-                  <div key={n.id} className={styles.notifItem}>
-                    <div className={styles.notifIconWrap}>
-                      {n.type === "success" && <CheckCircle2 size={15} style={{ color: "#10b981" }} />}
-                      {n.type === "info" && <Video size={15} style={{ color: "#818cf8" }} />}
-                      {n.type === "shield" && <ShieldCheck size={15} style={{ color: "#38bdf8" }} />}
-                    </div>
-                    <div className={styles.notifContent}>
-                      <div className={styles.notifItemTitle}>{n.title}</div>
-                      <div className={styles.notifItemDesc}>{n.desc}</div>
-                      <div className={styles.notifTime}>{n.time}</div>
-                    </div>
+                {notifications.length === 0 ? (
+                  <div style={{ padding: "1.5rem 1rem", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                    No unread notifications
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className={styles.notifItem}>
+                      <div className={styles.notifIconWrap}>
+                        {n.type === "success" && <CheckCircle2 size={15} style={{ color: "#10b981" }} />}
+                        {n.type === "info" && <Video size={15} style={{ color: "#818cf8" }} />}
+                        {n.type === "shield" && <ShieldCheck size={15} style={{ color: "#38bdf8" }} />}
+                      </div>
+                      <div className={styles.notifContent}>
+                        <div className={styles.notifItemTitle}>{n.title}</div>
+                        <div className={styles.notifItemDesc}>{n.desc}</div>
+                        <div className={styles.notifTime}>{n.time}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

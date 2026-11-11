@@ -48,8 +48,7 @@ export const csrfProtection = (req: Request, _res: Response, next: NextFunction)
                 originHost.startsWith("localhost:") ||
                 originHost === "localhost" ||
                 originHost.endsWith(".ngrok-free.app") ||
-                originHost.endsWith(".ngrok.io") ||
-                originHost.endsWith(".vercel.app");
+                originHost.endsWith(".ngrok.io");
 
             if (!isAllowed) {
                 return next(

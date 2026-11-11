@@ -21,6 +21,21 @@ interface DayBucket {
   count: number;
 }
 
+interface TrendMetric {
+  text: string;
+  isPositive: boolean;
+}
+
+const calculateTrend = (current: number, previous: number): TrendMetric => {
+  if (previous === 0 && current === 0) return { text: "0%", isPositive: true };
+  if (previous === 0 && current > 0) return { text: "+100%", isPositive: true };
+  const diff = Math.round(((current - previous) / previous) * 100);
+  return {
+    text: diff >= 0 ? `+${diff}%` : `${diff}%`,
+    isPositive: diff >= 0,
+  };
+};
+
 const buildLast7Days = (history: RoomHistoryEntry[]): DayBucket[] => {
   const days: DayBucket[] = [];
   const counts = new Map<string, number>();
@@ -46,12 +61,52 @@ const buildLast7Days = (history: RoomHistoryEntry[]): DayBucket[] => {
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [days, setDays] = useState<DayBucket[] | null>(null);
+  const [trends, setTrends] = useState<{
+    rooms: TrendMetric;
+    minutes: TrendMetric;
+    participants: TrendMetric;
+  }>({
+    rooms: { text: "0%", isPositive: true },
+    minutes: { text: "0%", isPositive: true },
+    participants: { text: "0%", isPositive: true },
+  });
 
   useEffect(() => {
     Promise.all([roomService.getDashboardStats(), roomService.getRoomHistory()])
       .then(([statsData, historyData]) => {
         setStats(statsData);
         setDays(buildLast7Days(historyData));
+
+        const now = Date.now();
+        const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+        const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+
+        let thisWeekCalls = 0;
+        let prevWeekCalls = 0;
+        let thisWeekMinutes = 0;
+        let prevWeekMinutes = 0;
+        let thisWeekParticipants = 0;
+        let prevWeekParticipants = 0;
+
+        for (const entry of historyData) {
+          const time = new Date(entry.joinedAt).getTime();
+          const attendees = entry.otherParticipantsCount ? entry.otherParticipantsCount + 1 : 1;
+          if (time >= sevenDaysAgo) {
+            thisWeekCalls += 1;
+            thisWeekMinutes += entry.durationMinutes || 0;
+            thisWeekParticipants += attendees;
+          } else if (time >= fourteenDaysAgo) {
+            prevWeekCalls += 1;
+            prevWeekMinutes += entry.durationMinutes || 0;
+            prevWeekParticipants += attendees;
+          }
+        }
+
+        setTrends({
+          rooms: calculateTrend(thisWeekCalls, prevWeekCalls),
+          minutes: calculateTrend(thisWeekMinutes, prevWeekMinutes),
+          participants: calculateTrend(thisWeekParticipants, prevWeekParticipants),
+        });
       })
       .catch((err) => console.error("Failed to fetch analytics data:", err));
   }, []);
@@ -70,7 +125,16 @@ export default function AnalyticsPage() {
           </div>
           <div className={dashboardStyles.statValueRow}>
             <span className={dashboardStyles.statValue}>{stats ? stats.roomsHosted : "0"}</span>
-            <span className={dashboardStyles.statTrend}>+12%</span>
+            <span
+              className={dashboardStyles.statTrend}
+              style={
+                !trends.rooms.isPositive
+                  ? { background: "rgba(239, 68, 68, 0.15)", color: "#f87171" }
+                  : undefined
+              }
+            >
+              {trends.rooms.text}
+            </span>
           </div>
         </div>
 
@@ -83,7 +147,16 @@ export default function AnalyticsPage() {
           </div>
           <div className={dashboardStyles.statValueRow}>
             <span className={dashboardStyles.statValue}>{stats ? stats.callMinutes : "0"}</span>
-            <span className={dashboardStyles.statTrend}>+25%</span>
+            <span
+              className={dashboardStyles.statTrend}
+              style={
+                !trends.minutes.isPositive
+                  ? { background: "rgba(239, 68, 68, 0.15)", color: "#f87171" }
+                  : undefined
+              }
+            >
+              {trends.minutes.text}
+            </span>
           </div>
         </div>
 
@@ -96,7 +169,16 @@ export default function AnalyticsPage() {
           </div>
           <div className={dashboardStyles.statValueRow}>
             <span className={dashboardStyles.statValue}>{stats ? stats.totalParticipants : "0"}</span>
-            <span className={dashboardStyles.statTrend}>+18%</span>
+            <span
+              className={dashboardStyles.statTrend}
+              style={
+                !trends.participants.isPositive
+                  ? { background: "rgba(239, 68, 68, 0.15)", color: "#f87171" }
+                  : undefined
+              }
+            >
+              {trends.participants.text}
+            </span>
           </div>
         </div>
 
@@ -108,8 +190,15 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className={dashboardStyles.statValueRow}>
-            <span className={dashboardStyles.statValue}>99.8%</span>
-            <span className={dashboardStyles.statTrend} style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981" }}>Optimal</span>
+            <span className={dashboardStyles.statValue}>
+              {stats && (stats.roomsHosted > 0 || stats.callMinutes > 0) ? "100%" : "Ready"}
+            </span>
+            <span
+              className={dashboardStyles.statTrend}
+              style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981" }}
+            >
+              {stats && (stats.roomsHosted > 0 || stats.callMinutes > 0) ? "Optimal" : "Standing By"}
+            </span>
           </div>
         </div>
       </div>

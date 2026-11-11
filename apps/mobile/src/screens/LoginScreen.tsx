@@ -19,13 +19,22 @@ import { Ionicons } from "@expo/vector-icons";
 interface LoginScreenProps {
   onNavigateToSignup: () => void;
   onNavigateToSettings: () => void;
+  pendingRoomCode?: string | null;
+  onJoinAsGuest?: (roomCode: string) => void;
 }
 
-export const LoginScreen = ({ onNavigateToSignup, onNavigateToSettings }: LoginScreenProps) => {
+export const LoginScreen = ({
+  onNavigateToSignup,
+  onNavigateToSettings,
+  pendingRoomCode,
+  onJoinAsGuest,
+}: LoginScreenProps) => {
   const { login } = useAuth();
   const { width } = useWindowDimensions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [guestRoomCode, setGuestRoomCode] = useState(pendingRoomCode || "");
+  const [showGuestJoin, setShowGuestJoin] = useState(Boolean(pendingRoomCode));
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -136,6 +145,41 @@ export const LoginScreen = ({ onNavigateToSignup, onNavigateToSettings }: LoginS
               loading={loading}
               style={styles.loginBtn}
             />
+
+            {/* Guest Meeting Join */}
+            {onJoinAsGuest && (
+              <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
+                {showGuestJoin ? (
+                  <View>
+                    <Input
+                      label="Meeting Code or Link"
+                      placeholder="e.g. 8a3f1b2c"
+                      autoCapitalize="none"
+                      value={guestRoomCode}
+                      onChangeText={setGuestRoomCode}
+                    />
+                    <Button
+                      title="Join Meeting as Guest"
+                      variant="secondary"
+                      onPress={() => {
+                        const clean = guestRoomCode.trim().toLowerCase().replace(/.*\/room\//, "");
+                        if (clean) onJoinAsGuest(clean);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setShowGuestJoin(true)}
+                    activeOpacity={0.7}
+                    style={{ alignItems: "center", paddingVertical: 6 }}
+                  >
+                    <Text style={{ color: Colors.accent, fontSize: 13, fontWeight: "600" }}>
+                      Have a meeting code? Join as Guest →
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Footer switch to Signup */}

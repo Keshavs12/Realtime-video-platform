@@ -223,17 +223,21 @@ export function RoomControlBar({
             type="button"
             onClick={async () => {
               try {
+                if (typeof document === "undefined" || !("pictureInPictureEnabled" in document) || !document.pictureInPictureEnabled) {
+                  console.warn("Picture-in-Picture is not supported or enabled in this browser.");
+                  return;
+                }
                 if (document.pictureInPictureElement) {
                   await document.exitPictureInPicture();
                 } else {
                   const videos = Array.from(document.querySelectorAll("video"));
                   const activeVideo = videos.find((v) => v.readyState >= 2 && !v.paused) || videos[0];
-                  if (activeVideo && activeVideo.requestPictureInPicture) {
+                  if (activeVideo && typeof activeVideo.requestPictureInPicture === "function") {
                     await activeVideo.requestPictureInPicture();
                   }
                 }
               } catch (err) {
-                console.warn("PiP toggle:", err);
+                console.warn("PiP toggle error:", err);
               }
             }}
             className={styles.controlButton}

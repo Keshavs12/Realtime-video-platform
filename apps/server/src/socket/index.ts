@@ -749,6 +749,38 @@ export const initSocketServer = (server: HttpServer): Server => {
             }
         });
 
+        socket.on("host-end-meeting", async () => {
+            const { roomId, isHost } = socket.data;
+            if (!roomId || !isHost) {
+                socket.emit("error", { message: "Only the room host can end the meeting for all." });
+                return;
+            }
+
+            console.log(`🛑 Host ${socket.id} ended meeting for all participants in room ${roomId}`);
+            io.to(roomId).emit("meeting-ended", {
+                roomId,
+                message: "The meeting was ended by the host.",
+            });
+
+            // Close DB participations and remove all sockets from room
+            const roomSockets = await io.in(roomId).fetchSockets();
+            for (const s of roomSockets) {
+                if (s.data.userId) {
+                    await closeOpenParticipation(roomId, s.data.userId);
+                }
+                s.leave(roomId);
+                s.data.roomId = undefined;
+            }
+
+            // Cleanup in-memory room state
+            roomWhiteboardHistory.delete(roomId);
+            roomPolls.delete(roomId);
+            roomNotes.delete(roomId);
+            waitingRooms.delete(roomId);
+            roomWaitingQueues.delete(roomId);
+            lockedRooms.delete(roomId);
+        });
+
         // 3d. Raise Hand Interaction
         socket.on("toggle-raise-hand", (payload: { isRaised: boolean }) => {
             const { roomId, userId, name } = socket.data;
